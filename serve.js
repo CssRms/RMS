@@ -1913,6 +1913,7 @@ app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) =>
         lines: [
           `Originally From: ${updated.department?.name || 'Department'}`,
           `Forwarded By: ${requisition.targetDepartment?.name || 'Department'}`,
+          `Forwarded To: ${updated.targetDepartment?.name || 'Department'}`,
           `Type: ${updated.type}`,
           amountLine(updated.type, updated.amount),
           note ? `Note: ${note}` : null
