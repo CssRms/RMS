@@ -129,7 +129,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
       <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center">
         {actionAlert ? (
           <div
-            onClick={() => onViewChange('requisitions')}
+            onClick={() => onViewChange('requisitions', actionAlert.reqId ? { reqId: actionAlert.reqId } : {})}
             className={`px-4 py-1.5 rounded-full border flex items-center gap-2.5 cursor-pointer transition-all duration-500 shadow-lg group hover:scale-105 active:scale-95 ${actionAlert.mode === 'desk'
               ? 'bg-rose-500 text-white border-rose-600 shadow-rose-500/30 animate-pulse'
               : 'bg-amber-500 text-white border-amber-600 shadow-amber-500/30'
@@ -319,7 +319,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
 
         if (pendingForMe.length > 0) {
           // Red Pulse Alert: folder is on your desk for your signature
-          setActionAlert({ urgency: 'critical', count: pendingForMe.length, mode: 'desk' });
+          setActionAlert({ urgency: 'critical', count: pendingForMe.length, mode: 'desk', reqId: pendingForMe[0]?.id });
         } else {
           // Amber Alert: check if you have urgent in-flight items pending someone else's input
           const urgentElsewhere = all.filter(r => {

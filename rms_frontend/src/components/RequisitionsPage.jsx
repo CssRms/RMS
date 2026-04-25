@@ -853,7 +853,7 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
       )}
 
       {mode !== 'forward' && (
-        <div className="grid grid-cols-2 gap-2 pt-1">
+        <div className={`grid gap-2 pt-1 ${detail?.finalApprovalStatus && detail.finalApprovalStatus !== 'none' ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <button
             onClick={() => submit('forward')}
             className="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-bold text-sm transition-all shadow-sm"
@@ -861,15 +861,18 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
             <ArrowRightCircle size={18} />
             <span>Forward...</span>
           </button>
-          
-          <button
-            onClick={() => submit('return')}
-            disabled={acting}
-            className="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-sm transition-all disabled:opacity-50 shadow-sm"
-          >
-            {acting ? <Loader2 size={18} className="animate-spin" /> : <CornerDownLeft size={18} />}
-            <span>{returnLabel}</span>
-          </button>
+
+          {/* Return button disappears after final approval */}
+          {(!detail?.finalApprovalStatus || detail.finalApprovalStatus === 'none') && (
+            <button
+              onClick={() => submit('return')}
+              disabled={acting}
+              className="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-sm transition-all disabled:opacity-50 shadow-sm"
+            >
+              {acting ? <Loader2 size={18} className="animate-spin" /> : <CornerDownLeft size={18} />}
+              <span>{returnLabel}</span>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -880,13 +883,14 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
 const DEFAULT_THRESHOLDS = { hr_ceiling: 50000, chairman_min: 100000 };
 
 const FinalApprovePanel = ({ req, detail, user, departments, onApproved }) => {
-  const [note, setNote]           = useState('');
-  const [acting, setActing]       = useState(false);
-  const [treating, setTreating]   = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS);
+  const [note, setNote]               = useState('');
+  const [acting, setActing]           = useState(false);
+  const [showModal, setShowModal]     = useState(false);
+  const [thresholds, setThresholds]   = useState(DEFAULT_THRESHOLDS);
+  const [approveChecked, setApproveChecked] = useState(false);
+  const [approveFile, setApproveFile] = useState(null);
+  const fileRef = React.useRef(null);
 
-  // Load admin-configured thresholds; fall back to defaults if not set
   useEffect(() => {
     settingsAPI.get('approval_thresholds').then(res => {
       if (res?.value) {
@@ -895,17 +899,14 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved }) => {
     }).catch(() => {});
   }, []);
 
-  // Determine this dept's authority level against the live thresholds
   const deptName   = user?.name || '';
   const amount     = parseFloat(req.amount || 0);
   const isChairman = /ceo|chairman/i.test(deptName);
   const isGM       = /general\s*manager|\bgm\b/i.test(deptName);
   const isHR       = /\bhr\b|human\s*resource/i.test(deptName);
 
-  // MEMO is handled separately in MemoManagement — never show here
   if (/^memo/i.test(req.type || '')) return null;
 
-  // Only show approval panel when the request is currently sitting at this dept's desk
   const isAtMyDesk = detail?.targetDepartmentId === user?.deptId;
   if (!isAtMyDesk) return null;
 
@@ -914,13 +915,11 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved }) => {
   const isMaterial = /^material/i.test(req.type || '');
 
   let authorityLabel = null;
-  // Material: no amount threshold — show for whichever tier currently holds the request
   if (isMaterial) {
-    if (isHR)       authorityLabel = 'HR Authority';
-    else if (isGM)  authorityLabel = 'GM Authority';
+    if (isHR)            authorityLabel = 'HR Authority';
+    else if (isGM)       authorityLabel = 'GM Authority';
     else if (isChairman) authorityLabel = 'Chairman / CEO Authority';
   } else {
-    // Cash (threshold-based)
     if (isHR && amount <= hr_ceiling)
       authorityLabel = `HR Authority (≤ ${fmt(hr_ceiling)})`;
     else if (isGM && amount > hr_ceiling && amount < chairman_min)
@@ -931,79 +930,126 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved }) => {
 
   if (!authorityLabel) return null;
 
-  // Already finally approved — show a guide note instead of hiding silently
-  if (detail?.finalApprovalStatus && detail.finalApprovalStatus !== 'none') {
+  const finalStatus = detail?.finalApprovalStatus;
+
+  // ── Already approved: show signed badge + Send to Vet ───────────────────────
+  if (finalStatus && finalStatus !== 'none') {
     return (
-      <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-1.5">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
-          <p className="text-xs font-black text-emerald-700 uppercase tracking-wide">Already Approved</p>
+      <>
+        <div className="space-y-3 border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+          <div className="flex items-center gap-2 pl-1">
+            <CheckCircle2 size={14} className="text-emerald-600" />
+            <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Signed & Approved</p>
+            <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
+          </div>
+          <p className="text-[11px] text-emerald-700/80 leading-relaxed pl-1">
+            Your approval has been recorded. Forward the document, or send it directly to vetting below.
+          </p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all text-sm shadow-md shadow-emerald-500/20"
+          >
+            <Send size={15} />
+            Send to Vet
+          </button>
         </div>
-        <p className="text-[11px] text-emerald-700/80 leading-relaxed">
-          This request has been finally approved. Use <strong>Forward</strong> below to send it to vetting (ICC / Audit → Account) to continue the process.
-        </p>
-      </div>
+
+        {showModal && (
+          <VettingSelectionModal
+            reqId={req.id}
+            departments={departments}
+            onClose={() => setShowModal(false)}
+            onDone={() => { setShowModal(false); onApproved(); }}
+          />
+        )}
+      </>
     );
   }
 
-  const notifyAccount = async () => {
-    const accountDept = departments.find(d => /\baccount/i.test(d.name));
-    if (accountDept) {
-      try {
-        await forwardRequisition(req.id, {
-          targetDepartmentId: accountDept.id,
-          note: '[Direct Treatment] Chairman/CEO treated directly. Account notified for audit trail.',
-          returnToSender: false
-        });
-      } catch {}
-    }
-  };
-
+  // ── Not yet approved: checkbox-driven sign flow ──────────────────────────────
   const handleApprove = async () => {
     setActing(true);
     try {
       const result = await finalApproveRequisition(req.id, note);
-      if (result !== null) toast.success('Approved! Now send to vetting.');
-      setShowModal(true);
+      if (result !== null) toast.success('Approved & signed successfully.');
+      onApproved();
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Approval failed. Please try again.');
     } finally { setActing(false); }
   };
 
   return (
-    <>
-      <div className="space-y-3 border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 shadow-sm relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
-        <div className="flex items-center gap-2 pl-1">
-          <Gavel size={14} className="text-emerald-700" />
-          <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Approve</p>
-          <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
-        </div>
-        <textarea
-          value={note}
-          onChange={e => setNote(e.target.value)}
-          placeholder="Optional approval note or remarks..."
-          className="w-full bg-white border border-emerald-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 min-h-[60px] resize-none shadow-inner"
-        />
-        <button
-          onClick={handleApprove}
-          disabled={acting}
-          className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-emerald-500/20"
-        >
-          {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-          {acting ? 'Processing…' : 'Approve → Send to Vetting'}
-        </button>
+    <div className="space-y-3 border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 shadow-sm relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+      <div className="flex items-center gap-2 pl-1">
+        <Gavel size={14} className="text-emerald-700" />
+        <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Final Approval</p>
+        <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
       </div>
 
-      {showModal && (
-        <VettingSelectionModal
-          reqId={req.id}
-          departments={departments}
-          onClose={() => setShowModal(false)}
-          onDone={() => { setShowModal(false); onApproved(); }}
+      {/* Approve & Sign checkbox */}
+      <label className="flex items-center gap-3 p-3 rounded-xl border-2 border-emerald-300 bg-white cursor-pointer hover:bg-emerald-50 transition-colors select-none">
+        <input
+          type="checkbox"
+          checked={approveChecked}
+          onChange={e => setApproveChecked(e.target.checked)}
+          className="w-4 h-4 accent-emerald-600 cursor-pointer"
         />
+        <div>
+          <p className="text-sm font-black text-emerald-800">Approve &amp; Sign</p>
+          <p className="text-[10px] text-emerald-600/80">Check to confirm your final approval of this requisition</p>
+        </div>
+      </label>
+
+      {/* Expanded form — only visible when checked */}
+      {approveChecked && (
+        <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="Optional remarks or approval note…"
+            className="w-full bg-white border border-emerald-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 min-h-[60px] resize-none shadow-inner"
+          />
+
+          {/* Optional file attachment */}
+          <div>
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              onChange={e => setApproveFile(e.target.files?.[0] || null)}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold transition-colors"
+            >
+              <Paperclip size={13} />
+              {approveFile ? approveFile.name : 'Attach supporting document (optional)'}
+            </button>
+            {approveFile && (
+              <button
+                type="button"
+                onClick={() => setApproveFile(null)}
+                className="mt-1 ml-1 text-[10px] text-rose-500 hover:underline"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={handleApprove}
+            disabled={acting}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-emerald-500/20"
+          >
+            {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+            {acting ? 'Processing…' : 'Submit Approval'}
+          </button>
+        </div>
       )}
-    </>
+    </div>
   );
 };
 
