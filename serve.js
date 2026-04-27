@@ -1529,16 +1529,20 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
           await notifyRole(firstStage.role, `New Requisition: ${created.title}`, created.id);
         }
         const originDept = await prisma.department.findUnique({ where: { id: originDeptId } });
+        const targetDeptForEmail = targetDepartmentId
+          ? await prisma.department.findUnique({ where: { id: targetDepartmentId } })
+          : null;
         await notifyDepartmentHead({
           departmentId: originDeptId,
           requisition: { ...created, department: originDept || null },
           subject: `Your Requisition has been Submitted: ${created.title}`,
           lines: [
             `Department: ${originDept?.name || 'Department'}`,
+            targetDeptForEmail ? `Sent To: ${targetDeptForEmail.name}` : null,
             `Type: ${created.type}`,
             amountLine(created.type, created.amount),
             `Urgency: ${created.urgency || 'normal'}`,
-          ]
+          ].filter(Boolean)
         });
 
         // Notify target department if specified
