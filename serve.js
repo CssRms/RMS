@@ -42,10 +42,50 @@ const {
   generateVerificationCode
 } = require('./lib/signing');
 const { sendEmail } = require('./lib/mailer');
+const webpush = require('web-push');
 
 const app = express();
 const prisma = new PrismaClient();
 let isSystemReady = false; // Flag for database/seed readiness
+
+// ── Server-Sent Events (real-time updates) ────────────────────────────────────
+const sseClients = new Map(); // clientId → res
+
+function broadcastUpdate(reqId) {
+  const payload = `event: requisition_updated\ndata: ${JSON.stringify({ id: reqId, ts: Date.now() })}\n\n`;
+  for (const [, res] of sseClients) {
+    try { res.write(payload); } catch (_) {}
+  }
+}
+
+// ── Web Push (PWA phone notifications) ───────────────────────────────────────
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails('mailto:admin@cssgroup.com', VAPID_PUBLIC, VAPID_PRIVATE);
+}
+
+async function sendPushNotification(deptIds, { title, body, url }) {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT endpoint, p256dh, auth FROM "PushSubscription"
+      WHERE "deptId" = ANY(${deptIds}::int[])
+    `;
+    for (const row of rows) {
+      try {
+        await webpush.sendNotification(
+          { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
+          JSON.stringify({ title, body, url: url || '/' })
+        );
+      } catch (err) {
+        if (err.statusCode === 410) {
+          await prisma.$executeRaw`DELETE FROM "PushSubscription" WHERE endpoint = ${row.endpoint}`;
+        }
+      }
+    }
+  } catch (_) {}
+}
 
 // Auto-migrate: add new columns if they don't exist yet (idempotent)
 // Note: Database schema is now managed centrally in schema.prisma.
@@ -171,6 +211,59 @@ app.use((req, res, next) => {
     });
   }
   next();
+});
+
+// ── SSE — real-time push to connected clients ─────────────────────────────────
+app.get('/api/events', (req, res) => {
+  const token = req.query.token || (req.headers.authorization || '').split(' ')[1];
+  let user;
+  try { user = jwt.verify(token, process.env.JWT_SECRET || 'secret'); }
+  catch { return res.status(401).end(); }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  res.write(':connected\n\n');
+
+  const clientId = `${user.id || user.deptId || 'anon'}-${Date.now()}`;
+  sseClients.set(clientId, res);
+
+  const heartbeat = setInterval(() => {
+    try { res.write(':ping\n\n'); } catch (_) { clearInterval(heartbeat); }
+  }, 25000);
+
+  req.on('close', () => { clearInterval(heartbeat); sseClients.delete(clientId); });
+});
+
+// ── Push subscription endpoints ───────────────────────────────────────────────
+app.get('/api/push/vapid-public', (req, res) => {
+  res.json({ key: VAPID_PUBLIC || null });
+});
+
+app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
+  const { endpoint, p256dh, auth } = req.body || {};
+  if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: 'Missing subscription fields' });
+  const deptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+  const userId = getNumericUserId(req.user) || null;
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO "PushSubscription" (endpoint, p256dh, auth, "deptId", "userId", "createdAt")
+      VALUES (${endpoint}, ${p256dh}, ${auth}, ${deptId}, ${userId}, NOW())
+      ON CONFLICT (endpoint) DO UPDATE SET p256dh=${p256dh}, auth=${auth}, "deptId"=${deptId}, "userId"=${userId}
+    `;
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/push/subscribe', authenticateToken, async (req, res) => {
+  const { endpoint } = req.body || {};
+  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
+  try {
+    await prisma.$executeRaw`DELETE FROM "PushSubscription" WHERE endpoint = ${endpoint}`;
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── INPUT SANITIZATION (XSS PROTECTION) ─────────────────────────────────────
@@ -1946,6 +2039,7 @@ app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) =>
       });
     }
 
+    broadcastUpdate(parseInt(id));
     res.json(updated);
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -2008,6 +2102,7 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
       }
     });
 
+    broadcastUpdate(reqId);
     res.json(updated);
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -2079,6 +2174,7 @@ app.post('/api/requisitions/:id/send-to-vetting', authenticateToken, async (req,
       }
     });
 
+    broadcastUpdate(reqId);
     res.json({ success: true });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -2274,6 +2370,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       }
     });
 
+    broadcastUpdate(reqId);
     res.json({ success: true });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -2334,6 +2431,7 @@ app.post('/api/requisitions/:id/approve', authenticateToken, approvalLimiter, as
     const parsed = z.object({ remarks: z.string().optional() }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid approval payload' });
     const updated = await processApprovalAction({ requisitionId: parseInt(id), action: 'approved', remarks: parsed.data.remarks, user: req.user });
+    broadcastUpdate(parseInt(id));
     res.json(updated);
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
@@ -2346,6 +2444,7 @@ app.post('/api/requisitions/:id/reject', authenticateToken, approvalLimiter, asy
     const parsed = z.object({ remarks: z.string().optional() }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid rejection payload' });
     const updated = await processApprovalAction({ requisitionId: parseInt(id), action: 'rejected', remarks: parsed.data.remarks, user: req.user });
+    broadcastUpdate(parseInt(id));
     res.json(updated);
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });

@@ -351,6 +351,38 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
     };
   }, [user?.deptId]);
 
+  // PWA push notification subscription — ask once after login
+  useEffect(() => {
+    if (!user) return;
+    const subscribeToPush = async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      try {
+        const { key } = await fetch('/api/push/vapid-public').then(r => r.json());
+        if (!key) return; // VAPID not configured yet
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) return; // Already subscribed
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: (() => {
+            const b64 = key.replace(/-/g, '+').replace(/_/g, '/');
+            const raw = atob(b64);
+            return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+          })()
+        });
+        const { endpoint, keys } = sub.toJSON();
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('rms_token')}` },
+          body: JSON.stringify({ endpoint, p256dh: keys.p256dh, auth: keys.auth })
+        });
+      } catch (_) {}
+    };
+    subscribeToPush();
+  }, [user?.id]);
+
   useEffect(() => {
     const loadSync = async () => {
       const status = await getSyncQueueStatus();

@@ -1781,7 +1781,42 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
               <div className="space-y-3">
                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Current Status</p>
                  {req.status === 'pending' ? (
-                   isInterDept ? (
+                   // Check vetting / final-approval state before falling back to generic
+                   detail?.finalApprovalStatus === 'vetting' ? (
+                     <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 space-y-2">
+                       <div className="flex items-center gap-2">
+                         <div className="w-7 h-7 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-600">
+                           <Award size={14} />
+                         </div>
+                         <div>
+                           <p className="text-xs font-bold text-purple-700">Under Vetting</p>
+                           <p className="text-[10px] text-purple-600/80 font-medium">
+                             {(() => {
+                               const cvId = detail?.currentVettingDeptId ? parseInt(detail.currentVettingDeptId) : null;
+                               return departments.find(d => d.id === cvId)?.name
+                                 || detail?.vettingEvents?.filter(e => e.action !== 'return')?.slice(-1)[0]?.deptName
+                                 || 'Vetting Department';
+                             })()}
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                   ) : detail?.finalApprovalStatus === 'approved' ? (
+                     <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-700">
+                       <ShieldCheck size={16} />
+                       <span className="text-xs font-bold">Finally Approved – Pending Vetting</span>
+                     </div>
+                   ) : detail?.finalApprovalStatus === 'treated' ? (
+                     <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center gap-2 text-teal-700">
+                       <CheckCircle2 size={16} />
+                       <span className="text-xs font-bold">Treated</span>
+                     </div>
+                   ) : detail?.finalApprovalStatus === 'published' ? (
+                     <div className="p-3 rounded-xl bg-emerald-600/10 border border-emerald-600/20 flex items-center gap-2 text-emerald-800">
+                       <CheckCircle2 size={16} />
+                       <span className="text-xs font-bold">Published</span>
+                     </div>
+                   ) : isInterDept ? (
                      <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-600">
@@ -1952,6 +1987,9 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const [deleting, setDeleting]         = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletePendingAction, setDeletePendingAction] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [syncStale, setSyncStale]       = useState(false);
+  const selectedReqRef = React.useRef(null);
 
   // Normalize a requisition so department/creator are always strings, not nested objects.
   const normalizeReq = (r) => ({
@@ -1962,35 +2000,85 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     finalState:       r.finalApprovalStatus ?? 'none',
   });
 
+  // Always fetch fresh data from server — show cached instantly, then replace with live
   const openReqById = async (id, allReqs) => {
     const list = allReqs || requisitions;
     const cached = list.find(r => r.id === parseInt(id));
-    if (cached) {
-      setSelectedReq(normalizeReq(cached));
-    } else {
-      try {
-        const fetched = await reqAPI.getRequisition(id);
-        setSelectedReq(normalizeReq(fetched));
-      } catch(err) {}
+    if (cached) setSelectedReq(normalizeReq(cached));
+    try {
+      const fresh = await reqAPI.getRequisition(id);
+      setSelectedReq(normalizeReq(fresh));
+    } catch(err) {}
+  };
+
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const [data, depts] = await Promise.all([getRequisitions(), getDepartments()]);
+      setRequisitions(data);
+      setDepartments(depts);
+      setLastSyncedAt(new Date());
+      setSyncStale(false);
+      if (!silent) setLoading(false);
+
+      // Check for deep link after data loads (localStorage fallback)
+      if (!silent) {
+        const pendingId = localStorage.getItem('rms_pending_requisition_id');
+        if (pendingId) {
+          localStorage.removeItem('rms_pending_requisition_id');
+          await openReqById(pendingId, data);
+        }
+      }
+    } catch {
+      setSyncStale(true);
+      if (!silent) setLoading(false);
     }
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    const [data, depts] = await Promise.all([getRequisitions(), getDepartments()]);
-    setRequisitions(data);
-    setDepartments(depts);
-    setLoading(false);
-
-    // Check for deep link after data loads (localStorage fallback)
-    const pendingId = localStorage.getItem('rms_pending_requisition_id');
-    if (pendingId) {
-      localStorage.removeItem('rms_pending_requisition_id');
-      await openReqById(pendingId, data);
-    }
-  };
+  // Keep ref in sync with selectedReq state
+  React.useEffect(() => { selectedReqRef.current = selectedReq; }, [selectedReq]);
 
   useEffect(() => { loadData(); }, []);
+
+  // SSE real-time subscription — updates arrive within seconds of any action
+  useEffect(() => {
+    const token = localStorage.getItem('rms_token');
+    if (!token) return;
+
+    let es;
+    let reconnectTimer;
+
+    const connect = () => {
+      es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+      es.addEventListener('requisition_updated', (e) => {
+        const { id } = JSON.parse(e.data);
+        // Silent background refresh of list
+        loadData(true);
+        // If this exact req is open, fetch fresh detail immediately
+        if (selectedReqRef.current?.id === id) {
+          reqAPI.getRequisition(id).then(fresh => setSelectedReq(normalizeReq(fresh))).catch(() => {});
+        }
+      });
+      es.onerror = () => {
+        es.close();
+        setSyncStale(true);
+        reconnectTimer = setTimeout(connect, 8000);
+      };
+    };
+
+    connect();
+
+    // Stale timestamp updater — marks data as stale after 90 s without an update
+    const staleTimer = setInterval(() => {
+      setSyncStale(prev => prev || (lastSyncedAt && Date.now() - lastSyncedAt.getTime() > 90000));
+    }, 30000);
+
+    return () => {
+      es?.close();
+      clearTimeout(reconnectTimer);
+      clearInterval(staleTimer);
+    };
+  }, []);
 
   // Deep link via prop (from Dashboard eye button)
   useEffect(() => {
@@ -2135,6 +2223,14 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
             </div>
           </div>
         </div>
+
+        {/* Sync status indicator */}
+        {syncStale && lastSyncedAt && (
+          <div className="flex items-center gap-2 text-[10px] text-amber-600 font-bold px-1">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            Offline — showing data as of {lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
 
         {/* Unified Main Card */}
         <div className="glass bg-white/70 backdrop-blur-3xl rounded-[2rem] border border-border/40 p-1 shadow-2xl shadow-primary/5 overflow-hidden">

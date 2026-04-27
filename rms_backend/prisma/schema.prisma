@@ -294,3 +294,13 @@ model SystemSetting {
   key   String @id
   value String @default("")
 }
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  deptId    Int?
+  userId    Int?
+  createdAt DateTime @default(now())
+}
