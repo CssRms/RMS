@@ -882,7 +882,7 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
 // ── Final Approve Panel ───────────────────────────────────────────────────────
 const DEFAULT_THRESHOLDS = { hr_ceiling: 50000, chairman_min: 100000 };
 
-const FinalApprovePanel = ({ req, detail, user, departments, onApproved }) => {
+const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onApproveCheck }) => {
   const [note, setNote]               = useState('');
   const [acting, setActing]           = useState(false);
   const [showModal, setShowModal]     = useState(false);
@@ -993,7 +993,7 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved }) => {
         <input
           type="checkbox"
           checked={approveChecked}
-          onChange={e => setApproveChecked(e.target.checked)}
+          onChange={e => { setApproveChecked(e.target.checked); onApproveCheck?.(e.target.checked); }}
           className="w-4 h-4 accent-emerald-600 cursor-pointer"
         />
         <div>
@@ -1255,6 +1255,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
   const [printModal, setPrintModal] = useState(false);
   const [newFiles, setNewFiles]     = useState([]);
   const [uploading, setUploading]   = useState(false);
+  const [approveChecked, setApproveChecked] = useState(false);
   const fileInputRef                = React.useRef(null);
 
   useEffect(() => {
@@ -1519,7 +1520,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
                 </div>
               )}
 
-              {!isReturnedToCreator && isIncoming && req.status === 'pending' && !loading &&
+              {!approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading &&
                !(detail?.finalApprovalStatus === 'treated' && /\baccount/i.test(user?.name || '')) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                    <RespondPanel
@@ -1555,7 +1556,9 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
                     detail={detail}
                     user={user}
                     departments={departments}
+                    onApproveCheck={setApproveChecked}
                     onApproved={() => {
+                      setApproveChecked(false);
                       getRequisitionDetail(req.id).then(d => setDetail(d));
                       onAction();
                     }}
@@ -1666,7 +1669,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
               )}
 
               {/* ── Post-Creation Attachment Upload ── */}
-              {(isIncoming || canApprove || user?.role === 'global_admin') && (() => {
+              {!approveChecked && (isIncoming || canApprove || user?.role === 'global_admin') && (() => {
                 // Compute stage context for tagging
                 const fwdEvents = detail?.forwardEvents || [];
                 const approvals = detail?.approvals || [];
