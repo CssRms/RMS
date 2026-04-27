@@ -3000,13 +3000,17 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       const itemComment = parsedContent.comment ? sanitizeText(parsedContent.comment) : null;
       if (itemComment) { drawWrappedText(itemComment, { indent: 5 }); y -= 10; }
 
-      // Column widths (total = contentWidth = 495)
-      const snW = 28, qtyW = 38, amtNW = 98, amtKW = 35;
-      const descW = contentWidth - snW - qtyW - amtNW - amtKW; // 296
-      const snX = margin, qtyX = snX + snW, descX = qtyX + qtyW;
-      const amtNX = descX + descW, amtKX = amtNX + amtNW;
-      const tableRight = amtKX + amtKW;
-      const rowH = 18, headerH = 30;
+      // Column widths — S/N | Item Description | Quantity | Unit Price | Total (N | K)
+      // Total contentWidth = 495
+      const snW = 28, descW = 230, qtyW = 55, upW = 85, totNW = 67, totKW = 30;
+      const snX   = margin;
+      const descX = snX + snW;
+      const qtyX  = descX + descW;
+      const upX   = qtyX + qtyW;
+      const totNX = upX + upW;
+      const totKX = totNX + totNW;
+      const tableRight = totKX + totKW;
+      const rowH = 18, headerH = 20;
       const tableH = headerH + rowH * (items.length + 1); // +1 for total row
 
       ensureSpace(tableH + 20);
@@ -3026,44 +3030,42 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       page.drawLine({ start: { x: snX, y: tableTop - headerH }, end: { x: tableRight, y: tableTop - headerH }, thickness: 0.8, color: borderC });
 
       // Vertical column separators (full table height)
-      for (const colX of [qtyX, descX, amtNX, amtKX]) {
+      for (const colX of [descX, qtyX, upX, totNX, totKX]) {
         page.drawLine({ start: { x: colX, y: tableTop }, end: { x: colX, y: tableTop - tableH }, thickness: 0.5, color: rgb(0.35, 0.35, 0.35) });
       }
 
-      // "Amount" spanning text in top half of header
-      const amtHdr = 'Amount';
-      const amtHdrW = boldFont.widthOfTextAtSize(amtHdr, 9);
-      page.drawText(amtHdr, { x: amtNX + (amtNW + amtKW) / 2 - amtHdrW / 2, y: tableTop - 11, size: 9, font: boldFont });
-      // Mid-divider inside header (only over Amount columns)
-      page.drawLine({ start: { x: amtNX, y: tableTop - headerH / 2 }, end: { x: tableRight, y: tableTop - headerH / 2 }, thickness: 0.4, color: rgb(0.4, 0.4, 0.4) });
-
-      // Column header labels (bottom half)
+      // Column header labels
       const hdrY = tableTop - headerH + 6;
-      page.drawText('S/N',              { x: snX + 5,  y: hdrY, size: 9, font: boldFont });
-      page.drawText('Qty',              { x: qtyX + 8, y: hdrY, size: 9, font: boldFont });
-      page.drawText('Item Description', { x: descX + 5, y: hdrY, size: 9, font: boldFont });
-      page.drawText('N', { x: amtNX + amtNW / 2 - boldFont.widthOfTextAtSize('N', 9) / 2, y: hdrY, size: 9, font: boldFont });
-      page.drawText('K', { x: amtKX + amtKW / 2 - boldFont.widthOfTextAtSize('K', 9) / 2, y: hdrY, size: 9, font: boldFont });
+      page.drawText('S/N',              { x: snX + 5,               y: hdrY, size: 9, font: boldFont });
+      page.drawText('Item Description', { x: descX + 5,             y: hdrY, size: 9, font: boldFont });
+      page.drawText('Quantity',         { x: qtyX + 4,              y: hdrY, size: 9, font: boldFont });
+      page.drawText('Unit Price',       { x: upX + 5,               y: hdrY, size: 9, font: boldFont });
+      page.drawText('N',  { x: totNX + totNW / 2 - boldFont.widthOfTextAtSize('N', 9) / 2, y: hdrY, size: 9, font: boldFont });
+      page.drawText('K',  { x: totKX + totKW / 2 - boldFont.widthOfTextAtSize('K', 9) / 2, y: hdrY, size: 9, font: boldFont });
 
       // Data rows
       const maxDescChars = Math.floor(descW / (font.widthOfTextAtSize('M', 9) * 0.58));
       let rowY = tableTop - headerH;
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const lineTotal = item.lineTotal != null ? item.lineTotal : (item.qty || 1) * (item.amount || 0);
-        const naira = Math.floor(lineTotal);
-        const kobo = Math.round((lineTotal - naira) * 100);
+        const unitPrice = item.amount || 0;
+        const lineTotal = item.lineTotal != null ? item.lineTotal : (item.qty || 1) * unitPrice;
+        const totNaira = Math.floor(lineTotal);
+        const totKobo = Math.round((lineTotal - totNaira) * 100);
         rowY -= rowH;
         page.drawLine({ start: { x: snX, y: rowY }, end: { x: tableRight, y: rowY }, thickness: 0.3, color: rgb(0.55, 0.55, 0.55) });
         const cellY = rowY + 5;
         page.drawText(String(i + 1), { x: snX + 10, y: cellY, size: 9, font });
-        page.drawText(String(item.qty ?? 1), { x: qtyX + 12, y: cellY, size: 9, font });
         const desc = sanitizeText(item.description || '');
         const truncDesc = desc.length > maxDescChars ? desc.substring(0, maxDescChars - 2) + '..' : desc;
         page.drawText(truncDesc, { x: descX + 5, y: cellY, size: 9, font });
-        const nairaStr = Number(naira).toLocaleString();
-        page.drawText(nairaStr, { x: amtNX + amtNW - font.widthOfTextAtSize(nairaStr, 9) - 4, y: cellY, size: 9, font });
-        page.drawText(kobo > 0 ? String(kobo).padStart(2, '0') : '00', { x: amtKX + 5, y: cellY, size: 9, font });
+        const qtyStr = String(item.qty ?? 1);
+        page.drawText(qtyStr, { x: qtyX + qtyW / 2 - font.widthOfTextAtSize(qtyStr, 9) / 2, y: cellY, size: 9, font });
+        const upStr = Number(Math.floor(unitPrice)).toLocaleString();
+        page.drawText(upStr, { x: upX + upW - font.widthOfTextAtSize(upStr, 9) - 4, y: cellY, size: 9, font });
+        const totNStr = Number(totNaira).toLocaleString();
+        page.drawText(totNStr, { x: totNX + totNW - font.widthOfTextAtSize(totNStr, 9) - 4, y: cellY, size: 9, font });
+        page.drawText(totKobo > 0 ? String(totKobo).padStart(2, '0') : '00', { x: totKX + 5, y: cellY, size: 9, font });
       }
 
       // Total row
@@ -3073,10 +3075,10 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       const totalNaira = Math.floor(grandTotal);
       const totalKobo = Math.round((grandTotal - totalNaira) * 100);
       const totalLabel = 'TOTAL';
-      page.drawText(totalLabel, { x: amtNX - boldFont.widthOfTextAtSize(totalLabel, 10) - 8, y: rowY + 5, size: 10, font: boldFont });
+      page.drawText(totalLabel, { x: totNX - boldFont.widthOfTextAtSize(totalLabel, 10) - 8, y: rowY + 5, size: 10, font: boldFont });
       const totalNairaStr = Number(totalNaira).toLocaleString();
-      page.drawText(totalNairaStr, { x: amtNX + amtNW - boldFont.widthOfTextAtSize(totalNairaStr, 10) - 4, y: rowY + 5, size: 10, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
-      page.drawText(totalKobo > 0 ? String(totalKobo).padStart(2, '0') : '00', { x: amtKX + 5, y: rowY + 5, size: 10, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
+      page.drawText(totalNairaStr, { x: totNX + totNW - boldFont.widthOfTextAtSize(totalNairaStr, 10) - 4, y: rowY + 5, size: 10, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
+      page.drawText(totalKobo > 0 ? String(totalKobo).padStart(2, '0') : '00', { x: totKX + 5, y: rowY + 5, size: 10, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
       y = rowY - 15;
 
     } else {

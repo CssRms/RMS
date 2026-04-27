@@ -1359,8 +1359,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
               <thead>
                 <tr className="bg-muted/60 border-b border-border/50">
                   <th className="text-left px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider w-8">S/N</th>
-                  <th className="text-left px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider w-12">Qty</th>
                   <th className="text-left px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider">Item Description</th>
+                  <th className="text-center px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider w-20">Quantity</th>
                   <th className="text-right px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider">Unit Price</th>
                   <th className="text-right px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider">Total</th>
                 </tr>
@@ -1369,8 +1369,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
                 {_parsedContent.items.map((item, idx) => (
                   <tr key={idx} className="bg-white hover:bg-muted/20 transition-colors">
                     <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{idx + 1}</td>
-                    <td className="px-3 py-2.5 text-xs font-semibold">{item.qty}</td>
                     <td className="px-3 py-2.5 text-sm font-medium text-foreground">{item.description}</td>
+                    <td className="px-3 py-2.5 text-xs text-center font-semibold">{item.qty}</td>
                     <td className="px-3 py-2.5 text-xs text-right font-mono text-muted-foreground">{_fmt(item.amount)}</td>
                     <td className="px-3 py-2.5 text-xs text-right font-mono font-bold text-foreground">{_fmt(item.lineTotal)}</td>
                   </tr>
