@@ -242,30 +242,6 @@ app.get('/api/push/vapid-public', (req, res) => {
   res.json({ key: VAPID_PUBLIC || null });
 });
 
-app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
-  const { endpoint, p256dh, auth } = req.body || {};
-  if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: 'Missing subscription fields' });
-  const deptId = req.user.deptId ? parseInt(req.user.deptId) : null;
-  const userId = getNumericUserId(req.user) || null;
-  try {
-    await prisma.$executeRaw`
-      INSERT INTO "PushSubscription" (endpoint, p256dh, auth, "deptId", "userId", "createdAt")
-      VALUES (${endpoint}, ${p256dh}, ${auth}, ${deptId}, ${userId}, NOW())
-      ON CONFLICT (endpoint) DO UPDATE SET p256dh=${p256dh}, auth=${auth}, "deptId"=${deptId}, "userId"=${userId}
-    `;
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/push/subscribe', authenticateToken, async (req, res) => {
-  const { endpoint } = req.body || {};
-  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
-  try {
-    await prisma.$executeRaw`DELETE FROM "PushSubscription" WHERE endpoint = ${endpoint}`;
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // ── INPUT SANITIZATION (XSS PROTECTION) ─────────────────────────────────────
 const sanitizeObject = (obj) => {
   if (typeof obj === 'string') return xss(obj);
@@ -407,6 +383,31 @@ const getNumericUserId = (user) => {
   if (typeof user.id === 'number') return user.id;
   return null;
 };
+
+// ── Push subscription endpoints (placed here: after authenticateToken) ────────
+app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
+  const { endpoint, p256dh, auth } = req.body || {};
+  if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: 'Missing subscription fields' });
+  const deptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+  const userId = getNumericUserId(req.user) || null;
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO "PushSubscription" (endpoint, p256dh, auth, "deptId", "userId", "createdAt")
+      VALUES (${endpoint}, ${p256dh}, ${auth}, ${deptId}, ${userId}, NOW())
+      ON CONFLICT (endpoint) DO UPDATE SET p256dh=${p256dh}, auth=${auth}, "deptId"=${deptId}, "userId"=${userId}
+    `;
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/push/subscribe', authenticateToken, async (req, res) => {
+  const { endpoint } = req.body || {};
+  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
+  try {
+    await prisma.$executeRaw`DELETE FROM "PushSubscription" WHERE endpoint = ${endpoint}`;
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 const normalizeRole = (role) => (role || '').toLowerCase();
 
