@@ -555,12 +555,10 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
             <>
               <SidebarItem icon={LayoutDashboard} label="Dashboard" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
-              {studioEnabled ? (
+              {studioEnabled && (
                 <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#206e33] shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('document_studio')}>
                   <PenTool size={20} />
                 </div>
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white/30 -translate-y-4 border-4 border-[#FAF9F6]" />
               )}
               <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
               <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
