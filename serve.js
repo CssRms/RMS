@@ -2732,6 +2732,15 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       }
     }
 
+    // ── Load vetting events ────────────────────────────
+    let vettingEvents = [];
+    try {
+      vettingEvents = await prisma.vettingEvent.findMany({
+        where: { requisitionId: parseInt(id) },
+        orderBy: { createdAt: 'asc' }
+      });
+    } catch (_) {}
+
     // ── PDF Setup ──────────────────────────────────────
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -2852,9 +2861,12 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     let sealBgImg = null;
     if (sealBgBytes) sealBgImg = await embedSafe(sealBgBytes);
 
-    // ── Load dept head signatures for processing chain ───
-    // Collect unique dept IDs referenced in forward events
-    const evtDeptIds = new Set(filteredEvents.flatMap(e => [e.fromDeptId, e.toDeptId]).filter(Boolean));
+    // ── Load dept head signatures for processing + vetting chains ───
+    // Collect unique dept IDs from forward events AND vetting events
+    const evtDeptIds = new Set([
+      ...filteredEvents.flatMap(e => [e.fromDeptId, e.toDeptId]),
+      ...vettingEvents.map(e => e.deptId)
+    ].filter(Boolean));
     const deptSigMap = new Map(); // deptId → { headName, headTitle, sigBytes }
     if (evtDeptIds.size > 0) {
       const deptRows = await prisma.department.findMany({
@@ -3313,6 +3325,110 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
         // Advance y past both columns + breathing room
         y = Math.min(textY, sealCY - 38) - 12;
+      }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // VETTING CHAIN (ICC → Audit → Account movements)
+    // ══════════════════════════════════════════════════════
+    if (vettingEvents.length > 0) {
+      ensureSpace(60);
+      y -= 10;
+      drawHR(1, rgb(0.35, 0.1, 0.55));
+      page.drawText('VETTING CHAIN — COMPLIANCE MOVEMENT HISTORY', { x: margin, y, size: 10, font: boldFont, color: rgb(0.35, 0.1, 0.55) });
+      y -= 20;
+
+      const vLeftColMax = margin + 295;
+      const vSigColX    = margin + 315;
+      const vSigColW    = 65;
+      const vSealCX     = vSigColX + vSigColW + 16 + 38;
+      const vMinRowH    = 95;
+
+      const vActionLabel = (action) => {
+        if (action === 'sent_to_vetting') return 'SENT TO VETTING';
+        if (action === 'forward')         return 'FORWARDED';
+        if (action === 'return')          return 'RETURNED';
+        if (action === 'treated')         return 'TREATED';
+        return action.toUpperCase();
+      };
+      const vActionColor = (action) => {
+        if (action === 'treated')         return rgb(0.1, 0.5, 0.2);
+        if (action === 'return')          return rgb(0.8, 0.4, 0);
+        if (action === 'sent_to_vetting') return rgb(0.35, 0.1, 0.55);
+        return rgb(0.1, 0.35, 0.7);
+      };
+
+      for (let i = 0; i < vettingEvents.length; i++) {
+        const evt = vettingEvents[i];
+        ensureSpace(vMinRowH);
+
+        const rowTopY = y;
+        let textY = y;
+
+        const deptLabel = sanitizeText(evt.deptName || 'Department');
+        const evtDateStr = new Date(evt.createdAt).toLocaleString();
+        const evtComment = sanitizeText(evt.comment || '');
+
+        // ── LEFT COLUMN: event text ──────────────────────
+        page.drawText(`${i + 1}.`, { x: margin, y: textY, size: 9, font: boldFont });
+        page.drawText(`[${vActionLabel(evt.action)}]`, {
+          x: margin + 15, y: textY, size: 9, font: boldFont,
+          color: vActionColor(evt.action)
+        });
+        page.drawText(deptLabel, { x: margin + 160, y: textY, size: 9, font });
+        textY -= 13;
+
+        page.drawText(`Date: ${evtDateStr}`, { x: margin + 30, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
+        if (evt.actorName) {
+          page.drawText(sanitizeText(`By: ${evt.actorName}`), { x: margin + 220, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
+        }
+        textY -= 13;
+
+        if (evtComment) {
+          const maxNC = Math.floor((vLeftColMax - margin - 30) / (italicFont.widthOfTextAtSize('M', 8) * 0.6));
+          const words = `Comment: "${evtComment}"`.split(' ');
+          let line = '';
+          for (const w of words) {
+            const t = line ? `${line} ${w}` : w;
+            if (t.length > maxNC && line) {
+              page.drawText(line, { x: margin + 30, y: textY, size: 8, font: italicFont, color: rgb(0.2, 0.2, 0.2) });
+              textY -= 11; line = w;
+            } else { line = t; }
+          }
+          if (line) { page.drawText(line, { x: margin + 30, y: textY, size: 8, font: italicFont, color: rgb(0.2, 0.2, 0.2) }); textY -= 11; }
+        }
+
+        // ── RIGHT COLUMN: signature + seal ──────────────
+        const sigData = evt.deptId ? deptSigMap.get(evt.deptId) : null;
+        const sealDate = new Date(evt.createdAt).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'long', year: 'numeric'
+        }).toUpperCase();
+
+        let sigBot = rowTopY - 3;
+        if (sigData?.sigBytes) {
+          try {
+            const sigImg = await embedSafe(sigData.sigBytes);
+            if (sigImg) {
+              const scale = Math.min(vSigColW / sigImg.width, 35 / sigImg.height);
+              const sw = sigImg.width * scale, sh = sigImg.height * scale;
+              page.drawImage(sigImg, { x: vSigColX, y: sigBot - sh, width: sw, height: sh, opacity: 0.9 });
+              sigBot -= sh;
+            }
+          } catch { }
+        }
+        if (sigData?.headName) {
+          page.drawText(sigData.headName, { x: vSigColX, y: sigBot - 8, size: 7, font: italicFont, color: rgb(0.15, 0.15, 0.15) });
+          sigBot -= 10;
+          if (sigData.headTitle) {
+            const ht = sigData.headTitle.length > 30 ? sigData.headTitle.substring(0, 28) + '..' : sigData.headTitle;
+            page.drawText(ht, { x: vSigColX, y: sigBot - 7, size: 6, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
+          }
+        }
+
+        const vSealCY = rowTopY - 38;
+        await drawSeal(page, vSealCX, vSealCY, evt.deptName || '', sealDate);
+
+        y = Math.min(textY, vSealCY - 38) - 12;
       }
     }
 
