@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getRequisitions, getDepartments, getRequisitionDetail } from '../lib/store';
-import { forwardAPI, memoAPI } from '../lib/api';
+import { forwardAPI, memoAPI, reqAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import {
   FileText, Send, Clock, CheckCircle2, Plus, X,
   ArrowRightCircle, Globe, ChevronRight, Loader2,
-  ArrowLeft, RotateCcw, EyeOff, Calendar
+  ArrowLeft, RotateCcw, EyeOff, Calendar, Paperclip
 } from 'lucide-react';
 
 const statusColors = {
@@ -28,7 +28,17 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated }) => {
   const [message, setMessage] = useState('');
   const [targetMode, setTargetMode] = useState('dept'); // 'dept' | 'publish'
   const [targetDeptId, setTargetDeptId] = useState('');
+  const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef(null);
+
+  const addFiles = (newFiles) => {
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.name + f.size));
+      return [...prev, ...Array.from(newFiles).filter(f => !existing.has(f.name + f.size))];
+    });
+  };
+  const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
 
   // Filter target options per routing rules
   const targetOptions = departments.filter(d => {
@@ -61,12 +71,19 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated }) => {
         ...(targetMode === 'dept' && targetDeptId ? { targetDepartmentId: parseInt(targetDeptId) } : {}),
       });
 
+      const createdId = Array.isArray(result) ? result[0]?.id : result?.id;
+
+      // Upload attachments if any
+      if (createdId && files.length > 0) {
+        try { await reqAPI.uploadAttachments(createdId, files); }
+        catch { toast.error('Memo submitted but some attachments failed to upload.'); }
+      }
+
       // If publishing directly, call the publish endpoint
       if (targetMode === 'publish') {
-        const createdId = Array.isArray(result) ? result[0]?.id : result?.id;
         if (createdId) {
           try { await memoAPI.publish(createdId); toast.success('Memo published to all departments!'); }
-          catch (e) { toast.success('Memo created. You can publish from the detail view.'); }
+          catch { toast.success('Memo created. You can publish from the detail view.'); }
         }
       } else {
         toast.success('Memo submitted successfully.');
@@ -121,6 +138,40 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated }) => {
               rows={10}
               className="w-full bg-white border border-border/60 rounded-2xl p-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm resize-none transition-all"
             />
+          </div>
+
+          {/* Attachments */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest pl-2">Attachments (optional)</label>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+              onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+            />
+            {files.length > 0 && (
+              <div className="space-y-2">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-xl border border-border/50">
+                    <FileText size={13} className="text-primary shrink-0" />
+                    <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                    <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center"
+            >
+              <Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}
+            </button>
           </div>
 
           {/* Routing */}

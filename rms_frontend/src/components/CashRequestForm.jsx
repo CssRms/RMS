@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, X, Send, Loader2, ChevronDown, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, X, Send, Loader2, ChevronDown, ArrowLeft, Paperclip, FileText } from 'lucide-react';
 import { addRequisition, getDepartments } from '../lib/store';
+import { reqAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 
@@ -12,7 +13,9 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
   const [urgency, setUrgency] = useState('normal');
   const [targetDeptId, setTargetDeptId] = useState('');
   const [items, setItems] = useState([{ qty: 1, description: '', amount: '' }]);
+  const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef(null);
 
   // ── Creator role ──────────────────────────────────────────────────────────
   const creatorName = user?.name || '';
@@ -45,8 +48,16 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
       const all = d.filter(dept => dept.id !== user?.deptId);
       setDepartments(all);
     });
-    setSubject(''); setComment(''); setItems([{ qty: 1, description: '', amount: '' }]); setTargetDeptId(''); setUrgency('normal');
+    setSubject(''); setComment(''); setItems([{ qty: 1, description: '', amount: '' }]); setTargetDeptId(''); setUrgency('normal'); setFiles([]);
   }, [isOpen]);
+
+  const addFiles = (newFiles) => {
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.name + f.size));
+      return [...prev, ...Array.from(newFiles).filter(f => !existing.has(f.name + f.size))];
+    });
+  };
+  const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
 
   if (!isOpen) return null;
 
@@ -59,7 +70,6 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
   const handleSubmit = async (isDraft = false) => {
     if (!subject.trim()) { toast.error('Please enter a subject/purpose'); return; }
 
-    // Validation
     const validItems = items.filter(i => i.description.trim());
     if (type === 'Cash' && !validItems.length) {
       toast.error('Please add at least one item'); return;
@@ -76,7 +86,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
       const content = type === 'Cash'
         ? JSON.stringify({
           itemized: true,
-          comment: comment.trim(), // small comment
+          comment: comment.trim(),
           items: validItems.map(i => ({
             qty: parseFloat(i.qty) || 1,
             description: i.description.trim(),
@@ -85,15 +95,11 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
           })),
           total
         })
-        : JSON.stringify({
-          itemized: false,
-          description: comment.trim()
-        });
+        : JSON.stringify({ itemized: false, description: comment.trim() });
 
-      // For payload description field, combine subject + comment loosely or just use subject
       const reqDescription = type === 'Material' ? comment.trim() : subject;
 
-      await addRequisition({
+      const result = await addRequisition({
         title: subject,
         description: reqDescription,
         type,
@@ -104,6 +110,17 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
         ...(user?.deptId != null && { departmentId: user.deptId }),
         ...(targetDeptId && { targetDepartmentId: parseInt(targetDeptId) }),
       });
+
+      // Upload any attached files after the requisition is created
+      const createdId = Array.isArray(result) ? result[0]?.id : result?.id;
+      if (createdId && files.length > 0) {
+        try {
+          await reqAPI.uploadAttachments(createdId, files);
+        } catch {
+          toast.error('Request submitted but some attachments failed to upload.');
+        }
+      }
+
       toast.success(isDraft ? 'Draft saved.' : `${type} request submitted successfully.`);
       onClose();
     } catch (err) {
@@ -261,6 +278,40 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose }) => {
               </div>
             </>
           )}
+
+          {/* Attachments */}
+          <div className="space-y-3 pt-6 border-t border-border/40">
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest pl-2">Attachments (optional)</label>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+              onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+            />
+            {files.length > 0 && (
+              <div className="space-y-2">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-xl border border-border/50">
+                    <FileText size={13} className="text-primary shrink-0" />
+                    <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                    <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center"
+            >
+              <Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}
+            </button>
+          </div>
 
           {/* Target dept + Urgency */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-border/40">
