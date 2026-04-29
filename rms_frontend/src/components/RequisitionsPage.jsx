@@ -2006,7 +2006,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
                         {forwardEvents.length}
                       </div>
                     </div>
-                    <ProcessingChain events={forwardEvents} />
+                    <ProcessingChain events={[...forwardEvents].reverse()} />
                   </>
                 ) : timeline.length > 0 ? (
                   <>
@@ -2037,7 +2037,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction }) =
                 <div className="space-y-2">
                   <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Vetting History</p>
                   <div className="space-y-2">
-                    {detail.vettingEvents.map((ev, i) => (
+                    {[...detail.vettingEvents].reverse().map((ev, i) => (
                       <div key={ev.id || i} className="flex gap-2 p-2.5 bg-white rounded-xl border border-border/30 shadow-sm">
                         <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center shrink-0 mt-0.5">
                           <Award size={11} className="text-purple-600" />
