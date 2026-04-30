@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardStats, getRequisitions } from '../lib/store';
 import { reqAPI } from '../lib/api';
-import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, Loader2, BadgeCheck, RotateCcw } from 'lucide-react';
 
 const StatCard = ({ label, value, icon: Icon, color, onClick }) => (
   <div onClick={onClick} className="glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group hover:border-primary/40 transition-all cursor-pointer bg-white/70 shadow-sm hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]">
@@ -56,6 +56,9 @@ const Dashboard = ({ onViewChange }) => {
   const [ccReqs, setCcReqs] = useState([]);
   const [ccOpen, setCcOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState('All');
+  const [myReqs, setMyReqs] = useState([]);
+  const [myStats, setMyStats] = useState({ submitted: 0, inProgress: 0, treated: 0, rejected: 0 });
+  const [departments, setDepartments] = useState([]);
 
   const loadDashboard = async () => {
     const s = await getDashboardStats(user);
@@ -70,14 +73,11 @@ const Dashboard = ({ onViewChange }) => {
 
     const DONE_STATES = ['treated', 'published'];
     const pendingForMe = all.filter(r => {
-      if (DONE_STATES.includes(r.finalApprovalStatus)) return false; // fully processed
-      // 1. Standard internal approval path (not yet in any sub-workflow)
+      if (DONE_STATES.includes(r.finalApprovalStatus)) return false;
       const isTargeted = Number(r.targetDepartmentId) === userDeptId &&
         r.status === 'pending' &&
         (!r.finalApprovalStatus || r.finalApprovalStatus === 'none');
-      // 2. Final Approval path (for Chairman/GM/Admin)
       const needsFinal = isExecutive && r.status === 'approved' && (!r.finalApprovalStatus || r.finalApprovalStatus === 'none');
-      // 3. Vetting path
       const isVetting = Number(r.currentVettingDeptId) === userDeptId && r.finalApprovalStatus === 'vetting';
       return isTargeted || needsFinal || isVetting;
     });
@@ -87,6 +87,22 @@ const Dashboard = ({ onViewChange }) => {
     if (user?.role === 'department' && userDeptId) {
       const cc = all.filter(r => Array.isArray(r.tags) && r.tags.some(t => Number(t.deptId) === userDeptId));
       setCcReqs(cc);
+
+      // My outgoing requests — created by this dept (excluding drafts for stats)
+      const mine = all.filter(r => Number(r.departmentId) === userDeptId || Number(r.creatorDeptId) === userDeptId);
+      const submitted = mine.filter(r => r.status !== 'draft');
+      const inProgress = submitted.filter(r => !['treated', 'published', 'rejected'].includes(r.finalApprovalStatus) && r.status !== 'rejected');
+      const treated = submitted.filter(r => ['treated', 'published'].includes(r.finalApprovalStatus));
+      const rejected = submitted.filter(r => r.status === 'rejected');
+      setMyStats({ submitted: submitted.length, inProgress: inProgress.length, treated: treated.length, rejected: rejected.length });
+      // Show last 10 sorted newest first (include drafts in the list for visibility)
+      setMyReqs([...mine].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10));
+
+      // Load departments for "Currently With" display
+      try {
+        const depts = await import('../lib/store').then(m => m.getDepartments());
+        setDepartments(depts);
+      } catch {}
     }
   };
 
@@ -338,6 +354,146 @@ const Dashboard = ({ onViewChange }) => {
               );
               })()}
             </div>
+
+            {/* ── My Outgoing Requests — department users only ── */}
+            {user?.role === 'department' && (
+              <div className="space-y-6 pt-6 border-t border-border/20">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-6 bg-blue-500 rounded-full" />
+                    <h3 className="text-xl font-bold text-foreground tracking-tight">My Outgoing Requests</h3>
+                    <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em]">
+                      {myStats.submitted} submitted
+                    </span>
+                  </div>
+                  <button onClick={() => onViewChange('requisitions')} className="px-4 py-1.5 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-2 active:scale-95">
+                    <ListFilter size={12} /> View All
+                  </button>
+                </div>
+
+                {/* Mini stats row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Submitted', value: myStats.submitted, icon: Send, color: 'blue' },
+                    { label: 'In Progress', value: myStats.inProgress, icon: RotateCcw, color: 'amber' },
+                    { label: 'Treated', value: myStats.treated, icon: BadgeCheck, color: 'emerald' },
+                    { label: 'Rejected', value: myStats.rejected, icon: XCircle, color: 'red' },
+                  ].map(({ label, value, icon: Icon, color }) => (
+                    <div key={label} className={`flex items-center gap-3 p-3 rounded-2xl bg-${color}-50/60 border border-${color}-200/50`}>
+                      <div className={`w-9 h-9 rounded-xl bg-${color}-500/10 flex items-center justify-center text-${color}-600 shrink-0`}>
+                        <Icon size={16} />
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-widest">{label}</p>
+                        <p className={`text-xl font-black text-${color}-700 tracking-tighter leading-none`}>{String(value).padStart(2, '0')}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Recent outgoing requests list */}
+                {myReqs.length === 0 ? (
+                  <div className="py-12 text-center space-y-3">
+                    <div className="w-14 h-14 bg-blue-500/10 border border-blue-200 text-blue-400 rounded-full flex items-center justify-center mx-auto">
+                      <Send size={22} />
+                    </div>
+                    <p className="text-sm font-bold text-muted-foreground">No requests created yet.</p>
+                    <p className="text-xs text-muted-foreground/60">Requests you create and submit will appear here with live status tracking.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-separate border-spacing-y-2">
+                      <thead>
+                        <tr className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                          <th className="pb-3 px-4">Ref</th>
+                          <th className="pb-3 px-4">Type</th>
+                          <th className="pb-3 px-4">Title</th>
+                          <th className="pb-3 px-4">Amount</th>
+                          <th className="pb-3 px-4">Currently With</th>
+                          <th className="pb-3 px-4">Status</th>
+                          <th className="pb-3 px-4 text-right">View</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myReqs.map(r => {
+                          const norm = normalizeReq(r);
+                          const isMoneyReq = r.type === 'Cash' || (r.amount && r.amount > 0);
+
+                          // Resolve "Currently With" label
+                          const currentlyWith = (() => {
+                            if (r.status === 'draft') return { label: 'Not Submitted', color: 'text-muted-foreground' };
+                            if (r.status === 'rejected') return { label: 'Rejected', color: 'text-red-600' };
+                            if (['treated', 'published'].includes(r.finalApprovalStatus)) return { label: 'Completed', color: 'text-emerald-600' };
+                            if (r.finalApprovalStatus === 'vetting') {
+                              const vDept = departments.find(d => d.id === Number(r.currentVettingDeptId));
+                              return { label: vDept?.name || 'Vetting Dept', color: 'text-purple-600' };
+                            }
+                            const tDept = departments.find(d => d.id === Number(r.targetDepartmentId));
+                            return { label: tDept?.name || 'Processing', color: 'text-blue-600' };
+                          })();
+
+                          const stateInfo = (() => {
+                            if (norm.status === 'draft') return { label: 'Draft', color: statusColors.draft };
+                            if (norm.status === 'rejected') return { label: 'Rejected', color: statusColors.rejected };
+                            if (norm.finalState === 'published') return { label: 'Published', color: statusColors.published };
+                            if (norm.finalState === 'treated') return { label: 'Treated', color: statusColors.treated };
+                            if (norm.finalState === 'vetting') return { label: 'In Vetting', color: statusColors.vetting };
+                            if (norm.finalState === 'approved') return { label: 'Finally Approved', color: statusColors.approved };
+                            if (norm.status === 'approved') return { label: 'Approved', color: statusColors.approved };
+                            if (norm.status === 'pending') return { label: 'Pending', color: statusColors.pending };
+                            return { label: norm.status, color: statusColors.pending };
+                          })();
+
+                          return (
+                            <tr key={r.id} className="group transition-all">
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-l border-blue-100/60 rounded-l-xl group-hover:bg-blue-50/60 transition-colors">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-black text-blue-600 tracking-widest">#{r.id}</span>
+                                  <span className="text-[9px] text-muted-foreground/50 font-mono italic">{new Date(r.createdAt).toLocaleDateString()}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-blue-100/60 group-hover:bg-blue-50/60 transition-colors">
+                                <div className="flex items-center gap-1.5">
+                                  <div className={`w-1.5 h-1.5 rounded-full ${r.type === 'Cash' ? 'bg-emerald-500' : r.type === 'Material' ? 'bg-primary' : 'bg-amber-500'}`} />
+                                  <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{r.type}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-blue-100/60 group-hover:bg-blue-50/60 transition-colors max-w-[200px]">
+                                <p className="text-[11px] font-bold text-foreground truncate">{r.title}</p>
+                                {r.urgency && r.urgency !== 'normal' && (
+                                  <span className={`text-[8px] font-black uppercase ${urgencyColors[r.urgency]}`}>{r.urgency}</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-blue-100/60 group-hover:bg-blue-50/60 transition-colors">
+                                {isMoneyReq
+                                  ? <span className="text-[11px] font-black font-mono text-foreground">₦{Number(r.amount || 0).toLocaleString()}</span>
+                                  : <span className="text-[9px] text-muted-foreground/50 italic">—</span>}
+                              </td>
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-blue-100/60 group-hover:bg-blue-50/60 transition-colors">
+                                <span className={`text-[10px] font-black ${currentlyWith.color}`}>{currentlyWith.label}</span>
+                              </td>
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-blue-100/60 group-hover:bg-blue-50/60 transition-colors">
+                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${stateInfo.color}`}>
+                                  {stateInfo.label}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 bg-blue-50/30 border-y border-r border-blue-100/60 rounded-r-xl group-hover:bg-blue-50/60 transition-colors text-right">
+                                <button
+                                  onClick={() => onViewChange('requisitions', { reqId: r.id })}
+                                  className="p-2 bg-white hover:bg-blue-500 hover:text-white rounded-xl text-blue-500 transition-all border border-blue-200/60 shadow-sm active:scale-90"
+                                >
+                                  <Eye size={15} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── CC Inbox History — department users only ── */}
             {user?.role === 'department' && ccOpen && (
