@@ -6,7 +6,7 @@ import { toast } from 'react-hot-toast';
 import {
   FileText, Send, Clock, CheckCircle2, Plus, X,
   ArrowRightCircle, Globe, ChevronRight, Loader2,
-  ArrowLeft, RotateCcw, EyeOff, Calendar, Paperclip
+  ArrowLeft, RotateCcw, EyeOff, Calendar, Paperclip, Eye
 } from 'lucide-react';
 
 const statusColors = {
@@ -170,7 +170,10 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated, editDraft = nul
                     <FileText size={13} className="text-primary shrink-0" />
                     <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
                     <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0">
+                    <button onClick={() => { const url = URL.createObjectURL(f); window.open(url, '_blank'); }} className="p-1 text-muted-foreground hover:text-primary rounded shrink-0" title="Preview">
+                      <Eye size={12} />
+                    </button>
+                    <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0" title="Remove">
                       <X size={12} />
                     </button>
                   </div>
