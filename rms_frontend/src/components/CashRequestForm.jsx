@@ -243,57 +243,77 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
 
               {/* Cash Items Table */}
               <div className="space-y-4 pt-4">
-                <div className="flex items-center justify-between pb-3 border-b border-border/40">
+                <div className="pb-3 border-b border-border/40">
                   <label className="text-[11px] font-black text-muted-foreground uppercase tracking-widest pl-2">Itemized List *</label>
-                  <button onClick={addItem} className="flex items-center gap-1.5 text-[10px] font-black text-primary px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 transition-all active:scale-95 shadow-sm">
-                    <Plus size={14} /> Add Item
-                  </button>
                 </div>
 
-                {/* Column headers */}
-                <div className="grid grid-cols-[60px_1fr_130px_40px] gap-3 px-2">
-                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest text-center">Qty</span>
-                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Description</span>
+                {/* Column headers — match PDF layout: S/N | Item Description | Quantity | Unit Price | Total | (delete) */}
+                <div className="grid grid-cols-[40px_1fr_90px_120px_110px_40px] gap-2 px-1">
+                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest text-center">S/N</span>
+                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Item Description</span>
+                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest text-center">Quantity</span>
                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest text-right">Unit Price (₦)</span>
+                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest text-right">Total (₦)</span>
                   <span />
                 </div>
 
                 <div className="space-y-3">
-                  {items.map((item, i) => (
-                    <div key={i} className="grid grid-cols-[60px_1fr_130px_40px] gap-3 items-center animate-in fade-in slide-in-from-top-1 duration-200">
-                      <input
-                        type="number" min="1"
-                        value={item.qty}
-                        onChange={e => updateItem(i, 'qty', e.target.value)}
-                        className="bg-white border border-border/60 rounded-xl p-3.5 text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm w-full transition-all"
-                      />
-                      <input
-                        value={item.description}
-                        onChange={e => updateItem(i, 'description', e.target.value)}
-                        placeholder="Item description or size..."
-                        className="bg-white border border-border/60 rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm w-full transition-all"
-                      />
-                      <input
-                        type="number" min="0" step="0.01"
-                        value={item.amount}
-                        onChange={e => updateItem(i, 'amount', e.target.value)}
-                        placeholder="0.00"
-                        className="bg-white border border-border/60 rounded-xl p-3.5 text-sm font-bold text-right font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm w-full transition-all"
-                      />
-                      <button
-                        onClick={() => removeItem(i)}
-                        disabled={items.length === 1}
-                        className="w-11 h-11 flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-xl disabled:opacity-20 transition-all shadow-sm border border-transparent hover:border-red-100 active:scale-95"
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
-                  ))}
+                  {items.map((item, i) => {
+                    const lineTotal = (parseFloat(item.qty) || 0) * (parseFloat(item.amount) || 0);
+                    return (
+                      <div key={i} className="grid grid-cols-[40px_1fr_90px_120px_110px_40px] gap-2 items-center animate-in fade-in slide-in-from-top-1 duration-200">
+                        {/* S/N */}
+                        <span className="text-sm font-black text-muted-foreground text-center">{i + 1}</span>
+                        {/* Description */}
+                        <input
+                          value={item.description}
+                          onChange={e => updateItem(i, 'description', e.target.value)}
+                          placeholder="Item description..."
+                          className="bg-white border border-border/60 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm w-full transition-all"
+                        />
+                        {/* Quantity */}
+                        <input
+                          type="number" min="1"
+                          value={item.qty}
+                          onChange={e => updateItem(i, 'qty', e.target.value)}
+                          className="bg-white border border-border/60 rounded-xl p-3 text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm w-full transition-all"
+                        />
+                        {/* Unit Price */}
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={item.amount}
+                          onChange={e => updateItem(i, 'amount', e.target.value)}
+                          placeholder="0.00"
+                          className="bg-white border border-border/60 rounded-xl p-3 text-sm font-bold text-right font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm w-full transition-all"
+                        />
+                        {/* Line Total (read-only) */}
+                        <div className="bg-muted/30 border border-border/40 rounded-xl p-3 text-sm font-black text-right font-mono text-foreground">
+                          {lineTotal > 0 ? `₦${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                        </div>
+                        {/* Delete */}
+                        <button
+                          onClick={() => removeItem(i)}
+                          disabled={items.length === 1}
+                          className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-xl disabled:opacity-20 transition-all shadow-sm border border-transparent hover:border-red-100 active:scale-95"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
+
+                {/* Add Item button — below the last row */}
+                <button
+                  onClick={addItem}
+                  className="flex items-center gap-2 text-[11px] font-black text-primary px-4 py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 transition-all active:scale-95 shadow-sm border border-primary/20 w-full justify-center mt-1"
+                >
+                  <Plus size={14} /> Add Item
+                </button>
 
                 {/* Line totals summary */}
                 {items.some(i => parseFloat(i.amount) > 0 && parseFloat(i.qty) > 0) && (
-                  <div className="mt-6 p-5 rounded-2xl bg-muted/30 border border-border/40 space-y-3 shadow-inner">
+                  <div className="mt-4 p-5 rounded-2xl bg-muted/30 border border-border/40 space-y-3 shadow-inner">
                     <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest border-b border-border/40 pb-2 mb-2">Line Summary</p>
                     {items.filter(i => i.description && parseFloat(i.amount) > 0).map((item, i) => (
                       <div key={i} className="flex justify-between text-xs text-muted-foreground font-medium">
