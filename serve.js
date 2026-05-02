@@ -1298,6 +1298,8 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
 async function notifyDepartmentHead({ departmentId, requisition, subject, lines }) {
   try {
     const dept = requisition?.department || await prisma.department.findUnique({ where: { id: departmentId } });
+    const isMemoNotice = /memo/i.test(requisition?.type || '') || /memorandum/i.test(requisition?.type || '');
+    const recordPath = requisition?.id ? (isMemoNotice ? `/memos/${requisition.id}` : `/requisitions/${requisition.id}`) : null;
 
     // 1. Create Platform Notification (for Dashboard bell icon)
     if (departmentId) {
@@ -1305,7 +1307,7 @@ async function notifyDepartmentHead({ departmentId, requisition, subject, lines 
         data: {
           departmentId: departmentId,
           content: subject,
-          link: requisition?.id ? `/requisitions/${requisition.id}` : null
+          link: recordPath
         }
       });
     }
@@ -1316,7 +1318,7 @@ async function notifyDepartmentHead({ departmentId, requisition, subject, lines 
       return;
     }
 
-    const actionUrl = APP_BASE_URL ? `${APP_BASE_URL.replace(/\/$/, '')}/requisitions/${requisition.id}` : '';
+    const actionUrl = APP_BASE_URL && recordPath ? `${APP_BASE_URL.replace(/\/$/, '')}${recordPath}` : '';
     const { text, html } = buildEmailContent({
       title: subject,
       lines,
@@ -1700,6 +1702,8 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
         continue;
       }
 
+      const recordType = data.type || 'Cash';
+      const isMemoPayload = /memo/i.test(recordType) || /memorandum/i.test(recordType);
       const amount = parseFloat(data.amount || 0) || 0;
       const eligibleStages = await getEligibleStages(amount);
       const firstStage = eligibleStages[0] || null;
@@ -1757,16 +1761,16 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
       const created = await prisma.requisition.create({
         data: {
           clientId,
-          title: data.title || data.description || 'Untitled Requisition',
-          type: data.type || 'Cash',
-          amount,
+          title: data.title || data.description || (isMemoPayload ? 'Untitled Memo' : 'Untitled Requisition'),
+          type: recordType,
+          amount: isMemoPayload ? null : amount,
           description: data.description || '',
           urgency: data.urgency || 'normal',
           status: isDraft ? 'draft' : 'pending',
           departmentId: originDeptId,
           creatorId,
           content: data.content || null,
-          currentStageId: isDraft ? null : (useWorkflow ? (firstStage?.id || null) : null),
+          currentStageId: isDraft ? null : (!isMemoPayload && useWorkflow ? (firstStage?.id || null) : null),
           lastActionById: creatorId,
           lastActionAt: new Date(),
           targetDepartmentId: isDraft ? null : targetDepartmentId,
@@ -1790,7 +1794,7 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
       }
 
       if (!isDraft) {
-        if (firstStage?.role) {
+        if (!isMemoPayload && useWorkflow && firstStage?.role) {
           await notifyRole(firstStage.role, `New Requisition: ${created.title}`, created.id);
         }
         const originDept = await prisma.department.findUnique({ where: { id: originDeptId } });
@@ -1800,7 +1804,7 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
         await notifyDepartmentHead({
           departmentId: originDeptId,
           requisition: { ...created, department: originDept || null },
-          subject: `Your Requisition has been Submitted: ${created.title}`,
+          subject: isMemoPayload ? `Your Memo has been Submitted: ${created.title}` : `Your Requisition has been Submitted: ${created.title}`,
           lines: [
             `Department: ${originDept?.name || 'Department'}`,
             targetDeptForEmail ? `Sent To: ${targetDeptForEmail.name}` : null,
@@ -1816,7 +1820,7 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
           await notifyDepartmentHead({
             departmentId: targetDepartmentId,
             requisition: created,
-            subject: `📋 Incoming Requisition: ${created.title}`,
+            subject: isMemoPayload ? `Incoming Memo: ${created.title}` : `Incoming Requisition: ${created.title}`,
             lines: [
               `From Department: ${originDept?.name || 'Department'}`,
               `Type: ${created.type}`,
@@ -1863,27 +1867,33 @@ app.put('/api/requisitions/:id', authenticateToken, generalLimiter, async (req, 
       return res.status(403).json({ error: 'You do not have permission to perform this action.' });
     }
 
-    const amount = parseFloat(data.amount || existing.amount);
+    const recordType = data.type !== undefined ? data.type : existing.type;
+    const isMemoPayload = /memo/i.test(recordType) || /memorandum/i.test(recordType);
+    const amount = isMemoPayload ? null : parseFloat(data.amount || existing.amount || 0);
     const eligibleStages = await getEligibleStages(amount);
     const firstStage = eligibleStages[0] || null;
+    const targetDepartmentId = data.isDraft
+      ? existing.targetDepartmentId
+      : (data.targetDepartmentId !== undefined ? data.targetDepartmentId : existing.targetDepartmentId);
+    const useWorkflow = !targetDepartmentId || isAdmin;
 
     const updated = await prisma.requisition.update({
       where: { id: parseInt(id) },
       data: {
         title: data.title !== undefined ? data.title : existing.title,
         description: data.description !== undefined ? data.description : existing.description,
-        type: data.type !== undefined ? data.type : existing.type,
-        amount: data.amount !== undefined ? amount : existing.amount,
+        type: recordType,
+        amount: isMemoPayload ? null : (data.amount !== undefined ? amount : existing.amount),
         urgency: data.urgency !== undefined ? data.urgency : existing.urgency,
         content: data.content !== undefined ? data.content : existing.content,
-        targetDepartmentId: data.isDraft ? existing.targetDepartmentId : data.targetDepartmentId,
+        targetDepartmentId,
         status: data.isDraft ? 'draft' : 'pending',
-        currentStageId: data.isDraft ? null : (firstStage?.id || null),
+        currentStageId: data.isDraft ? null : (!isMemoPayload && useWorkflow ? (firstStage?.id || null) : null),
       }
     });
 
     if (!data.isDraft && existing.status === 'draft') {
-      if (firstStage?.role) {
+      if (!isMemoPayload && useWorkflow && firstStage?.role) {
         await notifyRole(firstStage.role, `New Requisition: ${updated.title}`, updated.id);
       }
 
@@ -1896,7 +1906,7 @@ app.put('/api/requisitions/:id', authenticateToken, generalLimiter, async (req, 
         await notifyDepartmentHead({
           departmentId: updated.targetDepartmentId,
           requisition: currentRequisition,
-          subject: `📋 Incoming Requisition: ${updated.title}`,
+          subject: isMemoPayload ? `Incoming Memo: ${updated.title}` : `Incoming Requisition: ${updated.title}`,
           lines: [
             `From Department: ${originDept?.name || 'Department'}`,
             `Type: ${updated.type}`,
@@ -1910,7 +1920,7 @@ app.put('/api/requisitions/:id', authenticateToken, generalLimiter, async (req, 
       await notifyDepartmentHead({
         departmentId: originDeptId,
         requisition: currentRequisition,
-        subject: `Requisition Submitted: ${updated.title}`,
+        subject: isMemoPayload ? `Memo Submitted: ${updated.title}` : `Requisition Submitted: ${updated.title}`,
         lines: [
           `Status: Moved from draft to pending`,
           `Type: ${updated.type}`,
@@ -1960,8 +1970,8 @@ app.delete('/api/requisitions/:id', authenticateToken, async (req, res) => {
     await prisma.approval.deleteMany({ where: { requisitionId: reqId } });
     // 5. Forward events (already cascade, but be explicit)
     await prisma.forwardEvent.deleteMany({ where: { requisitionId: reqId } });
-    // 6. Notifications linked to this requisition
-    await prisma.notification.deleteMany({ where: { link: `/requisitions/${reqId}` } });
+    // 6. Notifications linked to this record
+    await prisma.notification.deleteMany({ where: { link: { in: [`/requisitions/${reqId}`, `/memos/${reqId}`] } } });
     // 7. Finally delete the requisition
     await prisma.requisition.delete({ where: { id: reqId } });
 
@@ -2004,7 +2014,9 @@ app.post('/api/requisitions/bulk-delete', authenticateToken, async (req, res) =>
     }
     await prisma.approval.deleteMany({ where: { requisitionId: { in: targetIds } } });
     await prisma.forwardEvent.deleteMany({ where: { requisitionId: { in: targetIds } } });
-    await prisma.notification.deleteMany({ where: { link: { in: targetIds.map(id => `/requisitions/${id}`) } } });
+    await prisma.notification.deleteMany({
+      where: { link: { in: targetIds.flatMap(id => [`/requisitions/${id}`, `/memos/${id}`]) } }
+    });
     await prisma.requisition.deleteMany({ where: { id: { in: targetIds } } });
     return res.json({ ok: true, message: `${targetIds.length} record(s) deleted.` });
   } catch (error) {
@@ -2603,7 +2615,7 @@ app.post('/api/requisitions/:id/publish-memo', authenticateToken, async (req, re
           data: {
             departmentId: d.id,
             content: `📋 Memo Published: "${memoTitle}" — by ${deptName || 'Administration'}`,
-            link: `/requisitions/${reqId}`,
+            link: `/memos/${reqId}`,
           }
         });
       } catch (_) { }
@@ -3710,7 +3722,25 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
 app.get('/api/requisitions', authenticateToken, async (req, res) => {
   try {
-    let where = {};
+    const typeAliases = {
+      cash: ['Cash', 'cash', 'Cash Requisition', 'cash requisition'],
+      material: ['Material', 'material', 'Material Request', 'material request'],
+      memo: ['Memo', 'memo', 'Memorandum', 'memorandum'],
+    };
+    const requestedScope = String(req.query.scope || '').trim().toLowerCase();
+    const requestedTypes = String(req.query.types || '')
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean);
+    const scopeTypes =
+      requestedScope === 'requisitions' || requestedScope === 'requisition' || requestedScope === 'operational'
+        ? ['cash', 'material']
+        : requestedScope === 'memos' || requestedScope === 'memo'
+          ? ['memo']
+          : requestedTypes;
+    const typeValues = [...new Set(scopeTypes.flatMap(t => typeAliases[t.toLowerCase()] || [t]))];
+    const typeScopeWhere = typeValues.length > 0 ? { type: { in: typeValues } } : {};
+    let where = typeScopeWhere;
     // RBAC: Department users see their own requisitions AND incoming ones targeted at them
     // Also include requisitions where they are the current vetting dept
     if (req.user.role === 'department' && req.user.deptId) {
@@ -3729,7 +3759,7 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
         const tagged = await prisma.requisitionTag.findMany({ where: { deptId }, select: { requisitionId: true } });
         taggedReqIds = tagged.map(t => t.requisitionId);
       } catch (_) {}
-      where = {
+      const accessWhere = {
         OR: [
           { departmentId: deptId },
           { targetDepartmentId: deptId },
@@ -3737,6 +3767,7 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
           ...(taggedReqIds.length > 0 ? [{ id: { in: taggedReqIds } }] : [])
         ]
       };
+      where = typeValues.length > 0 ? { AND: [accessWhere, typeScopeWhere] } : accessWhere;
     }
 
     const page = Math.max(1, parseInt(req.query.page) || 1);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getRequisitions, getDepartments, getRequisitionDetail } from '../lib/store';
+import { getMemoRecords, getDepartments, getRequisitionDetail } from '../lib/store';
 import { forwardAPI, memoAPI, reqAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import {
@@ -527,8 +527,8 @@ const MemoManagement = ({ onViewChange }) => {
 
   const loadMemos = useCallback(async () => {
     setLoading(true);
-    const [all, depts] = await Promise.all([getRequisitions(), getDepartments()]);
-    setMemos(all.filter(r => r.type === 'Memo' || r.type === 'memo'));
+    const [all, depts] = await Promise.all([getMemoRecords(), getDepartments()]);
+    setMemos(all);
     setDepts(depts);
     setLoading(false);
   }, []);

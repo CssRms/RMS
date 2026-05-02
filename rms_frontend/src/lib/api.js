@@ -194,8 +194,8 @@ export const settingsAPI = {
 };
 
 export const reqAPI = {
-  async getRequisitions() {
-    return api.get('/requisitions');
+  async getRequisitions(params = {}) {
+    return api.get('/requisitions', { params });
   },
   async getRequisition(id) {
     return api.get(`/requisitions/${id}`);
@@ -420,4 +420,3 @@ export const aiAPI = {
 };
 
 export default api;
-

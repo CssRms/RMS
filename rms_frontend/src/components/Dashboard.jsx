@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getDashboardStats, getRequisitions } from '../lib/store';
+import { getDashboardStats, getRequisitions, isMemoRecord, isOperationalRequisition } from '../lib/store';
 import { reqAPI } from '../lib/api';
-import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, Loader2, BadgeCheck, RotateCcw } from 'lucide-react';
+import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText } from 'lucide-react';
 
 const StatCard = ({ label, value, icon: Icon, color, onClick }) => (
-  <div onClick={onClick} className="glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group hover:border-primary/40 transition-all cursor-pointer bg-white/70 shadow-sm hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]">
+  <div onClick={onClick} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group transition-all bg-white/70 shadow-sm ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
     <div className={`absolute top-0 right-0 w-24 h-24 bg-${color}-500/5 blur-[60px] rounded-full translate-x-8 -translate-y-8`}></div>
     <div className="flex flex-col gap-2.5 sm:gap-4 relative z-10">
       <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-${color}-500/10 border border-${color}-500/20 text-${color}-600 flex items-center justify-center group-hover:bg-${color}-500 group-hover:text-white transition-all duration-500 shadow-inner`}>
@@ -49,22 +49,28 @@ const urgencyColors = {
 
 const TYPE_FILTERS = ['All', 'Cash', 'Material', 'Memo'];
 
+const matchesTypeFilter = (record, filter) => {
+  if (filter === 'All') return true;
+  if (filter === 'Memo') return isMemoRecord(record);
+  return String(record?.type || '').toLowerCase().startsWith(filter.toLowerCase());
+};
+
 const Dashboard = ({ onViewChange }) => {
   const { user } = useAuth();
-  const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, totalSpent: 0 });
+  const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, totalSpent: 0, memos: 0, memoPending: 0, memoPublished: 0 });
   const [recentPending, setRecentPending] = useState([]);
   const [ccReqs, setCcReqs] = useState([]);
   const [ccOpen, setCcOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState('All');
   const [myReqs, setMyReqs] = useState([]);
-  const [myStats, setMyStats] = useState({ submitted: 0, inProgress: 0, treated: 0, rejected: 0 });
+  const [myStats, setMyStats] = useState({ submitted: 0, requisitions: 0, memos: 0, inProgress: 0, treated: 0, rejected: 0 });
   const [departments, setDepartments] = useState([]);
 
   const loadDashboard = async () => {
     const s = await getDashboardStats(user);
     setStats(s);
-    const all = await getRequisitions();
-    const userDeptId = Number(user.deptId);
+    const all = await getRequisitions({ scope: 'all' });
+    const userDeptId = user.deptId ? Number(user.deptId) : null;
     const userDeptName = user.departmentName || '';
     const isAdmin = normalizeRole(user.role) === 'global_admin';
     const isExecutive = isAdmin ||
@@ -74,6 +80,10 @@ const Dashboard = ({ onViewChange }) => {
     const DONE_STATES = ['treated', 'published'];
     const pendingForMe = all.filter(r => {
       if (DONE_STATES.includes(r.finalApprovalStatus)) return false;
+      if (isAdmin && !userDeptId) {
+        return r.status === 'pending' || r.finalApprovalStatus === 'vetting' ||
+          (r.status === 'approved' && (!r.finalApprovalStatus || r.finalApprovalStatus === 'none'));
+      }
       const isTargeted = Number(r.targetDepartmentId) === userDeptId &&
         r.status === 'pending' &&
         (!r.finalApprovalStatus || r.finalApprovalStatus === 'none');
@@ -85,7 +95,7 @@ const Dashboard = ({ onViewChange }) => {
 
     // CC'd requisitions — tagged as observer
     if (user?.role === 'department' && userDeptId) {
-      const cc = all.filter(r => Array.isArray(r.tags) && r.tags.some(t => Number(t.deptId) === userDeptId));
+      const cc = all.filter(r => isOperationalRequisition(r) && Array.isArray(r.tags) && r.tags.some(t => Number(t.deptId) === userDeptId));
       setCcReqs(cc);
 
       // My outgoing requests — created by this dept (excluding drafts for stats)
@@ -94,7 +104,14 @@ const Dashboard = ({ onViewChange }) => {
       const inProgress = submitted.filter(r => !['treated', 'published', 'rejected'].includes(r.finalApprovalStatus) && r.status !== 'rejected');
       const treated = submitted.filter(r => ['treated', 'published'].includes(r.finalApprovalStatus));
       const rejected = submitted.filter(r => r.status === 'rejected');
-      setMyStats({ submitted: submitted.length, inProgress: inProgress.length, treated: treated.length, rejected: rejected.length });
+      setMyStats({
+        submitted: submitted.length,
+        requisitions: submitted.filter(isOperationalRequisition).length,
+        memos: submitted.filter(isMemoRecord).length,
+        inProgress: inProgress.length,
+        treated: treated.length,
+        rejected: rejected.length
+      });
       // Show last 10 sorted newest first (include drafts in the list for visibility)
       setMyReqs([...mine].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10));
 
@@ -165,11 +182,12 @@ const Dashboard = ({ onViewChange }) => {
           </p>
         </div>
 
-        <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
-          <StatCard label="Pending Approval" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" onClick={() => onViewChange('requisitions')} />
-          <StatCard label="Total Approved" value={String(stats.approved).padStart(2, '0')} icon={CheckCircle2} color="emerald" onClick={() => onViewChange('requisitions')} />
-          <StatCard label="Rejected" value={String(stats.rejected).padStart(2, '0')} icon={XCircle} color="red" onClick={() => onViewChange('requisitions')} />
+        <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
+          <StatCard label="Pending Actions" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" />
+          <StatCard label="Approved Reqs" value={String(stats.approved).padStart(2, '0')} icon={CheckCircle2} color="emerald" onClick={() => onViewChange('requisitions')} />
+          <StatCard label="Rejected Reqs" value={String(stats.rejected).padStart(2, '0')} icon={XCircle} color="red" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Total Spent" value={formatCurrency(stats.totalSpent)} icon={ArrowUpRight} color="blue" />
+          <StatCard label="Memo Traffic" value={String(stats.memos).padStart(2, '0')} icon={FileText} color="purple" onClick={() => onViewChange('memos')} />
           {user?.role === 'department' && (
             <div
               onClick={() => setCcOpen(o => !o)}
@@ -205,10 +223,16 @@ const Dashboard = ({ onViewChange }) => {
                     <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em] animate-pulse">Neural Alert</span>
                   )}
                 </div>
-                <button onClick={() => onViewChange('requisitions')} className="px-5 py-2 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-primary hover:text-white hover:border-primary transition-all flex items-center gap-3 active:scale-95">
-                  <ListFilter size={14} />
-                  View All Directory
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => onViewChange('requisitions')} className="px-4 py-2 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-primary hover:text-white hover:border-primary transition-all flex items-center gap-2 active:scale-95">
+                    <ListFilter size={14} />
+                    Requisitions
+                  </button>
+                  <button onClick={() => onViewChange('memos')} className="px-4 py-2 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-purple-600 hover:text-white hover:border-purple-600 transition-all flex items-center gap-2 active:scale-95">
+                    <FileText size={14} />
+                    Memos
+                  </button>
+                </div>
               </div>
 
               {/* Type filter tabs */}
@@ -229,7 +253,7 @@ const Dashboard = ({ onViewChange }) => {
               </div>
 
               {(() => {
-                const filtered = typeFilter === 'All' ? recentPending : recentPending.filter(r => r.type === typeFilter);
+                const filtered = recentPending.filter(r => matchesTypeFilter(r, typeFilter));
                 return filtered.length === 0 ? null : (
                 <div className="overflow-x-auto custom-scrollbar">
                   <table className="w-full text-left border-separate border-spacing-y-2">
@@ -257,7 +281,7 @@ const Dashboard = ({ onViewChange }) => {
                           </td>
                           <td className="py-4 px-6 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                             <div className="flex items-center gap-2.5">
-                              <div className={`w-2 h-2 rounded-full ${r.type === 'Cash' ? 'bg-emerald-500' : 'bg-primary'} shadow-sm shadow-black/10`} />
+                              <div className={`w-2 h-2 rounded-full ${r.type === 'Cash' ? 'bg-emerald-500' : isMemoRecord(r) ? 'bg-amber-500' : 'bg-primary'} shadow-sm shadow-black/10`} />
                               <span className="text-xs font-black text-foreground uppercase tracking-widest">{r.type}</span>
                             </div>
                           </td>
@@ -332,7 +356,7 @@ const Dashboard = ({ onViewChange }) => {
                             </div>
                           </td>
                           <td className="py-4 px-6 bg-white/50 border-y border-r border-border/30 rounded-r-2xl group-hover:bg-white transition-colors text-right">
-                            <button onClick={() => onViewChange('requisitions', { reqId: r.id })} className="p-2.5 bg-background hover:bg-primary hover:text-white rounded-xl text-primary transition-all border border-primary/10 shadow-sm active:scale-90">
+                            <button onClick={() => isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id })} className="p-2.5 bg-background hover:bg-primary hover:text-white rounded-xl text-primary transition-all border border-primary/10 shadow-sm active:scale-90">
                               <Eye size={18} />
                             </button>
                           </td>
@@ -351,14 +375,22 @@ const Dashboard = ({ onViewChange }) => {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-3">
                     <div className="w-1.5 h-6 bg-blue-500 rounded-full" />
-                    <h3 className="text-xl font-bold text-foreground tracking-tight">My Outgoing Requests</h3>
+                    <h3 className="text-xl font-bold text-foreground tracking-tight">My Outgoing Records</h3>
                     <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em]">
                       {myStats.submitted} submitted
                     </span>
+                    <span className="bg-purple-500/10 text-purple-600 border border-purple-500/20 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em]">
+                      {myStats.requisitions} req / {myStats.memos} memo
+                    </span>
                   </div>
-                  <button onClick={() => onViewChange('requisitions')} className="px-4 py-1.5 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-2 active:scale-95">
-                    <ListFilter size={12} /> View All
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => onViewChange('requisitions')} className="px-4 py-1.5 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-2 active:scale-95">
+                      <ListFilter size={12} /> Reqs
+                    </button>
+                    <button onClick={() => onViewChange('memos')} className="px-4 py-1.5 rounded-xl bg-white border border-border/50 text-[10px] font-black text-muted-foreground uppercase tracking-widest hover:bg-purple-600 hover:text-white hover:border-purple-600 transition-all flex items-center gap-2 active:scale-95">
+                      <FileText size={12} /> Memos
+                    </button>
+                  </div>
                 </div>
 
                 {/* Mini stats row */}
@@ -387,8 +419,8 @@ const Dashboard = ({ onViewChange }) => {
                     <div className="w-14 h-14 bg-blue-500/10 border border-blue-200 text-blue-400 rounded-full flex items-center justify-center mx-auto">
                       <Send size={22} />
                     </div>
-                    <p className="text-sm font-bold text-muted-foreground">No requests created yet.</p>
-                    <p className="text-xs text-muted-foreground/60">Requests you create and submit will appear here with live status tracking.</p>
+                    <p className="text-sm font-bold text-muted-foreground">No outgoing records created yet.</p>
+                    <p className="text-xs text-muted-foreground/60">Cash/material requisitions and memos you create will appear here with live status tracking.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto custom-scrollbar">
@@ -469,7 +501,7 @@ const Dashboard = ({ onViewChange }) => {
                               </td>
                               <td className="py-3 px-4 bg-blue-50/30 border-y border-r border-blue-100/60 rounded-r-xl group-hover:bg-blue-50/60 transition-colors text-right">
                                 <button
-                                  onClick={() => onViewChange('requisitions', { reqId: r.id })}
+                                  onClick={() => isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id })}
                                   className="p-2 bg-white hover:bg-blue-500 hover:text-white rounded-xl text-blue-500 transition-all border border-blue-200/60 shadow-sm active:scale-90"
                                 >
                                   <Eye size={15} />

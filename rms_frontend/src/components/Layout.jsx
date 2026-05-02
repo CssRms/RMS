@@ -8,7 +8,7 @@ import {
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
   HeartHandshake
 } from 'lucide-react';
-import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions } from '../lib/store';
+import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
 import { reqAPI, settingsAPI } from '../lib/api';
 
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
@@ -55,12 +55,20 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
     setShowBell(false);
 
     let matchedId = null;
+    let memoMatched = false;
     if (n.link) {
       const match = n.link.match(/\/requisitions\/(\d+)/);
+      const memoMatch = n.link.match(/\/memos\/(\d+)/);
       if (match) matchedId = match[1];
+      if (memoMatch) {
+        matchedId = memoMatch[1];
+        memoMatched = true;
+      }
     }
 
-    if (matchedId) {
+    if (memoMatched) {
+      onViewChange('memos');
+    } else if (matchedId) {
       // Persist the target so freshly-mounted RequisitionsPage can pick it up after load
       localStorage.setItem('rms_pending_requisition_id', matchedId);
       onViewChange('requisitions');
@@ -129,7 +137,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
       <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center">
         {actionAlert ? (
           <div
-            onClick={() => onViewChange('requisitions', actionAlert.reqId ? { reqId: actionAlert.reqId } : {})}
+            onClick={() => onViewChange(actionAlert.view || 'requisitions', actionAlert.reqId ? { reqId: actionAlert.reqId } : {})}
             className={`px-4 py-1.5 rounded-full border flex items-center gap-2.5 cursor-pointer transition-all duration-500 shadow-lg group hover:scale-105 active:scale-95 ${actionAlert.mode === 'desk'
               ? 'bg-rose-500 text-white border-rose-600 shadow-rose-500/30 animate-pulse'
               : 'bg-amber-500 text-white border-amber-600 shadow-amber-500/30'
@@ -137,7 +145,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
             <ShieldAlert size={14} className={actionAlert.mode === 'desk' ? 'animate-bounce' : ''} />
             <span className="text-[9px] font-black uppercase tracking-[0.2em] whitespace-nowrap">
               {actionAlert.mode === 'desk'
-                ? `${actionAlert.count} Awaiting Your Signature`
+                ? `${actionAlert.count} Awaiting Your Action`
                 : `${actionAlert.count} Urgent In-Flight`}
             </span>
           </div>
@@ -339,8 +347,15 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         });
 
         if (pendingForMe.length > 0) {
+          const firstPending = pendingForMe[0];
           // Red Pulse Alert: folder is on your desk for your signature
-          setActionAlert({ urgency: 'critical', count: pendingForMe.length, mode: 'desk', reqId: pendingForMe[0]?.id });
+          setActionAlert({
+            urgency: 'critical',
+            count: pendingForMe.length,
+            mode: 'desk',
+            view: isMemoRecord(firstPending) ? 'memos' : 'requisitions',
+            reqId: isMemoRecord(firstPending) ? null : firstPending?.id
+          });
         } else {
           // Amber Alert: check if you have urgent in-flight items pending someone else's input
           const urgentElsewhere = all.filter(r => {

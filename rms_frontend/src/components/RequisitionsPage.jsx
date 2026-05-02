@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition } from '../lib/store';
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, isMemoRecord } from '../lib/store';
 import { aiAPI, settingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -2319,9 +2319,17 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const openReqById = async (id, allReqs) => {
     const list = allReqs || requisitions;
     const cached = list.find(r => r.id === parseInt(id));
+    if (cached && isMemoRecord(cached)) {
+      onViewChange?.('memos');
+      return;
+    }
     if (cached) setSelectedReq(normalizeReq(cached));
     try {
       const fresh = await reqAPI.getRequisition(id);
+      if (isMemoRecord(fresh)) {
+        onViewChange?.('memos');
+        return;
+      }
       setSelectedReq(normalizeReq(fresh));
     } catch(err) {}
   };
@@ -2329,7 +2337,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [data, depts] = await Promise.all([getRequisitions(), getDepartments()]);
+      const [data, depts] = await Promise.all([getOperationalRequisitions(), getDepartments()]);
       setRequisitions(data);
       setDepartments(depts);
       setLastSyncedAt(new Date());
@@ -2421,6 +2429,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   }, [requisitions]);
 
   const filtered = requisitions.filter(r => {
+    if (isMemoRecord(r)) return false;
     const matchSearch  = r.title?.toLowerCase().includes(search.toLowerCase()) || String(r.id).includes(search);
     const matchStatus  = filterStatus === 'all' || r.status === filterStatus;
     return matchSearch && matchStatus;
@@ -2529,7 +2538,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
             <h1 className="text-3xl font-black text-foreground tracking-tighter">
               Requisition <span className="text-primary italic font-serif">Directory</span>
             </h1>
-            <p className="text-muted-foreground text-[12px] font-medium tracking-tight">Managing {filtered.length} synchronized governance records.</p>
+            <p className="text-muted-foreground text-[12px] font-medium tracking-tight">Managing {filtered.length} synchronized cash and material records.</p>
           </div>
           <div className="flex items-center gap-2">
             {selectedIds.length > 0 && (
@@ -2755,7 +2764,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                     <div className="w-14 h-14 bg-muted rounded-full flex items-center justify-center mx-auto text-muted-foreground/30">
                       <FileText size={28} />
                     </div>
-                    <p className="text-sm font-bold text-muted-foreground">Empty Registry. Direct matches not found.</p>
+                    <p className="text-sm font-bold text-muted-foreground">No cash or material requisitions found.</p>
                   </div>
                 )}
               </div>

@@ -35,6 +35,36 @@ async function cleanupFileBlobs(keys) {
 // ── Seed data ──
 const SEED_REQUISITIONS = [];
 
+const getRecordType = (recordOrType) => {
+  const rawType = typeof recordOrType === 'string' ? recordOrType : recordOrType?.type;
+  return String(rawType || '').trim().toLowerCase();
+};
+
+export const isMemoRecord = (recordOrType) => {
+  const type = getRecordType(recordOrType);
+  return type.includes('memo') || type.includes('memorandum');
+};
+
+export const isOperationalRequisition = (recordOrType) => {
+  const type = getRecordType(recordOrType);
+  return type.startsWith('cash') || type.startsWith('material');
+};
+
+const normalizeRequisitionList = (rawList) => rawList.map(r => ({
+  ...r,
+  department: r.department?.name || r.department || r.departmentName,
+  creator: r.creator?.name || r.creator || r.creatorName,
+  currentStageName: r.currentStage?.name || r.currentStageName
+}));
+
+const filterRecordsForScope = (records, scope) => {
+  if (scope === 'requisitions') return records.filter(isOperationalRequisition);
+  if (scope === 'memos') return records.filter(isMemoRecord);
+  return records;
+};
+
+const getScopeCacheKey = (scope) => scope && scope !== 'all' ? `all:${scope}` : 'all';
+
 // ── Initialize store with seed data ──
 let _initialized = false;
 const generateClientId = () => {
@@ -62,25 +92,33 @@ async function ensureInitialized() {
 }
 
 // ── Requisition Logic ──
-export async function getRequisitions() {
+export async function getRequisitions(options = {}) {
   await ensureInitialized();
+  const scope = typeof options === 'string' ? options : (options.scope || 'all');
+  const cacheKey = getScopeCacheKey(scope);
   try {
-    const remote = await reqAPI.getRequisitions();
+    const remote = await reqAPI.getRequisitions(scope && scope !== 'all' ? { scope } : {});
     // Handle both paginated { data, total } and legacy plain-array responses
     const rawList = Array.isArray(remote) ? remote : (Array.isArray(remote?.data) ? remote.data : []);
-    const normalized = rawList.map(r => ({
-      ...r,
-      department: r.department?.name || r.department || r.departmentName,
-      creator: r.creator?.name || r.creator || r.creatorName,
-      currentStageName: r.currentStage?.name || r.currentStageName
-    }));
-    await requisitionStore.setItem('all', normalized);
+    const normalized = filterRecordsForScope(normalizeRequisitionList(rawList), scope);
+    await requisitionStore.setItem(cacheKey, normalized);
+    if (scope === 'all') await requisitionStore.setItem('all', normalized);
     return normalized;
   } catch (err) {
     console.warn("Offline: Fetching cached requisitions", err);
+    const scoped = await requisitionStore.getItem(cacheKey);
+    if (Array.isArray(scoped)) return scoped;
     const local = await requisitionStore.getItem('all');
-    return Array.isArray(local) ? local : [];
+    return Array.isArray(local) ? filterRecordsForScope(local, scope) : [];
   }
+}
+
+export async function getOperationalRequisitions() {
+  return getRequisitions({ scope: 'requisitions' });
+}
+
+export async function getMemoRecords() {
+  return getRequisitions({ scope: 'memos' });
 }
 
 export async function addRequisition(data) {
@@ -317,12 +355,14 @@ export async function downloadDynamicPdf(id, upToEventId = null) {
 
 // ── Stats Computation ──
 export async function getDashboardStats(user) {
-  const all = await getRequisitions();
-  if (!user || !user.deptId) return { pending: 0, approved: 0, rejected: 0, totalSpent: 0 };
+  const all = await getRequisitions({ scope: 'all' });
+  const emptyStats = { pending: 0, approved: 0, rejected: 0, totalSpent: 0, memos: 0, memoPending: 0, memoPublished: 0 };
+  if (!user) return emptyStats;
 
-  const userDeptId = Number(user.deptId);
+  const userDeptId = user.deptId ? Number(user.deptId) : null;
   const userDeptName = user.departmentName || '';
   const isAdmin = (user.role || '').toLowerCase().replace(/\s+/g, '_') === 'global_admin';
+  if (!userDeptId && !isAdmin) return emptyStats;
   const isExecutive = isAdmin ||
     /ceo|chairman/i.test(userDeptName) ||
     /general\s*manager|\bgm\b/i.test(userDeptName);
@@ -331,6 +371,10 @@ export async function getDashboardStats(user) {
   // "Pending" on dashboard means items still awaiting this dept's action
   const pendingActions = all.filter(r => {
     if (DONE_STATES.includes(r.finalApprovalStatus)) return false; // fully processed
+    if (isAdmin && !userDeptId) {
+      return r.status === 'pending' || r.finalApprovalStatus === 'vetting' ||
+        (r.status === 'approved' && (!r.finalApprovalStatus || r.finalApprovalStatus === 'none'));
+    }
     const isTargeted = Number(r.targetDepartmentId) === userDeptId &&
       r.status === 'pending' &&
       (!r.finalApprovalStatus || r.finalApprovalStatus === 'none');
@@ -339,13 +383,25 @@ export async function getDashboardStats(user) {
     return isTargeted || needsFinal || isVetting;
   });
 
-  const approved = all.filter(r => r.status === 'approved' || r.finalApprovalStatus === 'treated' || r.finalApprovalStatus === 'published').length;
-  const rejected = all.filter(r => r.status === 'rejected').length;
-  const totalSpent = all
+  const operational = all.filter(isOperationalRequisition);
+  const memos = all.filter(isMemoRecord);
+  const approved = operational.filter(r => r.status === 'approved' || r.finalApprovalStatus === 'treated').length;
+  const rejected = operational.filter(r => r.status === 'rejected').length;
+  const memoPending = memos.filter(r => r.status === 'pending' && r.finalApprovalStatus !== 'published').length;
+  const memoPublished = memos.filter(r => r.finalApprovalStatus === 'published').length;
+  const totalSpent = operational
     .filter(r => (r.status === 'approved' || r.finalApprovalStatus === 'treated') && r.amount)
     .reduce((sum, r) => sum + r.amount, 0);
 
-  return { pending: pendingActions.length, approved, rejected, totalSpent };
+  return {
+    pending: pendingActions.length,
+    approved,
+    rejected,
+    totalSpent,
+    memos: memos.length,
+    memoPending,
+    memoPublished
+  };
 }
 
 // ── Activity Log ──

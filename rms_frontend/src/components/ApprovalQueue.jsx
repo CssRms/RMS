@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Eye, Clock, CheckCircle2, Loader2 } from 'lucide-react';
-import { getRequisitions } from '../lib/store';
+import { getOperationalRequisitions } from '../lib/store';
 
 const QueueItem = ({ id, type, title, amount, department, status, date, currentStageName, onView }) => (
   <tr className="border-b border-border/50 hover:bg-muted/50 transition-colors group">
@@ -58,7 +58,7 @@ const ApprovalQueue = ({ onViewRequisition, filterStatus = 'pending' }) => {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const all = await getRequisitions();
+      const all = await getOperationalRequisitions();
       setRequisitions(all);
       setLoading(false);
     };
