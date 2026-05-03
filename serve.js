@@ -193,15 +193,30 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false
 }));
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (!isProd && allowedOrigins.length === 0) return cb(null, true);
-    if (allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error('CORS blocked'));
-  },
-  credentials: true
+app.use(cors((req, cb) => {
+  const origin = req.get('Origin');
+  if (!origin) return cb(null, { origin: true, credentials: true });
+  if (!isProd && allowedOrigins.length === 0) return cb(null, { origin: true, credentials: true });
+
+  let isSameHost = false;
+  try {
+    const requestHost = req.get('Host');
+    isSameHost = Boolean(requestHost) && new URL(origin).host === requestHost;
+  } catch (_) {}
+
+  if (isSameHost || allowedOrigins.includes(origin)) {
+    return cb(null, { origin: true, credentials: true });
+  }
+
+  return cb(new Error('CORS blocked'));
 }));
+app.use((err, req, res, next) => {
+  if (err && err.message === 'CORS blocked') {
+    logger.warn({ origin: req.get('Origin'), host: req.get('Host'), path: req.originalUrl }, '[CORS] Blocked request origin.');
+    return res.status(403).type('text/plain').send('CORS origin blocked');
+  }
+  next(err);
+});
 app.use(express.json({ limit: '2mb' }));
 
 app.use(pinoHttp({ logger }));
@@ -3202,7 +3217,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
     // ── Logo ────────────────────────────────────────────
     try {
-      const logoPath = path.join(__dirname, 'rms_frontend', 'public', 'logo.jpg');
+      const logoPath = path.join(__dirname, 'rms_frontend', 'public', 'logo.png');
       if (fs.existsSync(logoPath)) {
         const logoBytes = fs.readFileSync(logoPath);
         const logoImage = await embedSafe(logoBytes);
@@ -4277,11 +4292,70 @@ app.put('/api/hr/applicants/:id/stage', hrAuth, async (req, res) => {
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 const distPath = path.join(__dirname, 'rms_frontend', 'dist');
-app.use(express.static(distPath));
+const assetsPath = path.join(distPath, 'assets');
+const indexPath = path.join(distPath, 'index.html');
+
+function verifyFrontendBuild() {
+  if (!fs.existsSync(indexPath)) {
+    logger.error({ indexPath }, '[FRONTEND] Missing build output. Run npm run build before starting the server.');
+    return;
+  }
+
+  try {
+    const html = fs.readFileSync(indexPath, 'utf8');
+    const assetRefs = [...html.matchAll(/(?:src|href)=["']\/(assets\/[^"']+)["']/g)]
+      .map(match => match[1]);
+    const missingAssets = assetRefs.filter(asset => !fs.existsSync(path.join(distPath, asset)));
+
+    if (missingAssets.length > 0) {
+      logger.error({ missingAssets }, '[FRONTEND] Built index.html references missing asset files.');
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, '[FRONTEND] Could not verify build assets.');
+  }
+}
+
+verifyFrontendBuild();
+
+app.use('/assets', express.static(assetsPath, {
+  fallthrough: false,
+  immutable: isProd,
+  index: false,
+  maxAge: isProd ? '1y' : 0,
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
+}));
+
+app.use('/assets', (err, req, res, next) => {
+  const status = err.status || err.statusCode;
+  if (status === 404) {
+    logger.warn({ path: req.originalUrl }, '[FRONTEND] Missing static asset requested.');
+    return res.status(404).type('text/plain').send('Static asset not found. Redeploy the latest frontend build.');
+  }
+  next(err);
+});
+
+app.use(express.static(distPath, {
+  index: false,
+  maxAge: isProd ? '1h' : 0,
+  setHeaders: (res, filePath) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    const fileName = path.basename(filePath);
+    if (fileName === 'index.html' || fileName === 'sw.js' || fileName === 'registerSW.js' || fileName === 'manifest.webmanifest') {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api')) return res.status(404).json({ error: 'API route not found' });
-  res.sendFile(path.join(distPath, 'index.html'));
+  if (!fs.existsSync(indexPath)) {
+    return res.status(500).type('text/plain').send('Frontend build output is missing. Run npm run build before starting the server.');
+  }
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(indexPath);
 });
 
 const PORT = process.env.PORT || 3000;
