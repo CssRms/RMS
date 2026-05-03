@@ -208,15 +208,9 @@ app.use(cors((req, cb) => {
     return cb(null, { origin: true, credentials: true });
   }
 
-  return cb(new Error('CORS blocked'));
+  logger.debug({ origin, host: req.get('Host'), path: req.originalUrl }, '[CORS] Request origin not allowed.');
+  return cb(null, { origin: false, credentials: false });
 }));
-app.use((err, req, res, next) => {
-  if (err && err.message === 'CORS blocked') {
-    logger.warn({ origin: req.get('Origin'), host: req.get('Host'), path: req.originalUrl }, '[CORS] Blocked request origin.');
-    return res.status(403).type('text/plain').send('CORS origin blocked');
-  }
-  next(err);
-});
 app.use(express.json({ limit: '2mb' }));
 
 app.use(pinoHttp({ logger }));
