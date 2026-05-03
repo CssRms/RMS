@@ -49,6 +49,17 @@ const app = express();
 const prisma = new PrismaClient();
 let isSystemReady = false; // Flag for database/seed readiness
 
+const BRAND_LOGO_CANDIDATES = [
+  path.join(__dirname, 'samples', 'logo.png'),
+  path.join(__dirname, 'rms_frontend', 'public', 'logo.png'),
+  path.join(__dirname, 'rms_frontend', 'public', 'logo.jpg'),
+  path.join(__dirname, 'samples', 'logo.jpg')
+];
+
+function findBrandLogoPath() {
+  return BRAND_LOGO_CANDIDATES.find(candidate => fs.existsSync(candidate)) || null;
+}
+
 // ── Server-Sent Events (real-time updates) ────────────────────────────────────
 const sseClients = new Map(); // clientId → res
 
@@ -3211,8 +3222,8 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
     // ── Logo ────────────────────────────────────────────
     try {
-      const logoPath = path.join(__dirname, 'rms_frontend', 'public', 'logo.png');
-      if (fs.existsSync(logoPath)) {
+      const logoPath = findBrandLogoPath();
+      if (logoPath && fs.existsSync(logoPath)) {
         const logoBytes = fs.readFileSync(logoPath);
         const logoImage = await embedSafe(logoBytes);
         if (logoImage) {
@@ -4284,6 +4295,18 @@ app.put('/api/hr/applicants/:id/stage', hrAuth, async (req, res) => {
 // ── FRONTEND SERVING ──
 // Health check (must be before static + SPA fallback)
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+app.get('/logo.png', (req, res) => {
+  const logoPath = findBrandLogoPath();
+  if (!logoPath) return res.status(404).type('text/plain').send('Logo not found');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(logoPath);
+});
+app.get('/logo.svg', (req, res) => {
+  const logoPath = path.join(__dirname, 'samples', 'logo.svg');
+  if (!fs.existsSync(logoPath)) return res.status(404).type('text/plain').send('Logo SVG not found');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('image/svg+xml').sendFile(logoPath);
+});
 
 const distPath = path.join(__dirname, 'rms_frontend', 'dist');
 const assetsPath = path.join(distPath, 'assets');
