@@ -238,7 +238,7 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
             <div className="hidden lg:block">
               <VoiceDictation onTranscript={(text) => {
                 if (editorRef.current) {
-                  editorRef.current.innerHTML += ' ' + text;
+                  editorRef.current.innerHTML = DOMPurify.sanitize(editorRef.current.innerHTML + ' ' + text);
                   handleInput();
                 }
               }} />

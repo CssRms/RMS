@@ -9,7 +9,7 @@ import {
   HeartHandshake
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
-import { reqAPI, settingsAPI } from '../lib/api';
+import { reqAPI, settingsAPI, authAPI } from '../lib/api';
 
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
 
@@ -295,19 +295,21 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
 
   // Global SSE — refresh notification bell instantly on any requisition update
   useEffect(() => {
-    const token = localStorage.getItem('rms_token');
-    if (!token) return;
+    if (!localStorage.getItem('rms_token')) return;
     let es;
     let reconnectTimer;
-    const connect = () => {
-      es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-      es.addEventListener('requisition_updated', () => {
-        getNotifications().then(data => setNotifications(data)).catch(() => {});
-      });
-      es.onerror = () => {
-        es.close();
-        reconnectTimer = setTimeout(connect, 8000);
-      };
+    const connect = async () => {
+      try {
+        const { ticket } = await authAPI.getSseTicket();
+        es = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`);
+        es.addEventListener('requisition_updated', () => {
+          getNotifications().then(data => setNotifications(data)).catch(() => {});
+        });
+        es.onerror = () => {
+          es.close();
+          reconnectTimer = setTimeout(connect, 8000);
+        };
+      } catch { reconnectTimer = setTimeout(connect, 15000); }
     };
     connect();
     return () => { es?.close(); clearTimeout(reconnectTimer); };

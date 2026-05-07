@@ -141,6 +141,8 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('rms_token');
     localStorage.removeItem('rms_user');
+    localStorage.removeItem('rms_offline_auth');
+    localStorage.removeItem('rms_offline_session');
   };
 
   return (

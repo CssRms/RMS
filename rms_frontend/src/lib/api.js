@@ -89,6 +89,9 @@ export const authAPI = {
   },
   async changePassword(data) {
     return api.put('/auth/me/password', data);
+  },
+  async getSseTicket() {
+    return api.post('/events/ticket');
   }
 };
 
@@ -194,6 +197,9 @@ export const settingsAPI = {
 };
 
 export const reqAPI = {
+  async getSseTicket() {
+    return api.post('/events/ticket');
+  },
   async getRequisitions(params = {}) {
     return api.get('/requisitions', { params });
   },

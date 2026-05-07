@@ -62,6 +62,13 @@ function findBrandLogoPath() {
 
 // ── Server-Sent Events (real-time updates) ────────────────────────────────────
 const sseClients = new Map(); // clientId → res
+// Short-lived single-use tickets for SSE (avoids JWT in query string)
+const sseTickets = new Map(); // uuid → { user, expiresAt }
+// Prune expired tickets every 2 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of sseTickets) { if (now > v.expiresAt) sseTickets.delete(k); }
+}, 120_000);
 
 function broadcastUpdate(reqId) {
   const payload = `event: requisition_updated\ndata: ${JSON.stringify({ id: reqId, ts: Date.now() })}\n\n`;
@@ -74,7 +81,8 @@ function broadcastUpdate(reqId) {
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails('mailto:admin@cssgroup.com', VAPID_PUBLIC, VAPID_PRIVATE);
+  const vapidEmail = process.env.VAPID_EMAIL || 'mailto:admin@cssgroup.local';
+  webpush.setVapidDetails(vapidEmail, VAPID_PUBLIC, VAPID_PRIVATE);
 }
 
 async function sendPushNotification(deptIds, { title, body, url }) {
@@ -192,17 +200,20 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
       imgSrc: ["'self'", "data:", "blob:", "https://*.b-cdn.net"],
       connectSrc: ["'self'"],
       frameSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
-      baseUri: ["'self'"]
+      baseUri: ["'self'"],
+      workerSrc: ["'self'", "blob:"]
     }
   },
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  frameguard: { action: 'deny' },
+  noSniff: true
 }));
 app.use(cors((req, cb) => {
   const origin = req.get('Origin');
@@ -238,11 +249,18 @@ app.use((req, res, next) => {
 });
 
 // ── SSE — real-time push to connected clients ─────────────────────────────────
+// EventSource does not support custom headers, so we accept a short-lived SSE
+// ticket (issued by POST /api/events/ticket) instead of the main JWT in the URL.
 app.get('/api/events', (req, res) => {
-  const token = req.query.token || (req.headers.authorization || '').split(' ')[1];
-  let user;
-  try { user = jwt.verify(token, process.env.JWT_SECRET || 'secret'); }
-  catch { return res.status(401).end(); }
+  const ticket = req.query.ticket;
+  if (!ticket) return res.status(401).end();
+  const entry = sseTickets.get(ticket);
+  if (!entry || Date.now() > entry.expiresAt) {
+    sseTickets.delete(ticket);
+    return res.status(401).end();
+  }
+  sseTickets.delete(ticket); // single-use
+  const user = entry.user;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -259,6 +277,21 @@ app.get('/api/events', (req, res) => {
   }, 25000);
 
   req.on('close', () => { clearInterval(heartbeat); sseClients.delete(clientId); });
+});
+
+// Issue a short-lived (30 s) single-use SSE ticket so the JWT never appears in
+// query strings / server logs. The client POSTs here with the normal Bearer
+// token, gets back a ticket, and opens EventSource with ?ticket=<value>.
+app.post('/api/events/ticket', (req, res) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const user = jwt.verify(token, JWT_SECRET);
+    const ticket = crypto.randomUUID();
+    sseTickets.set(ticket, { user, expiresAt: Date.now() + 30_000 });
+    res.json({ ticket });
+  } catch { return res.status(401).json({ error: 'Invalid token' }); }
 });
 
 // ── Push subscription endpoints ───────────────────────────────────────────────
@@ -289,6 +322,14 @@ const sanitizePayload = (req, res, next) => {
 };
 
 app.use(sanitizePayload);
+
+// Apply mutation limiter to all state-changing API requests
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return mutationLimiter(req, res, next);
+  }
+  next();
+});
 
 // ── BACKEND API ROUTES ──
 if (!process.env.JWT_SECRET) {
@@ -340,6 +381,15 @@ const publicVerifyLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// Mutation limiter — applied to all state-changing endpoints (POST/PUT/DELETE)
+const mutationLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 80,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a moment and try again.' }
+});
+
 // ── Token Blacklist (for logout) ──────────────────────────────────────────────
 const tokenBlacklist = new Set();
 
@@ -386,7 +436,7 @@ function clearLoginAttempts(key) {
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'You must be logged in to access this. Please sign in and try again.' });
 
   // Check blacklist
@@ -421,7 +471,7 @@ app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
       ON CONFLICT (endpoint) DO UPDATE SET p256dh=${p256dh}, auth=${auth}, "deptId"=${deptId}, "userId"=${userId}
     `;
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { sendError(res, 500, err.message); }
 });
 
 app.delete('/api/push/subscribe', authenticateToken, async (req, res) => {
@@ -430,7 +480,7 @@ app.delete('/api/push/subscribe', authenticateToken, async (req, res) => {
   try {
     await prisma.$executeRaw`DELETE FROM "PushSubscription" WHERE endpoint = ${endpoint}`;
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { sendError(res, 500, err.message); }
 });
 
 const normalizeRole = (role) => (role || '').toLowerCase();
@@ -1003,7 +1053,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const parsed = z.object({
       email: z.string().email(),
-      password: z.string().min(1)
+      password: z.string().min(8)
     }).safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Login details are missing or invalid. Please check your credentials and try again.' });
@@ -1203,7 +1253,7 @@ app.get('/api/departments', async (req, res) => {
     const departments = await prisma.department.findMany({
       orderBy: { name: 'asc' },
       select: isAuthenticated
-        ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
+        ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
         : { id: true, name: true, type: true, code: true }
     });
     res.json(departments);
@@ -1213,7 +1263,10 @@ app.get('/api/departments', async (req, res) => {
 app.get('/api/departments/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const department = await prisma.department.findUnique({ where: { id: parseInt(id) } });
+    const department = await prisma.department.findUnique({
+      where: { id: parseInt(id) },
+      select: { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
+    });
     if (!department) return res.status(404).json({ error: 'Department not found' });
     if (req.user.role === 'department' && req.user.deptId && department.id !== req.user.deptId) {
       return res.status(403).json({ error: 'You do not have permission to perform this action.' });
@@ -1519,7 +1572,8 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
     const { name, type, accessCode } = parsed.data;
     const accessCodeHash = await bcrypt.hash(accessCode, 10);
     const dept = await prisma.department.create({ data: { name, type, accessCode: null, accessCodeHash, accessCodeLabel: accessCode } });
-    res.json(dept);
+    const { accessCode: _ac, accessCodeHash: _ach, accessCodeLabel: _acl, codeChangedByDept: _ccbd, ...safeDept } = dept;
+    res.json(safeDept);
   } catch (error) { sendError(res, 500, error.message); }
 });
 

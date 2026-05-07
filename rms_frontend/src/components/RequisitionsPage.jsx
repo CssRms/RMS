@@ -128,7 +128,21 @@ const FilePreviewModal = ({ attachment, onClose, initialBlobUrl = null }) => {
 
   const token       = localStorage.getItem('rms_token');
   const serverUrl   = attachment?.id ? `/api/attachments/${attachment.id}/preview` : null;
-  const downloadUrl = attachment?.id ? `/api/attachments/${attachment.id}/download?token=${token}` : null;
+  // Downloads use fetch+blob (no token in URL)
+  const triggerSecureDownload = async (attachId, filename) => {
+    try {
+      const res = await fetch(`/api/attachments/${attachId}/download`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('rms_token')}` }
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; document.body.appendChild(a);
+      a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch { toast.error('Download failed. Please try again.'); }
+  };
   const name        = attachment?.filename || 'Document Preview';
   const ext         = initialBlobUrl ? 'pdf' : (name.split('.').pop().toLowerCase());
   const isMobile    = window.innerWidth < 768;
@@ -265,10 +279,10 @@ const FilePreviewModal = ({ attachment, onClose, initialBlobUrl = null }) => {
           <p className="text-[10px] text-destructive font-mono mt-1 break-all">{errorMsg}</p>
         )}
       </div>
-      <a href={downloadUrl} download
+      <button onClick={() => triggerSecureDownload(attachment.id, name)}
         className="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 transition-all shadow-md">
         <ArrowDownToLine size={16} /> Download File
-      </a>
+      </button>
     </div>
   );
 
@@ -296,11 +310,11 @@ const FilePreviewModal = ({ attachment, onClose, initialBlobUrl = null }) => {
               className="p-2 hover:bg-muted rounded-lg text-primary transition-colors">
               <ExternalLink size={15} />
             </button>
-            {downloadUrl && (
-              <a href={downloadUrl} download title="Download"
+            {attachment?.id && (
+              <button onClick={() => triggerSecureDownload(attachment.id, name)} title="Download"
                 className="p-2 hover:bg-muted rounded-lg text-primary transition-colors">
                 <ArrowDownToLine size={15} />
-              </a>
+              </button>
             )}
             <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg text-muted-foreground">
               <X size={15} />
@@ -331,10 +345,10 @@ const FilePreviewModal = ({ attachment, onClose, initialBlobUrl = null }) => {
                     className="flex items-center justify-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 shadow-md">
                     <ExternalLink size={16} /> Open PDF
                   </button>
-                  <a href={downloadUrl} download
+                  <button onClick={() => triggerSecureDownload(attachment.id, name)}
                     className="flex items-center justify-center gap-2 px-5 py-3 bg-white border border-border text-foreground rounded-xl font-bold text-sm hover:bg-muted">
                     <ArrowDownToLine size={16} /> Download
-                  </a>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -494,14 +508,19 @@ const PrintStageModal = ({ req, detail, onClose }) => {
   const relevantAttachments = getRelevantAttachments(selectedStage);
 
   // Trigger browser download for a single attachment
-  const triggerAttachmentDownload = (a) => {
-    const token = localStorage.getItem('rms_token');
-    const link = document.createElement('a');
-    link.href = `/api/attachments/${a.id}/download?token=${token}`;
-    link.download = a.filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+  const triggerAttachmentDownload = async (a) => {
+    try {
+      const res = await fetch(`/api/attachments/${a.id}/download`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('rms_token')}` }
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = a.filename; document.body.appendChild(link);
+      link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch { toast.error('Download failed.'); }
   };
 
   const handleGenerate = async () => {
@@ -1874,14 +1893,24 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             >
                               <Eye size={14} />
                             </button>
-                            <a
-                              href={`/api/attachments/${a.id}/download?token=${localStorage.getItem('rms_token')}`}
-                              download
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/attachments/${a.id}/download`, { headers: { Authorization: `Bearer ${localStorage.getItem('rms_token')}` } });
+                                  if (!res.ok) throw new Error();
+                                  const blob = await res.blob();
+                                  const url = URL.createObjectURL(blob);
+                                  const dl = document.createElement('a');
+                                  dl.href = url; dl.download = a.filename; document.body.appendChild(dl);
+                                  dl.click(); dl.remove();
+                                  setTimeout(() => URL.revokeObjectURL(url), 10000);
+                                } catch { toast.error('Download failed.'); }
+                              }}
                               title="Download"
                               className="p-1.5 text-muted-foreground hover:text-primary transition-all rounded-lg hover:bg-primary/5 shrink-0"
                             >
                               <Download size={14} />
-                            </a>
+                            </button>
                             {canDeleteAttachments && (
                               <button
                                 title="Delete attachment"
@@ -2411,37 +2440,39 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
 
   // SSE real-time subscription — updates arrive within seconds of any action
   useEffect(() => {
-    const token = localStorage.getItem('rms_token');
-    if (!token) return;
+    if (!localStorage.getItem('rms_token')) return;
 
     let es;
     let reconnectTimer;
 
-    const connect = () => {
-      es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-      es.addEventListener('requisition_updated', (e) => {
-        const { id } = JSON.parse(e.data);
-        // Silent background refresh of list
-        loadData(true);
-        setSyncStale(false);
-        // If this exact req is open, fetch fresh detail immediately
-        if (selectedReqRef.current?.id === id) {
-          reqAPI.getRequisition(id).then(fresh => setSelectedReq(normalizeReq(fresh))).catch(() => {});
-        } else {
-          // Show a subtle in-app toast so user knows something changed
-          toast(`Requisition #${id} was updated`, {
-            icon: '🔔',
-            duration: 3000,
-            style: { fontSize: '12px' },
-            id: `req-update-${id}` // deduplicate rapid fires
-          });
-        }
-      });
-      es.onerror = () => {
-        es.close();
-        setSyncStale(true);
-        reconnectTimer = setTimeout(connect, 8000);
-      };
+    const connect = async () => {
+      try {
+        const { ticket } = await reqAPI.getSseTicket();
+        es = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`);
+        es.addEventListener('requisition_updated', (e) => {
+          const { id } = JSON.parse(e.data);
+          // Silent background refresh of list
+          loadData(true);
+          setSyncStale(false);
+          // If this exact req is open, fetch fresh detail immediately
+          if (selectedReqRef.current?.id === id) {
+            reqAPI.getRequisition(id).then(fresh => setSelectedReq(normalizeReq(fresh))).catch(() => {});
+          } else {
+            // Show a subtle in-app toast so user knows something changed
+            toast(`Requisition #${id} was updated`, {
+              icon: '🔔',
+              duration: 3000,
+              style: { fontSize: '12px' },
+              id: `req-update-${id}` // deduplicate rapid fires
+            });
+          }
+        });
+        es.onerror = () => {
+          es.close();
+          setSyncStale(true);
+          reconnectTimer = setTimeout(connect, 8000);
+        };
+      } catch { reconnectTimer = setTimeout(connect, 15000); }
     };
 
     connect();
