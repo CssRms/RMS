@@ -150,6 +150,17 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
   const { aiEnabled } = useAIFeatures();
 
   useEffect(() => {
+    const id = 'doc-studio-fonts';
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;700&family=Roboto:wght@400;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Courier+Prime&display=swap';
+      document.head.appendChild(link);
+    }
+  }, []);
+
+  useEffect(() => {
     setTitle(loadedDraft?.title || 'Untitled Document');
     if (editorRef.current && loadedDraft?.data) {
       const clean = DOMPurify.sanitize(loadedDraft.data);

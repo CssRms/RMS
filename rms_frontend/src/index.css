@@ -2,7 +2,6 @@
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
 @import '@fontsource/inter/700.css';
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;700&family=Roboto:wght@400;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Courier+Prime&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -80,9 +79,16 @@
 }
 
 @media (min-width: 1024px) {
+  .rms-app-content {
+    width: 100%;
+    max-width: min(100%, 1680px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
   .rms-app-content > [class*="max-w-"] {
     width: 100%;
-    max-width: none;
+    max-width: 100%;
     margin-left: 0;
     margin-right: 0;
   }

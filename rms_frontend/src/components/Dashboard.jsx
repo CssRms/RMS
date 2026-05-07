@@ -213,6 +213,128 @@ const Dashboard = ({ onViewChange }) => {
         {/* Unified Content Card */}
         <div className="glass bg-white/70 backdrop-blur-3xl rounded-[2rem] border border-border/40 p-1 shadow-2xl shadow-primary/5 overflow-hidden">
           <div className="bg-[#FAF9F6]/30 rounded-[1.8rem] p-4 lg:p-6 space-y-8">
+
+            {/* ── CC Inbox — shown first when open ── */}
+            {user?.role === 'department' && ccOpen && (
+              <div className="space-y-4 pb-6 border-b border-amber-200/40 animate-in fade-in slide-in-from-top-3 duration-300">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-6 bg-amber-500 rounded-full" />
+                    <h3 className="text-xl font-bold text-foreground tracking-tight">CC Inbox</h3>
+                    <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em]">
+                      {ccReqs.length} record{ccReqs.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/60 font-medium">Requisitions shared with your department as a read-only observer</p>
+                </div>
+
+                {ccReqs.length === 0 ? (
+                  <div className="py-14 text-center space-y-3">
+                    <div className="w-14 h-14 bg-amber-500/10 border border-amber-200 text-amber-400 rounded-full flex items-center justify-center mx-auto">
+                      <Paperclip size={22} />
+                    </div>
+                    <p className="text-sm font-bold text-muted-foreground">No CC'd requisitions yet.</p>
+                    <p className="text-xs text-muted-foreground/60">When another department tags your unit as an observer, records will appear here.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-separate border-spacing-y-2">
+                      <thead>
+                        <tr className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                          <th className="pb-3 px-4">Ref</th>
+                          <th className="pb-3 px-4">Type</th>
+                          <th className="pb-3 px-4">Title</th>
+                          <th className="pb-3 px-4">Amount</th>
+                          <th className="pb-3 px-4">From → To</th>
+                          <th className="pb-3 px-4">State</th>
+                          <th className="pb-3 px-4">Tagged</th>
+                          <th className="pb-3 px-4 text-right">View</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ccReqs.map(r => {
+                          const norm = normalizeReq(r);
+                          const isMoneyReq = r.type === 'Cash' || (r.amount && r.amount > 0);
+                          const myTag = r.tags?.find(t => Number(t.deptId) === Number(user.deptId));
+                          const taggedAt = myTag?.taggedAt ? new Date(myTag.taggedAt).toLocaleDateString() : '—';
+
+                          const stateLabel = (() => {
+                            if (norm.status === 'draft') return { label: 'Draft', color: statusColors.draft };
+                            if (norm.status === 'rejected') return { label: 'Rejected', color: statusColors.rejected };
+                            if (norm.finalState === 'published') return { label: 'Published', color: statusColors.published };
+                            if (norm.finalState === 'treated') return { label: 'Treated', color: statusColors.treated };
+                            if (norm.finalState === 'vetting') return { label: 'Vetting', color: statusColors.vetting };
+                            if (norm.finalState === 'approved' && norm.status === 'approved') return { label: 'Finally Approved', color: statusColors.approved };
+                            if (norm.status === 'approved') return { label: 'Approved', color: statusColors.approved };
+                            if (norm.status === 'pending') return { label: 'Pending', color: statusColors.pending };
+                            return { label: norm.status, color: statusColors.pending };
+                          })();
+
+                          return (
+                            <tr key={r.id} className="group transition-all">
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-l border-amber-200/40 rounded-l-xl group-hover:bg-amber-50/80 transition-colors">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-black text-amber-700 tracking-widest">#{r.id}</span>
+                                  <span className="text-[9px] text-muted-foreground/50 font-mono italic">{new Date(r.createdAt).toLocaleDateString()}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
+                                <div className="flex items-center gap-1.5">
+                                  <div className={`w-1.5 h-1.5 rounded-full ${r.type === 'Cash' ? 'bg-emerald-500' : r.type === 'Material' ? 'bg-primary' : 'bg-amber-500'}`} />
+                                  <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{r.type}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors max-w-[180px]">
+                                <p className="text-[11px] font-bold text-foreground truncate">{r.title}</p>
+                                {r.urgency && r.urgency !== 'normal' && (
+                                  <span className={`text-[8px] font-black uppercase ${urgencyColors[r.urgency]}`}>{r.urgency}</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
+                                {isMoneyReq
+                                  ? <span className="text-[11px] font-black font-mono text-foreground">₦{Number(r.amount || 0).toLocaleString()}</span>
+                                  : <span className="text-[9px] text-muted-foreground/50 italic">Non-financial</span>}
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
+                                <div className="flex items-center gap-1 text-[9px]">
+                                  <span className="font-bold text-muted-foreground/70 uppercase truncate max-w-[70px]">{norm.department}</span>
+                                  {r.targetDepartment?.name && (
+                                    <>
+                                      <ArrowRight size={8} className="text-muted-foreground/30 shrink-0" />
+                                      <span className="font-black text-primary uppercase truncate max-w-[70px]">{r.targetDepartment.name}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
+                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${stateLabel.color}`}>
+                                  {stateLabel.label}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
+                                <div className="flex items-center gap-1 text-[9px] text-amber-600/80">
+                                  <Paperclip size={9} />
+                                  <span className="font-mono">{taggedAt}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 bg-amber-50/50 border-y border-r border-amber-200/40 rounded-r-xl group-hover:bg-amber-50/80 transition-colors text-right">
+                                <button
+                                  onClick={() => onViewChange('requisitions', { reqId: r.id })}
+                                  className="p-2 bg-amber-100 hover:bg-amber-500 hover:text-white rounded-xl text-amber-700 transition-all border border-amber-200/60 shadow-sm active:scale-90"
+                                >
+                                  <Eye size={15} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Pending Queue */}
             <div className="space-y-8">
               <div className="flex items-center justify-between border-b border-border/20 pb-6">
@@ -517,126 +639,6 @@ const Dashboard = ({ onViewChange }) => {
               </div>
             )}
 
-            {/* ── CC Inbox History — department users only ── */}
-            {user?.role === 'department' && ccOpen && (
-              <div className="space-y-4 pt-6 border-t border-amber-200/40 animate-in fade-in slide-in-from-top-3 duration-300">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-1.5 h-6 bg-amber-500 rounded-full" />
-                    <h3 className="text-xl font-bold text-foreground tracking-tight">CC Inbox</h3>
-                    <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-[0.15em]">
-                      {ccReqs.length} record{ccReqs.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground/60 font-medium">Requisitions shared with your department as a read-only observer</p>
-                </div>
-
-                {ccReqs.length === 0 ? (
-                  <div className="py-14 text-center space-y-3">
-                    <div className="w-14 h-14 bg-amber-500/10 border border-amber-200 text-amber-400 rounded-full flex items-center justify-center mx-auto">
-                      <Paperclip size={22} />
-                    </div>
-                    <p className="text-sm font-bold text-muted-foreground">No CC'd requisitions yet.</p>
-                    <p className="text-xs text-muted-foreground/60">When another department tags your unit as an observer, records will appear here.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left border-separate border-spacing-y-2">
-                      <thead>
-                        <tr className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
-                          <th className="pb-3 px-4">Ref</th>
-                          <th className="pb-3 px-4">Type</th>
-                          <th className="pb-3 px-4">Title</th>
-                          <th className="pb-3 px-4">Amount</th>
-                          <th className="pb-3 px-4">From → To</th>
-                          <th className="pb-3 px-4">State</th>
-                          <th className="pb-3 px-4">Tagged</th>
-                          <th className="pb-3 px-4 text-right">View</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ccReqs.map(r => {
-                          const norm = normalizeReq(r);
-                          const isMoneyReq = r.type === 'Cash' || (r.amount && r.amount > 0);
-                          const myTag = r.tags?.find(t => Number(t.deptId) === Number(user.deptId));
-                          const taggedAt = myTag?.taggedAt ? new Date(myTag.taggedAt).toLocaleDateString() : '—';
-
-                          const stateLabel = (() => {
-                            if (norm.status === 'draft') return { label: 'Draft', color: statusColors.draft };
-                            if (norm.status === 'rejected') return { label: 'Rejected', color: statusColors.rejected };
-                            if (norm.finalState === 'published') return { label: 'Published', color: statusColors.published };
-                            if (norm.finalState === 'treated') return { label: 'Treated', color: statusColors.treated };
-                            if (norm.finalState === 'vetting') return { label: 'Vetting', color: statusColors.vetting };
-                            if (norm.finalState === 'approved' && norm.status === 'approved') return { label: 'Finally Approved', color: statusColors.approved };
-                            if (norm.status === 'approved') return { label: 'Approved', color: statusColors.approved };
-                            if (norm.status === 'pending') return { label: 'Pending', color: statusColors.pending };
-                            return { label: norm.status, color: statusColors.pending };
-                          })();
-
-                          return (
-                            <tr key={r.id} className="group transition-all">
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-l border-amber-200/40 rounded-l-xl group-hover:bg-amber-50/80 transition-colors">
-                                <div className="flex flex-col">
-                                  <span className="text-[10px] font-black text-amber-700 tracking-widest">#{r.id}</span>
-                                  <span className="text-[9px] text-muted-foreground/50 font-mono italic">{new Date(r.createdAt).toLocaleDateString()}</span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
-                                <div className="flex items-center gap-1.5">
-                                  <div className={`w-1.5 h-1.5 rounded-full ${r.type === 'Cash' ? 'bg-emerald-500' : r.type === 'Material' ? 'bg-primary' : 'bg-amber-500'}`} />
-                                  <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{r.type}</span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors max-w-[180px]">
-                                <p className="text-[11px] font-bold text-foreground truncate">{r.title}</p>
-                                {r.urgency && r.urgency !== 'normal' && (
-                                  <span className={`text-[8px] font-black uppercase ${urgencyColors[r.urgency]}`}>{r.urgency}</span>
-                                )}
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
-                                {isMoneyReq
-                                  ? <span className="text-[11px] font-black font-mono text-foreground">₦{Number(r.amount || 0).toLocaleString()}</span>
-                                  : <span className="text-[9px] text-muted-foreground/50 italic">Non-financial</span>}
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
-                                <div className="flex items-center gap-1 text-[9px]">
-                                  <span className="font-bold text-muted-foreground/70 uppercase truncate max-w-[70px]">{norm.department}</span>
-                                  {r.targetDepartment?.name && (
-                                    <>
-                                      <ArrowRight size={8} className="text-muted-foreground/30 shrink-0" />
-                                      <span className="font-black text-primary uppercase truncate max-w-[70px]">{r.targetDepartment.name}</span>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
-                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${stateLabel.color}`}>
-                                  {stateLabel.label}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
-                                <div className="flex items-center gap-1 text-[9px] text-amber-600/80">
-                                  <Paperclip size={9} />
-                                  <span className="font-mono">{taggedAt}</span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 bg-amber-50/50 border-y border-r border-amber-200/40 rounded-r-xl group-hover:bg-amber-50/80 transition-colors text-right">
-                                <button
-                                  onClick={() => onViewChange('requisitions', { reqId: r.id })}
-                                  className="p-2 bg-amber-100 hover:bg-amber-500 hover:text-white rounded-xl text-amber-700 transition-all border border-amber-200/60 shadow-sm active:scale-90"
-                                >
-                                  <Eye size={15} />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
 
           </div>
         </div>

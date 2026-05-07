@@ -806,6 +806,7 @@ const CreatorCommentPanel = ({ req, departments, onDone }) => {
 // ── Respond Panel (for target dept to forward or return) ──────────────────
 const RespondPanel = ({ req, detail, departments, onDone }) => {
   const [mode, setMode]         = useState(null); // 'forward' | null
+  const [fwdListOpen, setFwdListOpen] = useState(false);
   const [targetId, setTargetId] = useState('');
   const [note, setNote]         = useState('');
   const [acting, setActing]     = useState(false);
@@ -832,6 +833,8 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
     // Regular depts: peer depts + HR (not GM, Chairman, Audit, ICC, Account)
     return !/general\s*manager|\bgm\b|ceo|chairman|\bicc\b|integrity|compliance|audit|account/i.test(n);
   });
+  const selectedForwardDept = forwardDepts.find(d => String(d.id) === String(targetId));
+  const openForwardSelector = () => { setMode('forward'); setFwdListOpen(true); };
 
   // Work out who "Return to Sender" will actually send to by reading the
   // forwardEvents chain — it's whoever LAST sent the document to the current holder,
@@ -929,7 +932,47 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
             <span>Select Target Department</span>
             <button onClick={() => setMode(null)} className="text-muted-foreground hover:text-foreground px-2 py-0.5 rounded hover:bg-black/5">Cancel</button>
           </label>
+          <div className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setFwdListOpen(o => !o)}
+              className="w-full flex items-center justify-between gap-3 px-3 py-3 text-left text-sm font-bold text-foreground bg-white"
+            >
+              <span className={selectedForwardDept ? 'text-foreground' : 'text-muted-foreground'}>
+                {selectedForwardDept?.name || 'Choose department to forward to'}
+              </span>
+              {fwdListOpen ? <ChevronDown size={16} className="text-primary shrink-0 rotate-180 transition-transform" /> : <ChevronDown size={16} className="text-primary shrink-0 transition-transform" />}
+            </button>
+            {fwdListOpen && (
+              <div className="max-h-64 overflow-y-auto custom-scrollbar border-t border-border/60 bg-white animate-in fade-in slide-in-from-top-1 duration-150">
+                {forwardDepts.length === 0 ? (
+                  <div className="px-3 py-4 text-xs font-bold text-muted-foreground text-center">
+                    No departments available for forwarding.
+                  </div>
+                ) : (
+                  forwardDepts.map(d => {
+                    const active = String(d.id) === String(targetId);
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => { setTargetId(String(d.id)); setFwdListOpen(false); }}
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left text-sm font-bold transition-colors ${
+                          active ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-primary/5'
+                        }`}
+                      >
+                        <span>{d.name}</span>
+                        {active ? <CheckCircle2 size={15} className="text-primary shrink-0" /> : <ChevronRight size={15} className="text-muted-foreground/40 shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
           <select
+            hidden
+            aria-hidden="true"
             value={targetId}
             onChange={e => setTargetId(e.target.value)}
             className="w-full bg-white border border-border rounded-xl p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none shadow-sm"
@@ -953,10 +996,13 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
       {mode !== 'forward' && (
         <div className={`grid gap-2 pt-1 ${detail?.finalApprovalStatus && detail.finalApprovalStatus !== 'none' ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <button
-            onClick={() => submit('forward')}
+            onClick={openForwardSelector}
             className="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-bold text-sm transition-all shadow-sm"
           >
-            <ArrowRightCircle size={18} />
+            <div className="flex items-center gap-1">
+              <ArrowRightCircle size={18} />
+              <ChevronDown size={15} />
+            </div>
             <span>Forward...</span>
           </button>
 
@@ -1674,7 +1720,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
 
         {/* Body Grid */}
         <div className="flex-1 overflow-hidden">
-          <div className="h-full grid lg:grid-cols-[1fr_300px]">
+          <div className="h-full grid lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px] 2xl:grid-cols-[minmax(0,1fr)_500px]">
             {/* Left Content Column */}
             <div className="overflow-y-auto custom-scrollbar p-4 lg:p-6 space-y-6 order-2 lg:order-1 lg:border-r border-border/50">
               
@@ -1990,7 +2036,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             </div>
 
             {/* Right Sidebar Column */}
-            <div className="bg-muted/10 overflow-y-auto custom-scrollbar p-4 space-y-5 flex flex-col order-1 lg:order-2">
+            <div className="bg-muted/10 overflow-y-auto custom-scrollbar p-4 lg:p-5 space-y-5 flex flex-col order-1 lg:order-2">
               
               {/* Status & Alerts */}
               <div className="space-y-3">
