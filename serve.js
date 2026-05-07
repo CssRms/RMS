@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -234,6 +235,7 @@ app.use(cors((req, cb) => {
   return cb(null, { origin: false, credentials: false });
 }));
 app.use(express.json({ limit: '2mb' }));
+app.use(cookieParser());
 
 app.use(pinoHttp({ logger }));
 
@@ -282,16 +284,10 @@ app.get('/api/events', (req, res) => {
 // Issue a short-lived (30 s) single-use SSE ticket so the JWT never appears in
 // query strings / server logs. The client POSTs here with the normal Bearer
 // token, gets back a ticket, and opens EventSource with ?ticket=<value>.
-app.post('/api/events/ticket', (req, res) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
-  try {
-    const user = jwt.verify(token, JWT_SECRET);
-    const ticket = crypto.randomUUID();
-    sseTickets.set(ticket, { user, expiresAt: Date.now() + 30_000 });
-    res.json({ ticket });
-  } catch { return res.status(401).json({ error: 'Invalid token' }); }
+app.post('/api/events/ticket', authenticateToken, (req, res) => {
+  const ticket = crypto.randomUUID();
+  sseTickets.set(ticket, { user: req.user, expiresAt: Date.now() + 30_000 });
+  res.json({ ticket });
 });
 
 // ── Push subscription endpoints ───────────────────────────────────────────────
@@ -434,9 +430,19 @@ function clearLoginAttempts(key) {
   loginAttempts.delete(key);
 }
 
+// Cookie options for the auth token — HttpOnly prevents JS access; Secure in prod
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: 'strict',
+  maxAge: 12 * 60 * 60 * 1000, // 12 h — matches JWT expiry
+  path: '/'
+};
+
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  // Prefer HttpOnly cookie; fall back to Authorization header (offline / API clients)
+  const token = req.cookies?.rms_token
+    || (req.headers['authorization']?.startsWith('Bearer ') ? req.headers['authorization'].slice(7) : null);
   if (!token) return res.status(401).json({ error: 'You must be logged in to access this. Please sign in and try again.' });
 
   // Check blacklist
@@ -1075,6 +1081,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const userData = { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department?.name || 'General' };
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
     await prisma.activityLog.create({ data: { action: 'Logged In', details: `${user.name} (Admin) authenticated`, userId: user.id } });
+    res.cookie('rms_token', token, cookieOptions);
     res.json({ token, user: userData });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -1082,6 +1089,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 // Logout (revoke token)
 app.post('/api/auth/logout', authenticateToken, (req, res) => {
   if (req.token) tokenBlacklist.add(req.token);
+  res.clearCookie('rms_token', { path: '/' });
   res.json({ ok: true, message: 'Token revoked successfully.' });
 });
 
@@ -1097,6 +1105,7 @@ app.post('/api/auth/refresh', authenticateToken, (req, res) => {
     // Issue new 12h token
     const userData = { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, deptId: user.deptId };
     const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
+    res.cookie('rms_token', newToken, cookieOptions);
     res.json({ token: newToken, user: userData });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -1175,6 +1184,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     clearLoginAttempts(deptKey);
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
     await prisma.activityLog.create({ data: { action: 'Login', details: `${dept.name} authenticated via unified portal` } });
+    res.cookie('rms_token', token, cookieOptions);
     res.json({ token, user: userData });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -1216,6 +1226,7 @@ app.put('/api/auth/me', authenticateToken, async (req, res) => {
     if (req.token) tokenBlacklist.add(req.token);
     const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
     await prisma.activityLog.create({ data: { userId, action: 'Profile Updated', details: `${updated.name} updated their profile` } });
+    res.cookie('rms_token', newToken, cookieOptions);
     res.json({ user: updated, token: newToken });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -1243,8 +1254,8 @@ app.put('/api/auth/me/password', authenticateToken, async (req, res) => {
 app.get('/api/departments', async (req, res) => {
   try {
     // Check optional auth — authenticated users get full data, public gets minimal fields
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = req.cookies?.rms_token
+      || (req.headers['authorization']?.split(' ')[1]);
     let isAuthenticated = false;
     if (token) {
       try { jwt.verify(token, JWT_SECRET); isAuthenticated = true; } catch (_) { }

@@ -295,7 +295,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
 
   // Global SSE — refresh notification bell instantly on any requisition update
   useEffect(() => {
-    if (!localStorage.getItem('rms_token')) return;
+    if (!localStorage.getItem('rms_user')) return;
     let es;
     let reconnectTimer;
     const connect = async () => {
@@ -418,7 +418,8 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         const { endpoint, keys } = sub.toJSON();
         await fetch('/api/push/subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('rms_token')}` },
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint, p256dh: keys.p256dh, auth: keys.auth })
         });
       } catch (_) {}

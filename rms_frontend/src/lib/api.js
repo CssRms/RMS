@@ -4,18 +4,10 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_URL,
+  withCredentials: true, // send HttpOnly auth cookie on every request
   headers: {
     'Content-Type': 'application/json'
   }
-});
-
-// Add token to each request
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('rms_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
 });
 
 api.interceptors.response.use(
@@ -35,24 +27,19 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
+        // Server rotates the HttpOnly cookie and returns updated user data
         const refreshResponse = await api.post('/auth/refresh');
-        if (refreshResponse && refreshResponse.token) {
-          localStorage.setItem('rms_token', refreshResponse.token);
+        if (refreshResponse?.user) {
           localStorage.setItem('rms_user', JSON.stringify(refreshResponse.user));
-          originalRequest.headers.Authorization = `Bearer ${refreshResponse.token}`;
-          // Re-fire original request with new token
-          const res = await axios(originalRequest);
-          return res.data; // Note: originalRequest uses raw axios which doesn't auto-unpack .data like our custom instance
         }
+        // Re-fire original request — new cookie is sent automatically
+        return await api(originalRequest);
       } catch (refreshErr) {
         console.warn('Silent refresh failed, terminating session.', refreshErr);
-        localStorage.removeItem('rms_token');
         localStorage.removeItem('rms_user');
         window.location.reload();
       }
     } else if (error.response?.status === 401) {
-      // If we already retried and failed again, log out
-      localStorage.removeItem('rms_token');
       localStorage.removeItem('rms_user');
       window.location.reload();
     }
@@ -74,11 +61,10 @@ export const authAPI = {
   
   async logout() {
     try {
-      await api.post('/auth/logout');
+      await api.post('/auth/logout'); // server clears the HttpOnly cookie
     } catch {
       // Server unreachable — still clear local session
     }
-    localStorage.removeItem('rms_token');
     localStorage.removeItem('rms_user');
   },
   async getFullProfile() {

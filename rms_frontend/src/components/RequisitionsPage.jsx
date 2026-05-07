@@ -126,14 +126,11 @@ const FilePreviewModal = ({ attachment, onClose, initialBlobUrl = null }) => {
 
   if (!attachment) return null;
 
-  const token       = localStorage.getItem('rms_token');
   const serverUrl   = attachment?.id ? `/api/attachments/${attachment.id}/preview` : null;
   // Downloads use fetch+blob (no token in URL)
   const triggerSecureDownload = async (attachId, filename) => {
     try {
-      const res = await fetch(`/api/attachments/${attachId}/download`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('rms_token')}` }
-      });
+      const res = await fetch(`/api/attachments/${attachId}/download`, { credentials: 'include' });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -175,10 +172,8 @@ const FilePreviewModal = ({ attachment, onClose, initialBlobUrl = null }) => {
 
     const processFile = async () => {
       try {
-        // Fetch with Authorization header (never redirects to R2 — server proxies)
-        const res = await fetch(serverUrl, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        // Cookie-authenticated fetch (server proxies — never redirects to R2)
+        const res = await fetch(serverUrl, { credentials: 'include' });
         if (!res.ok) throw new Error(`Server returned ${res.status}: ${res.statusText}`);
         const blob = await res.blob();
 
@@ -510,9 +505,7 @@ const PrintStageModal = ({ req, detail, onClose }) => {
   // Trigger browser download for a single attachment
   const triggerAttachmentDownload = async (a) => {
     try {
-      const res = await fetch(`/api/attachments/${a.id}/download`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('rms_token')}` }
-      });
+      const res = await fetch(`/api/attachments/${a.id}/download`, { credentials: 'include' });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1896,7 +1889,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             <button
                               onClick={async () => {
                                 try {
-                                  const res = await fetch(`/api/attachments/${a.id}/download`, { headers: { Authorization: `Bearer ${localStorage.getItem('rms_token')}` } });
+                                  const res = await fetch(`/api/attachments/${a.id}/download`, { credentials: 'include' });
                                   if (!res.ok) throw new Error();
                                   const blob = await res.blob();
                                   const url = URL.createObjectURL(blob);
@@ -2440,7 +2433,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
 
   // SSE real-time subscription — updates arrive within seconds of any action
   useEffect(() => {
-    if (!localStorage.getItem('rms_token')) return;
+    if (!localStorage.getItem('rms_user')) return;
 
     let es;
     let reconnectTimer;

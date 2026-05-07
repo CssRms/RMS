@@ -32,10 +32,9 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const verifySession = async () => {
-      const token = localStorage.getItem('rms_token');
       const storedUser = localStorage.getItem('rms_user');
-      
-      if (token && storedUser) {
+
+      if (storedUser) {
         try {
           setUser(JSON.parse(storedUser));
           // Proactively verify token with backend
@@ -60,16 +59,17 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const { token, user: userData } = await authAPI.login(email, password);
+    const { user: userData } = await authAPI.login(email, password);
+    // Server sets the HttpOnly auth cookie — we only keep user data for the UI
     setUser(userData);
-    localStorage.setItem('rms_token', token);
     localStorage.setItem('rms_user', JSON.stringify(userData));
     return userData;
   };
 
   const deptLogin = async (departmentName, accessCode, mfaCode) => {
     try {
-      const { token, user: userData } = await authAPI.deptLogin(departmentName, accessCode, mfaCode);
+      const { user: userData } = await authAPI.deptLogin(departmentName, accessCode, mfaCode);
+      // Server sets the HttpOnly auth cookie — we only keep user data for the UI
 
       // Derive and store credential hashes using PBKDF2 — actual codes are never stored
       const accessSalt = randomHex(16);
@@ -84,10 +84,9 @@ export const AuthProvider = ({ children }) => {
         mfaSalt,
         mfaHash
       }));
-      localStorage.setItem('rms_offline_session', JSON.stringify({ token, user: userData }));
+      localStorage.setItem('rms_offline_session', JSON.stringify({ user: userData }));
 
       setUser(userData);
-      localStorage.setItem('rms_token', token);
       localStorage.setItem('rms_user', JSON.stringify(userData));
       return userData;
     } catch (err) {
@@ -107,7 +106,6 @@ export const AuthProvider = ({ children }) => {
           const session = JSON.parse(localStorage.getItem('rms_offline_session') || 'null');
           if (session) {
             setUser(session.user);
-            localStorage.setItem('rms_token', session.token);
             localStorage.setItem('rms_user', JSON.stringify(session.user));
             toast.success("Logged in offline securely.", { icon: '🔒' });
             return session.user;
@@ -119,27 +117,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const updateUser = (updatedFields, newToken) => {
+  const updateUser = (updatedFields, _newToken) => {
+    // _newToken ignored — server rotates the auth cookie directly on profile update
     const merged = { ...user, ...updatedFields };
     setUser(merged);
     localStorage.setItem('rms_user', JSON.stringify(merged));
-    if (newToken) {
-      localStorage.setItem('rms_token', newToken);
-      // Keep offline session in sync too
-      try {
-        const offline = localStorage.getItem('rms_offline_session');
-        if (offline) {
-          const parsed = JSON.parse(offline);
-          localStorage.setItem('rms_offline_session', JSON.stringify({ ...parsed, user: merged, token: newToken }));
-        }
-      } catch (_) {}
-    }
+    try {
+      const offline = localStorage.getItem('rms_offline_session');
+      if (offline) {
+        const parsed = JSON.parse(offline);
+        localStorage.setItem('rms_offline_session', JSON.stringify({ ...parsed, user: merged }));
+      }
+    } catch (_) {}
   };
 
   const logout = async () => {
-    await authAPI.logout();
+    await authAPI.logout(); // server clears HttpOnly cookie and blacklists token
     setUser(null);
-    localStorage.removeItem('rms_token');
     localStorage.removeItem('rms_user');
     localStorage.removeItem('rms_offline_auth');
     localStorage.removeItem('rms_offline_session');
