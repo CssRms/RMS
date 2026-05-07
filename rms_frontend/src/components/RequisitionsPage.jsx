@@ -2835,12 +2835,23 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                                   return { label: 'Vetting', color: statusColors.vetting, sub: cvDeptName ? `now in ${cvDeptName}` : null };
                                 }
                                 if (norm.finalState === 'approved' && norm.status === 'approved') return { label: 'Final Approved', color: statusColors.approved };
-                                
+
+                                // Finally approved but not yet routed to vetting
+                                if (norm.finalState === 'approved' && norm.status === 'pending') {
+                                  const faId = r.finalApprovedByDeptId ? parseInt(r.finalApprovedByDeptId) : null;
+                                  const faName = faId ? departments.find(d => d.id === faId)?.name : null;
+                                  return {
+                                    label: 'Approved',
+                                    color: 'bg-emerald-50 border-emerald-300 text-emerald-700',
+                                    sub:   faName ? `by ${faName} — awaiting vetting` : 'Awaiting vetting'
+                                  };
+                                }
+
                                 if (norm.status === 'approved') return { label: 'Approved (Internal)', color: statusColors.approved };
-                                
+
                                 if (norm.status === 'pending') {
-                                  return { 
-                                    label:  norm.currentStageName ? `At: ${norm.currentStageName}` : 'Pending', 
+                                  return {
+                                    label:  norm.currentStageName ? `At: ${norm.currentStageName}` : 'Pending',
                                     color:  statusColors.pending,
                                     sub:    norm.currentStageName ? 'Review Pending' : null
                                   };

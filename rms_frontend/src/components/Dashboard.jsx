@@ -310,6 +310,7 @@ const Dashboard = ({ onViewChange }) => {
                             if (norm.finalState === 'treated') return { label: 'Treated', color: statusColors.treated };
                             if (norm.finalState === 'vetting') return { label: 'Vetting', color: statusColors.vetting };
                             if (norm.finalState === 'approved' && norm.status === 'approved') return { label: 'Finally Approved', color: statusColors.approved };
+                            if (norm.finalState === 'approved' && norm.status === 'pending') return { label: 'Approved', color: 'bg-emerald-50 border-emerald-300 text-emerald-700', sub: 'Awaiting vetting' };
                             if (norm.status === 'approved') return { label: 'Approved', color: statusColors.approved };
                             if (norm.status === 'pending') return { label: 'Pending', color: statusColors.pending };
                             return { label: norm.status, color: statusColors.pending };
@@ -352,9 +353,14 @@ const Dashboard = ({ onViewChange }) => {
                                 </div>
                               </td>
                               <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
-                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${stateLabel.color}`}>
-                                  {stateLabel.label}
-                                </span>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className={`w-fit px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${stateLabel.color}`}>
+                                    {stateLabel.label}
+                                  </span>
+                                  {stateLabel.sub && (
+                                    <span className="text-[8px] font-bold text-muted-foreground/60 uppercase tracking-tighter">{stateLabel.sub}</span>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
                                 <div className="flex items-center gap-1 text-[9px] text-amber-600/80">
