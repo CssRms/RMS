@@ -1330,26 +1330,32 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
 
 // ── Vetting Panel (ICC / Audit / Account — role-specific auto-routing) ─────────
 const VettingPanel = ({ req, detail, user, departments, onDone }) => {
-  const [comment, setComment] = useState('');
-  const [acting, setActing]   = useState(false);
-  const fileRef = React.useRef(null);
-  const [file, setFile]       = useState(null);
+  const [comment, setComment]       = useState('');
+  const [acting, setActing]         = useState(false);
+  const fileRef                     = React.useRef(null);
+  const [file, setFile]             = useState(null);
+  const [forwardDeptId, setForwardDeptId] = useState('');
 
   const deptName = user?.name || '';
-  const currentVettingDeptId = detail?.currentVettingDeptId ? parseInt(detail.currentVettingDeptId) : null;
-  const isCurrentVetter = user?.deptId && currentVettingDeptId === user.deptId;
-  const finalApprovalStatus = detail?.finalApprovalStatus;
-
-  if (!isCurrentVetter) return null;
-  if (!finalApprovalStatus || finalApprovalStatus === 'none') return null;
-  if (finalApprovalStatus === 'treated') return null;
+  const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
+  const finalApprovedByDeptId  = detail?.finalApprovedByDeptId  ? parseInt(detail.finalApprovedByDeptId)  : null;
+  const isCurrentVetter        = user?.deptId && currentVettingDeptId === user.deptId;
+  const finalApprovalStatus    = detail?.finalApprovalStatus;
 
   const isICC      = /\bicc\b|integrity|compliance/i.test(deptName);
   const isAudit    = /\baudit\b/i.test(deptName);
   const isAccount  = /\baccount\b/i.test(deptName);
   const isChairman = /ceo|chairman/i.test(deptName);
-  // Account and Chairman always treat — regardless of who routed to them
-  const canTreat   = isAccount || isChairman;
+
+  // Chairman always has oversight — show panel even if not the active vetting dept
+  const isChairmanOverride = isChairman && finalApprovalStatus === 'vetting' && finalApprovedByDeptId === user?.deptId;
+
+  if (!isCurrentVetter && !isChairmanOverride) return null;
+  if (!finalApprovalStatus || finalApprovalStatus === 'none') return null;
+  if (finalApprovalStatus === 'treated') return null;
+
+  // Account and Chairman always treat — they also have Forward + Return options
+  const canTreat = isAccount || isChairman;
 
   // Auto-resolve next/return dept from departments list (no dropdown needed)
   const auditDept   = departments.find(d => /\baudit\b/i.test(d.name));
@@ -1365,10 +1371,13 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     try {
       let result = null;
       if (action === 'forward') {
-        const nextDeptId = isICC ? auditDept?.id : accountDept?.id;
-        if (!nextDeptId) { toast.error('Next department not found.'); setActing(false); return; }
+        let nextDeptId;
+        if (isICC)        nextDeptId = auditDept?.id;
+        else if (isAudit) nextDeptId = accountDept?.id;
+        else              nextDeptId = forwardDeptId ? parseInt(forwardDeptId) : null;
+        if (!nextDeptId) { toast.error(canTreat ? 'Please select a department to forward to.' : 'Next department not found.'); setActing(false); return; }
         result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined });
-        if (result !== null) toast.success(isICC ? 'Submitted to Audit.' : 'Forwarded to Account.');
+        if (result !== null) toast.success(isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded successfully.');
       } else if (action === 'treated') {
         result = await vettingActionRequisition(req.id, { action: 'treated', comment: comment || undefined, file: file || undefined });
         if (result !== null) toast.success('Requisition marked as treated!');
@@ -1415,28 +1424,53 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        {/* Primary action: ICC→Submit, Audit→Forward, Account/Chairman→Treated */}
-        {!canTreat ? (
+      {canTreat ? (
+        /* Account / Chairman — Treat is primary; Forward (with dept picker) + Return always available */
+        <div className="space-y-2 pt-1">
+          <button onClick={() => act('treated')} disabled={acting}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
+            {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            Mark Treated
+          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <select
+                value={forwardDeptId}
+                onChange={e => setForwardDeptId(e.target.value)}
+                className="w-full bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300">
+                <option value="">Forward to dept…</option>
+                {departments.filter(d => d.id !== user?.deptId).map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+              <button onClick={() => act('forward')} disabled={acting || !forwardDeptId}
+                className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
+                {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                Forward
+              </button>
+            </div>
+            <button onClick={() => act('return')} disabled={acting}
+              className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
+              {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+              Return
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* ICC / Audit — forward to next in chain + Return */
+        <div className="grid grid-cols-2 gap-2 pt-1">
           <button onClick={() => act('forward')} disabled={acting || primaryDisabled}
             className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
             {acting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             {primaryLabel}
           </button>
-        ) : (
-          <button onClick={() => act('treated')} disabled={acting}
-            className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
-            {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            Mark Treated
+          <button onClick={() => act('return')} disabled={acting}
+            className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
+            {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+            Return
           </button>
-        )}
-        {/* Return button — auto-routes to previous dept via backend */}
-        <button onClick={() => act('return')} disabled={acting}
-          className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
-          {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-          Return
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -2582,11 +2582,10 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
 
-    // Allow: current vetting dept, final approving dept (chairman can treat), or admin
+    // Allow: current vetting dept, final approving dept (Chairman has full oversight), or admin
     const canAct = isAdmin
       || (requisition.currentVettingDeptId === userDeptId)
-      || (action === 'treated' && requisition.finalApprovedByDeptId === userDeptId)
-      || (action === 'return' && requisition.currentVettingDeptId === userDeptId);
+      || (requisition.finalApprovedByDeptId === userDeptId);
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });
@@ -2644,8 +2643,14 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       let resetVetting = false;
 
       if (myChainIdx === 0 || myChainIdx === -1) {
-        // ICC → return to final-approving authority; reset vetting entirely
-        returnToDeptId = requisition.finalApprovedByDeptId;
+        // ICC or Chairman/unrecognised → reset vetting entirely
+        // If the returning dept IS the final approver (Chairman returning their own decision),
+        // send back to the original creator's department instead
+        if (requisition.finalApprovedByDeptId && requisition.finalApprovedByDeptId !== userDeptId) {
+          returnToDeptId = requisition.finalApprovedByDeptId;
+        } else {
+          returnToDeptId = requisition.departmentId;
+        }
         resetVetting = true;
       } else if (myChainIdx === 1) {
         // Audit → return to ICC if ICC was in the chain, else to approving authority
@@ -2713,6 +2718,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         }
       });
 
+      // Notify the originating department
       if (requisition.departmentId) {
         await notifyDepartmentHead({
           departmentId: requisition.departmentId,
@@ -2723,6 +2729,32 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
             `All vetting stages are complete.`
           ]
         }).catch(() => { });
+      }
+
+      // When Chairman/CEO treats, auto-share the record with Account for financial processing
+      if (/ceo|chairman/i.test(actingDeptName)) {
+        const allDepts = await prisma.department.findMany({ select: { id: true, name: true } });
+        const accountDept = allDepts.find(d => /\baccount\b/i.test(d.name));
+        if (accountDept && accountDept.id !== userDeptId) {
+          await notifyDepartmentHead({
+            departmentId: accountDept.id,
+            requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
+            subject: `📋 Chairman Treatment Record — Req #${id}`,
+            lines: [
+              `Requisition #${id} has been directly treated by ${actingDeptName}.`,
+              `Title: ${requisition.title || `Requisition #${id}`}`,
+              requisition.amount ? `Amount: ₦${Number(requisition.amount).toLocaleString()}` : null,
+              comment ? `Chairman's Remarks: ${comment}` : null,
+              `This record is shared with Account for financial processing and audit.`
+            ].filter(Boolean)
+          }).catch(() => { });
+          // Also push a real-time notification to Account
+          await sendPushNotification([accountDept.id], {
+            title: `Chairman Treated Req #${id}`,
+            body: `Req #${id} was directly treated by ${actingDeptName}. Record forwarded to Account.`,
+            url: `/?req=${reqId}`
+          }).catch(() => { });
+        }
       }
     } else {
       // forward
