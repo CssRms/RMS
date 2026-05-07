@@ -2377,9 +2377,18 @@ app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) =>
       }
     });
 
-    // Notify new target dept if applicable
+    broadcastUpdate(parseInt(id), {
+      action: returnToSender ? 'returned' : 'forwarded',
+      fromDept: requisition.targetDepartment?.name || req.user?.name || 'Department',
+      toDept: returnToSender
+        ? (updated.department?.name || 'Originator')
+        : (updated.targetDepartment?.name || 'Department')
+    });
+    res.json(updated);
+
+    // Fire notifications in background — must not block the HTTP response
     if (!returnToSender && newTargetId) {
-      await notifyDepartmentHead({
+      notifyDepartmentHead({
         departmentId: newTargetId,
         requisition: updated,
         subject: `📋 Forwarded Requisition: ${updated.title}`,
@@ -2391,12 +2400,11 @@ app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) =>
           amountLine(updated.type, updated.amount),
           note ? `Note: ${note}` : null
         ].filter(Boolean)
-      });
+      }).catch(() => {});
     }
 
-    // Notify original sender dept on return
     if (returnToSender && updated.departmentId) {
-      await notifyDepartmentHead({
+      notifyDepartmentHead({
         departmentId: updated.departmentId,
         requisition: updated,
         subject: `⚠️ Requisition Returned: ${updated.title}`,
@@ -2405,18 +2413,10 @@ app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) =>
           `Returned By: ${requisition.targetDepartment?.name || 'Department'}`,
           note ? `Reason: ${note}` : `Please review the requisition for details.`
         ].filter(Boolean)
-      });
+      }).catch(() => {});
     }
 
-    broadcastUpdate(parseInt(id), {
-      action: returnToSender ? 'returned' : 'forwarded',
-      fromDept: requisition.targetDepartment?.name || req.user?.name || 'Department',
-      toDept: returnToSender
-        ? (updated.department?.name || 'Originator')
-        : (updated.targetDepartment?.name || 'Department')
-    });
     pushToTaggedDepts(parseInt(id), { title: 'Requisition Updated', body: `Req #${id} has been ${returnToSender ? 'returned' : 'forwarded'}.`, url: `/?req=${id}` });
-    res.json(updated);
   } catch (error) { sendError(res, 500, error.message); }
 });
 
@@ -2540,8 +2540,8 @@ app.post('/api/requisitions/:id/send-to-vetting', authenticateToken, async (req,
       }
     });
 
-    // Notify vetting dept
-    await notifyDepartmentHead({
+    // Notify vetting dept — fire-and-forget, do not block response
+    notifyDepartmentHead({
       departmentId: vettingDeptId,
       requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
       subject: `📋 Approved Requisition for Vetting: #${id}`,
@@ -2703,7 +2703,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         });
       }
 
-      await notifyDepartmentHead({
+      notifyDepartmentHead({
         departmentId: returnToDeptId,
         requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
         subject: `↩️ Requisition Returned for Review: #${id}`,
@@ -2724,9 +2724,9 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         }
       });
 
-      // Notify the originating department
+      // Notify the originating department — fire-and-forget
       if (requisition.departmentId) {
-        await notifyDepartmentHead({
+        notifyDepartmentHead({
           departmentId: requisition.departmentId,
           requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
           subject: `✅ Requisition Treated: #${id}`,
@@ -2737,30 +2737,30 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         }).catch(() => { });
       }
 
-      // When Chairman/CEO treats, auto-share the record with Account for financial processing
+      // When Chairman/CEO treats, auto-share the record with Account — fire-and-forget
       if (/ceo|chairman/i.test(actingDeptName)) {
-        const allDepts = await prisma.department.findMany({ select: { id: true, name: true } });
-        const accountDept = allDepts.find(d => /\baccount\b/i.test(d.name));
-        if (accountDept && accountDept.id !== userDeptId) {
-          await notifyDepartmentHead({
-            departmentId: accountDept.id,
-            requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
-            subject: `📋 Chairman Treatment Record — Req #${id}`,
-            lines: [
-              `Requisition #${id} has been directly treated by ${actingDeptName}.`,
-              `Title: ${requisition.title || `Requisition #${id}`}`,
-              requisition.amount ? `Amount: ₦${Number(requisition.amount).toLocaleString()}` : null,
-              comment ? `Chairman's Remarks: ${comment}` : null,
-              `This record is shared with Account for financial processing and audit.`
-            ].filter(Boolean)
-          }).catch(() => { });
-          // Also push a real-time notification to Account
-          await sendPushNotification([accountDept.id], {
-            title: `Chairman Treated Req #${id}`,
-            body: `Req #${id} was directly treated by ${actingDeptName}. Record forwarded to Account.`,
-            url: `/?req=${reqId}`
-          }).catch(() => { });
-        }
+        prisma.department.findMany({ select: { id: true, name: true } }).then(allDepts => {
+          const accountDept = allDepts.find(d => /\baccount\b/i.test(d.name));
+          if (accountDept && accountDept.id !== userDeptId) {
+            notifyDepartmentHead({
+              departmentId: accountDept.id,
+              requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
+              subject: `📋 Chairman Treatment Record — Req #${id}`,
+              lines: [
+                `Requisition #${id} has been directly treated by ${actingDeptName}.`,
+                `Title: ${requisition.title || `Requisition #${id}`}`,
+                requisition.amount ? `Amount: ₦${Number(requisition.amount).toLocaleString()}` : null,
+                comment ? `Chairman's Remarks: ${comment}` : null,
+                `This record is shared with Account for financial processing and audit.`
+              ].filter(Boolean)
+            }).catch(() => { });
+            sendPushNotification([accountDept.id], {
+              title: `Chairman Treated Req #${id}`,
+              body: `Req #${id} was directly treated by ${actingDeptName}. Record forwarded to Account.`,
+              url: `/?req=${reqId}`
+            }).catch(() => { });
+          }
+        }).catch(() => {});
       }
     } else {
       // forward
@@ -2773,7 +2773,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         data: { currentVettingDeptId: nextDeptId }
       });
 
-      await notifyDepartmentHead({
+      notifyDepartmentHead({
         departmentId: nextDeptId,
         requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
         subject: `📋 Approved Requisition for Vetting: #${id}`,
