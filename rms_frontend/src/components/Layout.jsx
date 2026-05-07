@@ -592,7 +592,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         </aside>
 
         <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10 w-full bg-[#FAF9F6]/50">
-          <div className="p-3 lg:p-5 max-w-full mx-auto animate-slide-up">
+          <div className="rms-app-content p-3 lg:p-5 max-w-full mx-auto animate-slide-up">
             {children}
           </div>
         </main>

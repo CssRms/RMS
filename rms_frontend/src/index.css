@@ -79,6 +79,15 @@
   box-shadow: 0 8px 32px rgba(249, 115, 22, 0.05); /* subtle orange glow */
 }
 
+@media (min-width: 1024px) {
+  .rms-app-content > [class*="max-w-"] {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
 /* ── Custom Stress-Free Scrollbar ── */
 .custom-scrollbar {
   scrollbar-width: thin;

@@ -823,8 +823,8 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
   const forwardDepts = departments.filter(d => {
     if (d.id === detail?.targetDepartmentId) return false;
     const n = d.name || '';
-    // Chairman can forward anywhere except vetting/account depts
-    if (currentIsChairman) return !/\bicc\b|integrity|compliance|audit|account/i.test(n);
+    // Chairman can forward to any department except the one already holding it.
+    if (currentIsChairman) return true;
     // GM → Chairman ONLY (strict upward routing)
     if (currentIsGM) return /ceo|chairman/i.test(n);
     // HR → all departments except Chairman/CEO
