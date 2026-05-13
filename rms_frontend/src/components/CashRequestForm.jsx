@@ -247,6 +247,10 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
                   <label className="text-[11px] font-black text-muted-foreground uppercase tracking-widest pl-2">Itemized List *</label>
                 </div>
 
+                {/* Scrollable wrapper so the fixed-width columns don't crush the description input on narrow screens */}
+                <div className="overflow-x-auto -mx-1 px-1 pb-1">
+                  <div className="min-w-[560px]">
+
                 {/* Column headers — match PDF layout: S/N | Item Description | Quantity | Unit Price | Total | (delete) */}
                 <div className="grid grid-cols-[40px_1fr_90px_120px_110px_40px] gap-2 px-1">
                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest text-center">S/N</span>
@@ -257,7 +261,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
                   <span />
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3 mt-2">
                   {items.map((item, i) => {
                     const lineTotal = (parseFloat(item.qty) || 0) * (parseFloat(item.amount) || 0);
                     return (
@@ -302,6 +306,9 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
                     );
                   })}
                 </div>
+
+                  </div>{/* end min-w inner */}
+                </div>{/* end overflow-x-auto */}
 
                 {/* Add Item button — below the last row */}
                 <button
