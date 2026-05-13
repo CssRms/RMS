@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Send, Loader2, ChevronDown, ArrowLeft, Paperclip, FileText, Eye } from 'lucide-react';
-import { addRequisition, getDepartments } from '../lib/store';
+import { Plus, X, Send, Loader2, ChevronDown, ArrowLeft, Paperclip, FileText, Eye, WifiOff, CloudUpload, CheckCircle, AlertTriangle } from 'lucide-react';
+import { addRequisition, getDepartments, uploadAttachments } from '../lib/store';
 import { reqAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -15,7 +15,17 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   const [items, setItems] = useState([{ qty: 1, description: '', amount: '' }]);
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('idle'); // 'idle' | 'uploading' | 'done' | 'queued' | 'error'
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    const up = () => setIsOnline(true);
+    const down = () => setIsOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
+  }, []);
 
   const isEditing = !!editDraft;
 
@@ -143,9 +153,21 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
         savedId = Array.isArray(result) ? result[0]?.id : result?.id;
       }
 
-      if (savedId && files.length > 0) {
-        try { await reqAPI.uploadAttachments(savedId, files); }
-        catch { toast.error('Request submitted but some attachments failed to upload.'); }
+      if (files.length > 0) {
+        if (!savedId) {
+          // Requisition was queued offline — files can't be attached yet; tell the user clearly
+          toast('Your requisition is saved offline. Re-attach your files once the request syncs to the server.', { icon: '📎', duration: 6000 });
+        } else {
+          setUploadStatus('uploading');
+          try {
+            await uploadAttachments(savedId, files);
+            // uploadAttachments from store queues offline automatically and toasts itself
+            setUploadStatus(navigator.onLine ? 'done' : 'queued');
+          } catch (uploadErr) {
+            setUploadStatus('error');
+            toast.error('Files could not be attached — ' + (uploadErr?.message || 'upload failed. Please try again.'));
+          }
+        }
       }
 
       toast.success(isDraft ? 'Draft saved.' : `${type} request submitted successfully.`);
@@ -335,7 +357,42 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
 
           {/* Attachments */}
           <div className="space-y-3 pt-6 border-t border-border/40">
-            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest pl-2">Attachments (optional)</label>
+            <div className="flex items-center justify-between pl-2 pr-1">
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Attachments (optional)</label>
+              {/* Live network badge */}
+              {!isOnline ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                  <WifiOff size={10} /> Offline — files saved locally
+                </span>
+              ) : uploadStatus === 'uploading' ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full animate-pulse">
+                  <CloudUpload size={10} /> Uploading…
+                </span>
+              ) : uploadStatus === 'done' ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                  <CheckCircle size={10} /> Uploaded
+                </span>
+              ) : uploadStatus === 'queued' ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                  <AlertTriangle size={10} /> Queued — will upload when online
+                </span>
+              ) : uploadStatus === 'error' ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                  <AlertTriangle size={10} /> Upload failed — retry on submit
+                </span>
+              ) : null}
+            </div>
+
+            {/* Offline notice when files are staged but network is down */}
+            {!isOnline && files.length > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+                <WifiOff size={14} className="shrink-0 mt-0.5" />
+                <p className="text-[11px] font-medium leading-snug">
+                  You're offline. Your files are staged and will upload automatically once the requisition syncs to the server. Keep this draft open or save it.
+                </p>
+              </div>
+            )}
+
             <input
               ref={fileRef}
               type="file"
@@ -364,9 +421,13 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center"
+              disabled={uploadStatus === 'uploading'}
+              className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}
+              {uploadStatus === 'uploading'
+                ? <><Loader2 size={14} className="animate-spin" /> Uploading files, please wait…</>
+                : <><Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}</>
+              }
             </button>
           </div>
 
@@ -414,18 +475,22 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
         <div className="p-6 lg:p-8 border-t border-border/50 flex flex-col-reverse sm:flex-row gap-4 shrink-0 bg-white">
           <button
             onClick={() => handleSubmit(true)}
-            disabled={submitting}
+            disabled={submitting || uploadStatus === 'uploading'}
             className="py-4 px-8 rounded-2xl border-2 border-border/60 text-sm font-black text-muted-foreground hover:bg-muted hover:text-foreground transition-all disabled:opacity-50 active:scale-95"
           >
             Save Draft
           </button>
           <button
             onClick={() => handleSubmit(false)}
-            disabled={submitting}
+            disabled={submitting || uploadStatus === 'uploading'}
             className="flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-primary text-white text-sm font-black transition-all disabled:opacity-50 shadow-xl shadow-primary/30 hover:bg-primary/90 hover:shadow-primary/40 active:scale-95"
           >
-            {submitting ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
-            {isEditing ? 'Update & Submit' : `Submit ${type} Request`}
+            {uploadStatus === 'uploading'
+              ? <><Loader2 size={20} className="animate-spin" /> Uploading files…</>
+              : submitting
+              ? <><Loader2 size={20} className="animate-spin" /> {!isOnline ? 'Saving offline…' : 'Submitting…'}</>
+              : <><Send size={20} /> {isEditing ? 'Update & Submit' : `Submit ${type} Request`}</>
+            }
           </button>
         </div>
       </div>
