@@ -1242,6 +1242,8 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
   const [selectedId, setSelectedId] = useState('');
   const [acting, setActing]         = useState(false);
 
+  const isGMOrAbove = /general\s*manager|\bgm\b|ceo|chairman/i.test(user?.department || '');
+
   const vettingDepts = departments.filter(d => {
     const n = d.name || '';
     if (/\bicc\b|integrity|compliance|audit|\baccount\b/i.test(n)) return true;
