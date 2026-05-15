@@ -1357,15 +1357,22 @@ app.get('/api/departments', async (req, res) => {
     const token = req.cookies?.rms_token
       || (req.headers['authorization']?.split(' ')[1]);
     let isAuthenticated = false;
+    let isGlobalAdmin = false;
     if (token) {
-      try { jwt.verify(token, JWT_SECRET); isAuthenticated = true; } catch (_) { }
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        isAuthenticated = true;
+        isGlobalAdmin = normalizeRole(decoded.role) === 'global_admin';
+      } catch (_) { }
     }
 
     const departments = await prisma.department.findMany({
       orderBy: { name: 'asc' },
-      select: isAuthenticated
-        ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
-        : { id: true, name: true, type: true, code: true }
+      select: isGlobalAdmin
+        ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
+        : isAuthenticated
+          ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
+          : { id: true, name: true, type: true, code: true }
     });
     res.json(departments);
   } catch (error) { sendError(res, 500, error.message); }

@@ -878,12 +878,14 @@ const DepartmentManager = ({ onViewChange }) => {
                         </td>
                         <td className="py-4 px-4">
                           {displayCode ? (
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-mono font-bold ${dept.codeChangedByDept ? 'line-through text-muted-foreground/40 decoration-red-400 decoration-2' : 'text-foreground'}`}>
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`text-xs font-mono font-bold ${dept.codeChangedByDept ? 'line-through text-muted-foreground/30 decoration-red-400 decoration-2' : 'text-foreground'}`}>
                                 {displayCode}
                               </span>
                               {dept.codeChangedByDept && (
-                                <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Modified</span>
+                                <span className="text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded-md uppercase tracking-wider w-fit">
+                                  ✓ Changed by Dept
+                                </span>
                               )}
                             </div>
                           ) : (
