@@ -17,7 +17,7 @@ import {
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
   CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash
 } from 'lucide-react';
-import { reqAPI } from '../lib/api';
+import { reqAPI, forwardAPI } from '../lib/api';
 
 const statusColors = {
   pending:    'bg-amber-50 border-amber-200 text-amber-700',
