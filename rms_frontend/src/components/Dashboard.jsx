@@ -236,10 +236,10 @@ const Dashboard = ({ onViewChange }) => {
         </div>
 
         <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
-          <StatCard label="Pending Actions" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" />
+          <StatCard label="Pending Actions" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Approved Reqs" value={String(stats.approved).padStart(2, '0')} icon={CheckCircle2} color="emerald" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Rejected Reqs" value={String(stats.rejected).padStart(2, '0')} icon={XCircle} color="red" onClick={() => onViewChange('requisitions')} />
-          <StatCard label="Total Spent" value={formatCurrency(stats.totalSpent)} icon={ArrowUpRight} color="blue" />
+          <StatCard label="Total Spent" value={formatCurrency(stats.totalSpent)} icon={ArrowUpRight} color="blue" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Memo Traffic" value={String(stats.memos).padStart(2, '0')} icon={FileText} color="purple" onClick={() => onViewChange('memos')} />
           {user?.role === 'department' && (
             <div
@@ -325,7 +325,7 @@ const Dashboard = ({ onViewChange }) => {
                           })();
 
                           return (
-                            <tr key={r.id} className="group transition-all">
+                            <tr key={r.id} onClick={() => onViewChange('requisitions', { reqId: r.id })} className="group transition-all cursor-pointer">
                               <td className="py-3 px-4 bg-amber-50/50 border-y border-l border-amber-200/40 rounded-l-xl group-hover:bg-amber-50/80 transition-colors">
                                 <div className="flex flex-col">
                                   <span className="text-[10px] font-black text-amber-700 tracking-widest">#{r.id}</span>
@@ -378,7 +378,7 @@ const Dashboard = ({ onViewChange }) => {
                               </td>
                               <td className="py-3 px-4 bg-amber-50/50 border-y border-r border-amber-200/40 rounded-r-xl group-hover:bg-amber-50/80 transition-colors text-right">
                                 <button
-                                  onClick={() => onViewChange('requisitions', { reqId: r.id })}
+                                  onClick={e => { e.stopPropagation(); onViewChange('requisitions', { reqId: r.id }); }}
                                   className="p-2 bg-amber-100 hover:bg-amber-500 hover:text-white rounded-xl text-amber-700 transition-all border border-amber-200/60 shadow-sm active:scale-90"
                                 >
                                   <Eye size={15} />
@@ -453,7 +453,7 @@ const Dashboard = ({ onViewChange }) => {
                       {filtered.map(r => {
                         const isMoneyReq = r.type === 'Cash' || (r.amount && r.amount > 0);
                         return (
-                        <tr key={r.id} className="group transition-all">
+                        <tr key={r.id} onClick={() => isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id })} className="group transition-all cursor-pointer">
                           <td className="py-4 px-6 bg-white/50 border-y border-l border-border/30 rounded-l-2xl group-hover:bg-white transition-colors">
                             <div className="flex flex-col">
                               <span className="text-[10px] font-black text-primary tracking-widest mb-0.5">#{r.id}</span>
@@ -537,7 +537,7 @@ const Dashboard = ({ onViewChange }) => {
                             </div>
                           </td>
                           <td className="py-4 px-6 bg-white/50 border-y border-r border-border/30 rounded-r-2xl group-hover:bg-white transition-colors text-right">
-                            <button onClick={() => isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id })} className="p-2.5 bg-background hover:bg-primary hover:text-white rounded-xl text-primary transition-all border border-primary/10 shadow-sm active:scale-90">
+                            <button onClick={e => { e.stopPropagation(); isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id }); }} className="p-2.5 bg-background hover:bg-primary hover:text-white rounded-xl text-primary transition-all border border-primary/10 shadow-sm active:scale-90">
                               <Eye size={18} />
                             </button>
                           </td>
@@ -649,7 +649,7 @@ const Dashboard = ({ onViewChange }) => {
                           })();
 
                           return (
-                            <tr key={r.id} className="group transition-all">
+                            <tr key={r.id} onClick={() => isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id })} className="group transition-all cursor-pointer">
                               <td className="py-3 px-4 bg-blue-50/30 border-y border-l border-blue-100/60 rounded-l-xl group-hover:bg-blue-50/60 transition-colors">
                                 <div className="flex flex-col">
                                   <span className="text-[10px] font-black text-blue-600 tracking-widest">#{r.id}</span>
@@ -683,7 +683,7 @@ const Dashboard = ({ onViewChange }) => {
                               </td>
                               <td className="py-3 px-4 bg-blue-50/30 border-y border-r border-blue-100/60 rounded-r-xl group-hover:bg-blue-50/60 transition-colors text-right">
                                 <button
-                                  onClick={() => isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id })}
+                                  onClick={e => { e.stopPropagation(); isMemoRecord(r) ? onViewChange('memos') : onViewChange('requisitions', { reqId: r.id }); }}
                                   className="p-2 bg-white hover:bg-blue-500 hover:text-white rounded-xl text-blue-500 transition-all border border-blue-200/60 shadow-sm active:scale-90"
                                 >
                                   <Eye size={15} />
