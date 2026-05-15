@@ -298,21 +298,27 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
     if (!localStorage.getItem('rms_user')) return;
     let es;
     let reconnectTimer;
+    let closed = false;
     const connect = async () => {
+      if (closed) return;
       try {
         const { ticket } = await authAPI.getSseTicket();
+        if (closed) return;
         es = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`);
         es.addEventListener('requisition_updated', () => {
           getNotifications().then(data => setNotifications(data)).catch(() => {});
         });
         es.onerror = () => {
+          if (closed) return;
           es.close();
           reconnectTimer = setTimeout(connect, 8000);
         };
-      } catch { reconnectTimer = setTimeout(connect, 15000); }
+      } catch {
+        if (!closed) reconnectTimer = setTimeout(connect, 15000);
+      }
     };
     connect();
-    return () => { es?.close(); clearTimeout(reconnectTimer); };
+    return () => { closed = true; es?.close(); clearTimeout(reconnectTimer); };
   }, []);
 
   const [deptStatus, setDeptStatus] = useState({ isReady: true });
@@ -493,20 +499,34 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         actionAlert={actionAlert}
       />
 
-      {syncPending > 0 && (
+      {/* Persistent offline banner — always visible while disconnected */}
+      {!isOnline && (
+        <div className="bg-red-600 text-white text-xs font-bold px-4 py-2 flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2">
+            <WifiOff size={13} className="shrink-0" />
+            Offline — you&apos;re viewing cached data. All actions are queued and will sync automatically when reconnected.
+          </span>
+          {syncPending > 0 && (
+            <span className="shrink-0 bg-white/20 border border-white/30 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide">
+              {syncPending} queued
+            </span>
+          )}
+        </div>
+      )}
+
+      {syncPending > 0 && isOnline && (
         <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-xs font-bold px-4 py-2 flex items-center justify-between">
-          <span>{isOnline ? `${syncPending} item(s) pending sync` : `${syncPending} item(s) queued (offline)`}</span>
+          <span>{syncPending} item(s) pending sync</span>
           <button
             onClick={async () => {
-              if (!isOnline || syncing) return;
+              if (syncing) return;
               setSyncing(true);
               await flushSyncQueue({ force: true });
               const status = await getSyncQueueStatus();
               setSyncPending(status.pending || 0);
               setSyncing(false);
             }}
-            className={`flex items-center space-x-2 px-3 py-1 rounded-full border text-[10px] uppercase tracking-widest ${isOnline ? 'border-amber-300 hover:bg-amber-100' : 'border-amber-200 opacity-60 cursor-not-allowed'
-              }`}
+            className="flex items-center space-x-2 px-3 py-1 rounded-full border border-amber-300 hover:bg-amber-100 text-[10px] uppercase tracking-widest"
           >
             <RefreshCcw size={12} className={syncing ? 'animate-spin' : ''} />
             <span>{syncing ? 'Syncing' : 'Sync Now'}</span>

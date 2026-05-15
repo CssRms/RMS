@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { hrAPI } from '../lib/api';
+import { getHRJobs, getHRApplicants } from '../lib/store';
 import {
   UserPlus, Plus, X, Briefcase, MapPin, Clock,
   CheckCircle2, XCircle, ArrowRight, Eye, Edit2,
@@ -114,8 +115,7 @@ const RecruitmentPipeline = ({ onViewChange }) => {
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const res = await hrAPI.getJobs();
-      const data = Array.isArray(res) ? res : (res?.results || []);
+      const data = await getHRJobs();
       setJobs(data);
       if (data.length > 0 && !selectedJob) setSelectedJob(data[0]);
     } catch (err) {
@@ -129,8 +129,8 @@ const RecruitmentPipeline = ({ onViewChange }) => {
     if (!jobId) return;
     setLoadingApplicants(true);
     try {
-      const res = await hrAPI.getApplicants(jobId);
-      setApplicants(Array.isArray(res) ? res : (res?.results || []));
+      const data = await getHRApplicants(jobId);
+      setApplicants(data);
     } catch (err) {
       console.error(err);
     } finally {

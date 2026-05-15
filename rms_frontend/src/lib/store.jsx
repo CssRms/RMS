@@ -1,7 +1,7 @@
 import localforage from 'localforage';
 import { toast } from 'react-hot-toast';
 import React from 'react';
-import api, { deptAPI, reqAPI, auditAPI, userAPI, forwardAPI, vettingAPI } from './api';
+import api, { deptAPI, reqAPI, auditAPI, userAPI, forwardAPI, vettingAPI, hrAPI } from './api';
 
 // ── Configure storage namespaces ──
 const requisitionStore = localforage.createInstance({ name: 'CSS_RMS', storeName: 'requisitions' });
@@ -11,6 +11,15 @@ const departmentStore = localforage.createInstance({ name: 'CSS_RMS', storeName:
 const syncQueueStore    = localforage.createInstance({ name: 'CSS_RMS', storeName: 'sync_queue' });
 const notificationStore = localforage.createInstance({ name: 'CSS_RMS', storeName: 'notifications' });
 const fileUploadStore   = localforage.createInstance({ name: 'CSS_RMS', storeName: 'file_uploads' });
+const reqDetailStore    = localforage.createInstance({ name: 'CSS_RMS', storeName: 'req_details' });
+
+// ── HR offline stores ──
+const hrEmployeeStore   = localforage.createInstance({ name: 'CSS_RMS', storeName: 'hr_employees' });
+const hrLeaveStore      = localforage.createInstance({ name: 'CSS_RMS', storeName: 'hr_leaves' });
+const hrAttendanceStore = localforage.createInstance({ name: 'CSS_RMS', storeName: 'hr_attendance' });
+const hrPayrollStore    = localforage.createInstance({ name: 'CSS_RMS', storeName: 'hr_payroll' });
+const hrJobStore        = localforage.createInstance({ name: 'CSS_RMS', storeName: 'hr_jobs' });
+const hrStatsStore      = localforage.createInstance({ name: 'CSS_RMS', storeName: 'hr_stats' });
 
 // ── File blob helpers for offline queuing ──
 const OFFLINE_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50 MB total guard
@@ -512,11 +521,25 @@ export async function clearNotifications() {
 
 export async function getRequisitionDetail(id) {
   try {
-    return await reqAPI.getRequisition(id);
+    const data = await reqAPI.getRequisition(id);
+    // Cache the full detail so it's readable offline later
+    await reqDetailStore.setItem(String(id), data);
+    return data;
   } catch (err) {
-    console.warn("Could not fetch requisition detail:", err);
+    // Network failure — serve from cache if available
+    const cached = await reqDetailStore.getItem(String(id));
+    if (cached) {
+      console.warn(`Offline: Serving cached detail for requisition #${id}`);
+      return cached;
+    }
+    console.warn("Could not fetch requisition detail and no cache exists:", err);
     return null;
   }
+}
+
+// Invalidate a single cached detail (call this after any mutation on that req)
+export async function invalidateRequisitionDetail(id) {
+  await reqDetailStore.removeItem(String(id));
 }
 
 // ── Workflow CRUD ──
@@ -723,5 +746,97 @@ export async function vettingActionRequisition(reqId, { action, comment, nextDep
 
     await queueOfflineAction('vettingAction', reqId, { action, comment, nextDeptId });
     return null;
+  }
+}
+
+// ── HR offline-safe read functions ────────────────────────────────────────────
+// Each follows NetworkFirst: try the server, fall back to the local cache.
+// Write operations (create/update/delete) still go through hrAPI directly
+// since they require a live server — they are not queued offline.
+
+export async function getHRStats() {
+  try {
+    const data = await hrAPI.getHRStats();
+    await hrStatsStore.setItem('latest', data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR stats', err);
+    return (await hrStatsStore.getItem('latest')) || { employees: 0, pendingLeaves: 0, attendanceRate: 0, openPositions: 0 };
+  }
+}
+
+export async function getHREmployees() {
+  try {
+    const remote = await hrAPI.getEmployees();
+    const data = Array.isArray(remote) ? remote : (remote?.results || []);
+    await hrEmployeeStore.setItem('all', data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR employees', err);
+    return (await hrEmployeeStore.getItem('all')) || [];
+  }
+}
+
+export async function getHRLeaves(params = {}) {
+  const cacheKey = Object.keys(params).length ? JSON.stringify(params) : 'all';
+  try {
+    const remote = await hrAPI.getLeaves(params);
+    const data = Array.isArray(remote) ? remote : (remote?.results || []);
+    await hrLeaveStore.setItem(cacheKey, data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR leaves', err);
+    return (await hrLeaveStore.getItem(cacheKey)) || (await hrLeaveStore.getItem('all')) || [];
+  }
+}
+
+export async function getHRAttendance(params = {}) {
+  const cacheKey = `${params.year ?? 'cur'}-${params.month ?? 'cur'}`;
+  try {
+    const remote = await hrAPI.getAttendance(params);
+    const data = Array.isArray(remote) ? remote : (remote?.results || []);
+    await hrAttendanceStore.setItem(cacheKey, data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR attendance', err);
+    return (await hrAttendanceStore.getItem(cacheKey)) || [];
+  }
+}
+
+export async function getHRPayroll(params = {}) {
+  const cacheKey = `${params.year ?? 'cur'}-${params.month ?? 'cur'}`;
+  try {
+    const remote = await hrAPI.getPayroll(params);
+    const data = Array.isArray(remote) ? remote : (remote?.results || []);
+    await hrPayrollStore.setItem(cacheKey, data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR payroll', err);
+    return (await hrPayrollStore.getItem(cacheKey)) || [];
+  }
+}
+
+export async function getHRJobs() {
+  try {
+    const remote = await hrAPI.getJobs();
+    const data = Array.isArray(remote) ? remote : (remote?.results || []);
+    await hrJobStore.setItem('jobs', data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR jobs', err);
+    return (await hrJobStore.getItem('jobs')) || [];
+  }
+}
+
+export async function getHRApplicants(jobId) {
+  const cacheKey = `applicants-${jobId}`;
+  try {
+    const remote = await hrAPI.getApplicants(jobId);
+    const data = Array.isArray(remote) ? remote : (remote?.results || []);
+    await hrJobStore.setItem(cacheKey, data);
+    return data;
+  } catch (err) {
+    console.warn('Offline: Using cached HR applicants for job', jobId, err);
+    return (await hrJobStore.getItem(cacheKey)) || [];
   }
 }

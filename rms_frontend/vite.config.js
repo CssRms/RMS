@@ -106,6 +106,17 @@ export default defineConfig({
               expiration: { maxEntries: 20, maxAgeSeconds: 86400 },
               cacheableResponse: { statuses: [0, 200] }
             }
+          },
+          {
+            // HR module (employees, leaves, attendance, payroll, jobs) — NetworkFirst, 1 h TTL
+            urlPattern: /^\/api\/hr\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-hr',
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 100, maxAgeSeconds: 3600 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
           }
         ]
       }

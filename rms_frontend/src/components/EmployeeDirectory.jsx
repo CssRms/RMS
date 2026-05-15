@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { hrAPI, deptAPI } from '../lib/api';
+import { getHREmployees, getDepartments } from '../lib/store';
 import {
   Users, Search, Plus, X, Edit2, Trash2, Mail, Phone,
   MapPin, Briefcase, ChevronDown, Eye, Upload, User as UserIcon,
@@ -130,13 +131,9 @@ const EmployeeDirectory = ({ onViewChange }) => {
   const load = async () => {
     setLoading(true);
     try {
-      const [empRes, deptRes] = await Promise.allSettled([hrAPI.getEmployees(), deptAPI.getDepartments()]);
-      if (empRes.status === 'fulfilled') {
-        setEmployees(Array.isArray(empRes.value) ? empRes.value : (empRes.value?.results || []));
-      }
-      if (deptRes.status === 'fulfilled') {
-        setDepartments(Array.isArray(deptRes.value) ? deptRes.value : (deptRes.value?.results || []));
-      }
+      const [empRes, deptRes] = await Promise.allSettled([getHREmployees(), getDepartments()]);
+      if (empRes.status === 'fulfilled') setEmployees(empRes.value);
+      if (deptRes.status === 'fulfilled') setDepartments(deptRes.value);
     } catch (err) {
       console.error(err);
     } finally {

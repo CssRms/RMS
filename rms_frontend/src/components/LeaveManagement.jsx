@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { hrAPI } from '../lib/api';
+import { getHRLeaves } from '../lib/store';
 import {
   CalendarDays, CheckCircle2, XCircle, Clock, Filter,
   Plus, X, MessageSquare, Eye, AlertCircle, ArrowRight,
@@ -59,8 +60,7 @@ const LeaveManagement = ({ onViewChange }) => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await hrAPI.getLeaves();
-      const data = Array.isArray(res) ? res : (res?.results || []);
+      const data = await getHRLeaves();
       setLeaves(data);
     } catch (err) {
       console.error(err);

@@ -2468,10 +2468,13 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
 
     let es;
     let reconnectTimer;
+    let closed = false; // tracks intentional unmount close so we don't re-schedule
 
     const connect = async () => {
+      if (closed) return;
       try {
         const { ticket } = await reqAPI.getSseTicket();
+        if (closed) return;
         es = new EventSource(`/api/events?ticket=${encodeURIComponent(ticket)}`);
         es.addEventListener('requisition_updated', (e) => {
           const { id, action, fromDept, toDept } = JSON.parse(e.data);
@@ -2511,11 +2514,14 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
           }
         });
         es.onerror = () => {
+          if (closed) return;
           es.close();
           setSyncStale(true);
           reconnectTimer = setTimeout(connect, 8000);
         };
-      } catch { reconnectTimer = setTimeout(connect, 15000); }
+      } catch {
+        if (!closed) reconnectTimer = setTimeout(connect, 15000);
+      }
     };
 
     connect();
@@ -2526,6 +2532,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     }, 30000);
 
     return () => {
+      closed = true;
       es?.close();
       clearTimeout(reconnectTimer);
       clearInterval(staleTimer);

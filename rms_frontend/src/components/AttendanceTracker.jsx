@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { hrAPI } from '../lib/api';
+import { getHREmployees, getHRAttendance } from '../lib/store';
 import {
   Clock, ChevronLeft, ChevronRight, Download,
   CheckCircle2, XCircle, AlertTriangle, CalendarDays,
@@ -71,8 +72,8 @@ const AttendanceTracker = ({ onViewChange }) => {
     setLoading(true);
     try {
       const [empRes, attRes] = await Promise.allSettled([
-        hrAPI.getEmployees(),
-        hrAPI.getAttendance({ year, month: month + 1 }),
+        getHREmployees(),
+        getHRAttendance({ year, month: month + 1 }),
       ]);
       if (empRes.status === 'fulfilled') {
         const emps = Array.isArray(empRes.value) ? empRes.value : (empRes.value?.results || []);

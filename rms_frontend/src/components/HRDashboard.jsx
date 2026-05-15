@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { hrAPI } from '../lib/api';
+import { getHRStats, getHRLeaves } from '../lib/store';
 import {
   Users, CalendarDays, Clock, UserPlus, HeartHandshake,
   CheckCircle2, XCircle, ArrowRight, Eye, TrendingUp,
@@ -63,8 +64,8 @@ const HRDashboard = ({ onViewChange }) => {
     const load = async () => {
       try {
         const [statsRes, leavesRes] = await Promise.allSettled([
-          hrAPI.getHRStats(),
-          hrAPI.getLeaves({ status: 'pending', limit: 5 }),
+          getHRStats(),
+          getHRLeaves({ status: 'pending', limit: 5 }),
         ]);
         if (statsRes.status === 'fulfilled' && statsRes.value) setStats(statsRes.value);
         if (leavesRes.status === 'fulfilled' && leavesRes.value) {

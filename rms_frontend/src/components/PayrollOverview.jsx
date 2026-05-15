@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { hrAPI } from '../lib/api';
+import { getHRPayroll } from '../lib/store';
 import {
   DollarSign, ChevronLeft, ChevronRight, Download,
   CheckCircle2, Clock, AlertTriangle, Printer,
@@ -153,8 +154,7 @@ const PayrollOverview = ({ onViewChange }) => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await hrAPI.getPayroll({ year, month });
-      const data = Array.isArray(res) ? res : (res?.results || []);
+      const data = await getHRPayroll({ year, month });
       setPayroll(data);
     } catch (err) {
       console.error(err);
