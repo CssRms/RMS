@@ -72,19 +72,43 @@ import { Toaster, toast } from 'react-hot-toast'
 
 import { flushSyncQueue, getDepartmentById, updateDepartmentHead } from './lib/store';
 
-const NetworkContext = createContext({ isOnline: true });
+const NetworkContext = createContext({ isOnline: true, networkQuality: 'strong' });
 export const useNetwork = () => useContext(NetworkContext);
+
+const classifyQuality = (rtt) => {
+  if (!navigator.onLine) return 'offline';
+  const conn = navigator.connection;
+  const etype = conn?.effectiveType;
+  if (etype === 'slow-2g') return 'poor';
+  if (etype === '2g') return 'weak';
+  if (etype === '3g') return 'partial';
+  if (etype === '4g') return 'strong';
+  if (rtt > 2500) return 'poor';
+  if (rtt > 900)  return 'weak';
+  if (rtt > 350)  return 'partial';
+  return 'strong';
+};
 
 const NetworkProvider = ({ children }) => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [networkQuality, setNetworkQuality] = useState(() => {
+    if (!navigator.onLine) return 'offline';
+    const conn = navigator.connection;
+    const etype = conn?.effectiveType;
+    if (etype === 'slow-2g') return 'poor';
+    if (etype === '2g') return 'weak';
+    if (etype === '3g') return 'partial';
+    return 'strong';
+  });
 
   useEffect(() => {
     let checkInterval;
 
     const checkConnectivity = async () => {
+      const start = Date.now();
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         const response = await fetch('/health', {
           method: 'GET',
@@ -93,15 +117,22 @@ const NetworkProvider = ({ children }) => {
         });
 
         clearTimeout(timeoutId);
+        const rtt = Date.now() - start;
 
-        if (response.ok && !isOnline) {
-          setIsOnline(true);
-          toast.success('Connection Restored. Syncing pending actions…', {
-            icon: <img src="/CSS_Group.png" className="w-8 h-5 object-cover rounded" alt="" />
-          });
-          flushSyncQueue();
+        if (response.ok) {
+          setNetworkQuality(classifyQuality(rtt));
+          if (!isOnline) {
+            setIsOnline(true);
+            toast.success('Connection Restored. Syncing pending actions…', {
+              icon: <img src="/CSS_Group.png" className="w-8 h-5 object-cover rounded" alt="" />
+            });
+            flushSyncQueue();
+          }
         }
       } catch (err) {
+        const rtt = Date.now() - start;
+        const likelyOffline = !navigator.onLine || rtt < 300;
+        setNetworkQuality(likelyOffline ? 'offline' : 'poor');
         if (isOnline) {
           setIsOnline(false);
           toast.error('Offline Mode Active. Drafts will save locally.', {
@@ -109,6 +140,18 @@ const NetworkProvider = ({ children }) => {
             duration: 4000
           });
         }
+      }
+    };
+
+    const handleConnectionChange = () => {
+      if (!navigator.onLine) return;
+      const conn = navigator.connection;
+      if (conn?.effectiveType) {
+        const etype = conn.effectiveType;
+        if (etype === 'slow-2g') setNetworkQuality('poor');
+        else if (etype === '2g') setNetworkQuality('weak');
+        else if (etype === '3g') setNetworkQuality('partial');
+        else if (etype === '4g') setNetworkQuality('strong');
       }
     };
 
@@ -120,21 +163,23 @@ const NetworkProvider = ({ children }) => {
 
     const handleBrowserStatusChange = () => {
       if (navigator.onLine) checkConnectivity();
-      else setIsOnline(false);
+      else { setIsOnline(false); setNetworkQuality('offline'); }
     };
 
     window.addEventListener('online', handleBrowserStatusChange);
     window.addEventListener('offline', handleBrowserStatusChange);
+    navigator.connection?.addEventListener('change', handleConnectionChange);
 
     return () => {
       clearInterval(checkInterval);
       window.removeEventListener('online', handleBrowserStatusChange);
       window.removeEventListener('offline', handleBrowserStatusChange);
+      navigator.connection?.removeEventListener('change', handleConnectionChange);
     };
   }, [isOnline]);
 
   return (
-    <NetworkContext.Provider value={{ isOnline }}>
+    <NetworkContext.Provider value={{ isOnline, networkQuality }}>
       {children}
     </NetworkContext.Provider>
   );

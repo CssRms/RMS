@@ -6,7 +6,7 @@ import {
   LogOut, Bell, Briefcase, Activity, User as UserIcon, PenTool,
   ChevronLeft, ChevronRight, ChevronDown, Menu, Inbox, Clock, WifiOff, RefreshCcw,
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
-  HeartHandshake
+  HeartHandshake, Loader2, CheckCircle2, XCircle, X
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
@@ -41,8 +41,36 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = fals
   </div>
 );
 
+const SignalBars = ({ bars }) => (
+  <div className="flex items-end gap-[2.5px]" style={{ height: '11px' }}>
+    {[1, 2, 3, 4].map(i => (
+      <div
+        key={i}
+        className={`w-[3px] rounded-[1px] transition-all duration-500 ${i <= bars ? 'bg-current' : 'bg-current opacity-[0.12]'}`}
+        style={{ height: `${25 * i}%` }}
+      />
+    ))}
+  </div>
+);
+
+const QUALITY_CFG = {
+  offline: { label: 'Offline',       bars: 0, cls: 'bg-rose-500/10 border-rose-400/30 text-rose-600',   dot: 'bg-rose-500' },
+  poor:    { label: 'Poor Signal',   bars: 1, cls: 'bg-red-500/10 border-red-400/30 text-red-600',       dot: 'bg-red-500 animate-pulse' },
+  weak:    { label: 'Weak Signal',   bars: 2, cls: 'bg-orange-500/10 border-orange-400/30 text-orange-600', dot: 'bg-orange-500 animate-pulse' },
+  partial: { label: 'Partial',       bars: 3, cls: 'bg-amber-500/10 border-amber-400/30 text-amber-700',  dot: 'bg-amber-500' },
+  strong:  { label: 'Online',        bars: 4, cls: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600', dot: 'bg-emerald-500 animate-pulse' },
+};
+
+const REFRESH_STEPS = [
+  { key: 'ping',   label: 'Verifying server connection' },
+  { key: 'reqs',   label: 'Fetching latest requisitions' },
+  { key: 'notifs', label: 'Refreshing notifications' },
+  { key: 'page',   label: 'Syncing current page data' },
+];
+
 const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotifications, showBell, setShowBell, onLogout, onViewChange, currentView, actionAlert }) => {
-  const { isOnline } = useNetwork();
+  const { isOnline, networkQuality } = useNetwork();
+  const qcfg = QUALITY_CFG[networkQuality] || QUALITY_CFG.strong;
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const handleNotifClick = async (n) => {
@@ -94,6 +122,76 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
   const handleClearAll = async () => {
     await clearNotifications();
     setNotifications([]);
+  };
+
+  const [showRefreshPopover, setShowRefreshPopover] = useState(false);
+  const [refreshRunning, setRefreshRunning] = useState(false);
+  const [refreshSteps, setRefreshSteps] = useState(REFRESH_STEPS.map(s => ({ ...s, status: 'idle', error: null })));
+  const [refreshSummary, setRefreshSummary] = useState(null);
+
+  const handleHardRefresh = async () => {
+    if (refreshRunning) return;
+    setShowRefreshPopover(true);
+    setRefreshRunning(true);
+    setRefreshSummary(null);
+    setRefreshSteps(REFRESH_STEPS.map(s => ({ ...s, status: 'pending', error: null })));
+
+    const setStep = (key, status, error = null) =>
+      setRefreshSteps(prev => prev.map(s => s.key === key ? { ...s, status, error } : s));
+
+    let ok = 0, fail = 0;
+
+    // Step 1: server ping
+    setStep('ping', 'running');
+    try {
+      if (!navigator.onLine) throw new Error('Device is offline');
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch('/health', { cache: 'no-store', signal: ctrl.signal });
+      clearTimeout(tid);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      setStep('ping', 'done'); ok++;
+    } catch (e) {
+      const msg = e.name === 'AbortError'
+        ? 'Request timed out — network too slow to reach server'
+        : !navigator.onLine ? 'No internet connection'
+        : e.message;
+      setStep('ping', 'error', msg); fail++;
+      setRefreshSummary({ ok, fail: REFRESH_STEPS.length - ok });
+      setRefreshRunning(false);
+      return;
+    }
+
+    // Step 2: requisitions
+    setStep('reqs', 'running');
+    try {
+      await reqAPI.getAll();
+      setStep('reqs', 'done'); ok++;
+    } catch (e) {
+      const msg = e?.response?.status === 401 ? 'Session expired — please log in again'
+        : (e?.code === 'ERR_NETWORK' || e?.name === 'AbortError') ? 'Connection dropped while fetching'
+        : e?.message || 'Could not fetch requisitions';
+      setStep('reqs', 'error', msg); fail++;
+    }
+
+    // Step 3: notifications
+    setStep('notifs', 'running');
+    try {
+      const notifs = await getNotifications();
+      setNotifications(notifs);
+      setStep('notifs', 'done'); ok++;
+    } catch (e) {
+      setStep('notifs', 'error', e?.message || 'Notification refresh failed'); fail++;
+    }
+
+    // Step 4: signal current page to reload
+    setStep('page', 'running');
+    window.dispatchEvent(new CustomEvent('globalHardRefresh'));
+    setStep('page', 'done'); ok++;
+
+    setRefreshSummary({ ok, fail });
+    setRefreshRunning(false);
+    if (fail === 0) setTimeout(() => setShowRefreshPopover(false), 3500);
   };
 
   return (
@@ -150,19 +248,98 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
             </span>
           </div>
         ) : (
-          <div className={`px-4 py-1.5 rounded-full border flex items-center gap-2.5 transition-all duration-500 shadow-sm ${isOnline
-            ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600 shadow-emerald-500/5'
-            : 'bg-rose-500/5 border-rose-500/20 text-rose-500 shadow-rose-500/5'
-            }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-            <span className="text-[9px] font-black uppercase tracking-[0.25em]">
-              {isOnline ? 'Neural Core: Online' : 'Neural Core: Offline'}
+          <div className={`px-3 py-1.5 rounded-full border flex items-center gap-2 transition-all duration-500 shadow-sm ${qcfg.cls}`}>
+            <SignalBars bars={qcfg.bars} />
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${qcfg.dot}`} />
+            <span className="text-[9px] font-black uppercase tracking-[0.22em] whitespace-nowrap">
+              Neural Core: {qcfg.label}
             </span>
           </div>
         )}
       </div>
 
       <div className="flex items-center space-x-3 lg:space-x-5">
+
+        {/* Hard refresh — pull latest data from server */}
+        <div className="relative">
+          <button
+            onClick={handleHardRefresh}
+            disabled={refreshRunning}
+            title="Pull latest data from server"
+            className={`relative p-1.5 rounded-lg transition-all disabled:opacity-40 ${showRefreshPopover ? 'bg-foreground text-background shadow-md' : 'text-muted-foreground hover:bg-muted hover:text-primary'}`}
+          >
+            <RefreshCcw size={16} className={refreshRunning ? 'animate-spin text-primary' : ''} />
+          </button>
+
+          {showRefreshPopover && (
+            <div className="fixed inset-x-4 top-[60px] sm:absolute sm:inset-auto sm:right-0 sm:mt-3 sm:w-72 bg-white rounded-2xl border border-border/80 shadow-[0_20px_50px_rgba(0,0,0,0.15)] z-[100] animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+              <div className="p-4 border-b border-border/40 bg-muted/30 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {refreshRunning
+                    ? <Loader2 size={13} className="animate-spin text-primary" />
+                    : refreshSummary?.fail === 0
+                      ? <CheckCircle2 size={13} className="text-emerald-500" />
+                      : refreshSummary
+                        ? <XCircle size={13} className="text-amber-500" />
+                        : <RefreshCcw size={13} className="text-muted-foreground" />
+                  }
+                  <h3 className="text-xs font-black uppercase tracking-widest text-foreground">
+                    {refreshRunning ? 'Refreshing…' : 'System Refresh'}
+                  </h3>
+                </div>
+                {!refreshRunning && (
+                  <button onClick={() => setShowRefreshPopover(false)} className="p-0.5 text-muted-foreground hover:text-foreground rounded-lg transition-colors">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="p-4 space-y-3">
+                {refreshSteps.map(step => (
+                  <div key={step.key} className="flex items-start gap-3">
+                    <div className="w-4 h-4 shrink-0 mt-0.5 flex items-center justify-center">
+                      {(step.status === 'idle' || step.status === 'pending')
+                        ? <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/20" />
+                        : step.status === 'running'
+                          ? <Loader2 size={13} className="animate-spin text-primary" />
+                          : step.status === 'done'
+                            ? <CheckCircle2 size={13} className="text-emerald-500" />
+                            : <XCircle size={13} className="text-red-500" />
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[11px] font-bold leading-tight ${
+                        step.status === 'error'   ? 'text-red-600'
+                        : step.status === 'done'   ? 'text-emerald-700'
+                        : step.status === 'running' ? 'text-primary'
+                        : 'text-muted-foreground/50'
+                      }`}>{step.label}</p>
+                      {step.error && (
+                        <p className="text-[10px] text-red-500/90 mt-0.5 leading-snug break-words">{step.error}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {refreshSummary && (
+                <div className={`px-4 py-3 border-t border-border/30 flex items-center justify-between ${refreshSummary.fail === 0 ? 'bg-emerald-50/70' : 'bg-amber-50/70'}`}>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${refreshSummary.fail === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {refreshSummary.fail === 0
+                      ? `✓ All ${REFRESH_STEPS.length} systems refreshed`
+                      : `${refreshSummary.ok}/${REFRESH_STEPS.length} complete — ${refreshSummary.fail} failed`}
+                  </span>
+                  {refreshSummary.fail > 0 && (
+                    <button onClick={handleHardRefresh} className="text-[9px] font-black text-primary hover:text-primary/70 uppercase tracking-widest">
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="relative">
           <button
             onClick={() => setShowBell(!showBell)}
