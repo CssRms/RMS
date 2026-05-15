@@ -129,8 +129,59 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
   const [refreshSteps, setRefreshSteps] = useState(REFRESH_STEPS.map(s => ({ ...s, status: 'idle', error: null })));
   const [refreshSummary, setRefreshSummary] = useState(null);
 
+  // Background update detection — badge count
+  const [pendingUpdates, setPendingUpdates] = useState(0);
+  const lastKnownUnread = React.useRef(null);
+  const swUpdated = React.useRef(false);
+
+  useEffect(() => {
+    const swPollRef = { current: null };
+
+    const silentPoll = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const notifs = await getNotifications();
+        const freshUnread = (notifs || []).filter(n => !n.isRead).length;
+        if (lastKnownUnread.current === null) {
+          // First run — just set baseline, don't count as new
+          lastKnownUnread.current = freshUnread;
+          return;
+        }
+        const diff = freshUnread - lastKnownUnread.current;
+        if (diff > 0) {
+          setPendingUpdates(prev => prev + diff);
+          setNotifications(notifs); // silently update the bell too
+        }
+        lastKnownUnread.current = freshUnread;
+      } catch { }
+    };
+
+    const pollId = setInterval(silentPoll, 90000); // every 90 s
+
+    // Detect new deployment via service worker update
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then(reg => {
+          swPollRef.current = setInterval(() => reg.update().catch(() => {}), 120000);
+          reg.addEventListener('updatefound', () => {
+            if (!swUpdated.current) {
+              swUpdated.current = true;
+              setPendingUpdates(prev => prev + 1);
+            }
+          });
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      clearInterval(pollId);
+      if (swPollRef.current) clearInterval(swPollRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleHardRefresh = async () => {
     if (refreshRunning) return;
+    setPendingUpdates(0); // clear badge immediately on click
     setShowRefreshPopover(true);
     setRefreshRunning(true);
     setRefreshSummary(null);
@@ -179,6 +230,8 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
     try {
       const notifs = await getNotifications();
       setNotifications(notifs);
+      lastKnownUnread.current = (notifs || []).filter(n => !n.isRead).length;
+      swUpdated.current = false;
       setStep('notifs', 'done'); ok++;
     } catch (e) {
       setStep('notifs', 'error', e?.message || 'Notification refresh failed'); fail++;
@@ -265,10 +318,15 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
           <button
             onClick={handleHardRefresh}
             disabled={refreshRunning}
-            title="Pull latest data from server"
+            title={pendingUpdates > 0 ? `${pendingUpdates} new update${pendingUpdates > 1 ? 's' : ''} — click to apply` : 'Pull latest data from server'}
             className={`relative p-1.5 rounded-lg transition-all disabled:opacity-40 ${showRefreshPopover ? 'bg-foreground text-background shadow-md' : 'text-muted-foreground hover:bg-muted hover:text-primary'}`}
           >
             <RefreshCcw size={16} className={refreshRunning ? 'animate-spin text-primary' : ''} />
+            {pendingUpdates > 0 && !refreshRunning && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center px-1 ring-2 ring-white shadow-sm animate-bounce">
+                {pendingUpdates > 9 ? '9+' : pendingUpdates}
+              </span>
+            )}
           </button>
 
           {showRefreshPopover && (
