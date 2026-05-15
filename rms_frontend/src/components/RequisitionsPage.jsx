@@ -842,8 +842,8 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
     if (currentIsGM) return /ceo|chairman/i.test(n);
     // HR → all departments except Chairman/CEO
     if (currentIsHR) return !/ceo|chairman/i.test(n);
-    // Regular depts: peer depts + HR (not GM, Chairman, Audit, ICC, Account)
-    return !/general\s*manager|\bgm\b|ceo|chairman|\bicc\b|integrity|compliance|audit|account/i.test(n);
+    // Regular depts: peer depts + HR (not GM, Chairman, Audit, Account)
+    return !/general\s*manager|\bgm\b|ceo|chairman|audit|account/i.test(n);
   });
   const selectedForwardDept = forwardDepts.find(d => String(d.id) === String(targetId));
   const openForwardSelector = () => { setMode('forward'); setFwdListOpen(true); };
