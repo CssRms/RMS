@@ -2099,53 +2099,15 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             {/* Right Sidebar Column */}
             <div className="bg-muted/10 overflow-y-auto custom-scrollbar p-4 lg:p-5 space-y-5 flex flex-col order-1 lg:order-2">
 
-              {/* Items — mobile slot 0: appears first on mobile, before Current Status */}
-              {itemsBlock && <div className="lg:hidden border-b border-border/30 pb-4">{itemsBlock}</div>}
+              {/* ── SLOT ORDER (mobile = right sidebar first, desktop = right sidebar only) ──
+                  1. Current Status  (always)
+                  2. Item Details    (lg:hidden — mobile only)
+                  3. Enclosures      (lg:hidden — mobile only)
+                  4. Vetting Chain   (always)
+                  5. Processing Chain (always)
+              ── */}
 
-              {/* Enclosures — mobile slot 1: right after item table, before chains */}
-              {attachments.length > 0 && (
-                <div className="lg:hidden space-y-3 border-b border-border/30 pb-4">
-                  <div className="flex items-center space-x-2">
-                    <Paperclip size={13} className="text-primary" />
-                    <p className="text-[10px] font-black text-foreground uppercase tracking-[0.1em]">Enclosures ({attachments.length})</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {attachments.map(a => (
-                      <div key={a.id} className="flex items-center gap-2 p-3 bg-muted/20 rounded-xl border border-border/30 text-xs hover:border-primary/20 transition-all group">
-                        <FileText size={13} className="text-primary shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-foreground font-bold text-[11px]">{a.filename}</p>
-                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                            <span className="text-[9px] text-muted-foreground font-mono">{a.size ? `${(a.size / 1024).toFixed(0)} KB` : 'N/A'}</span>
-                            {(a.uploadedBy?.name || a.uploaderDept) && (
-                              <span className="text-[9px] text-primary/70 font-bold uppercase tracking-wide">
-                                {a.uploaderDept || a.uploadedBy?.department?.name || ''}
-                                {a.uploadedBy?.name ? ` · ${a.uploadedBy.name}` : ''}
-                              </span>
-                            )}
-                            {a.stageName && <span className="text-[9px] text-muted-foreground/60 italic">{a.stageName}</span>}
-                            {a.createdAt && <span className="text-[9px] text-muted-foreground/50 font-mono">{new Date(a.createdAt).toLocaleDateString()}</span>}
-                          </div>
-                        </div>
-                        <button onClick={() => setPreviewFile(a)} title="Preview" className="p-1.5 text-muted-foreground hover:text-primary transition-all rounded-lg hover:bg-primary/5 shrink-0"><Eye size={14} /></button>
-                        <button onClick={async () => {
-                          try {
-                            const res = await fetch(`/api/attachments/${a.id}/download`, { credentials: 'include' });
-                            if (!res.ok) throw new Error();
-                            const blob = await res.blob();
-                            const url = URL.createObjectURL(blob);
-                            const dl = document.createElement('a');
-                            dl.href = url; dl.download = a.filename; document.body.appendChild(dl);
-                            dl.click(); dl.remove();
-                            setTimeout(() => URL.revokeObjectURL(url), 10000);
-                          } catch { toast.error('Download failed.'); }
-                        }} title="Download" className="p-1.5 text-muted-foreground hover:text-primary transition-all rounded-lg hover:bg-primary/5 shrink-0"><Download size={14} /></button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
+              {/* 1. Current Status — first on both mobile and desktop */}
               {/* Status & Alerts */}
               <div className="space-y-3">
                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Current Status</p>
@@ -2238,8 +2200,52 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                  )}
               </div>
 
-              {/* Brief only — mobile slot 1: appears between Current Status and Processing Chain */}
-              {briefBlock && <div className="lg:hidden border-t border-border/30 pt-4">{briefBlock}</div>}
+              {/* 2. Items — mobile slot: after Current Status */}
+              {itemsBlock && <div className="lg:hidden border-b border-border/30 pb-4">{itemsBlock}</div>}
+
+              {/* 3. Enclosures — mobile slot: right after item table */}
+              {attachments.length > 0 && (
+                <div className="lg:hidden space-y-3 border-b border-border/30 pb-4">
+                  <div className="flex items-center space-x-2">
+                    <Paperclip size={13} className="text-primary" />
+                    <p className="text-[10px] font-black text-foreground uppercase tracking-[0.1em]">Enclosures ({attachments.length})</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {attachments.map(a => (
+                      <div key={a.id} className="flex items-center gap-2 p-3 bg-muted/20 rounded-xl border border-border/30 text-xs hover:border-primary/20 transition-all group">
+                        <FileText size={13} className="text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-foreground font-bold text-[11px]">{a.filename}</p>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            <span className="text-[9px] text-muted-foreground font-mono">{a.size ? `${(a.size / 1024).toFixed(0)} KB` : 'N/A'}</span>
+                            {(a.uploadedBy?.name || a.uploaderDept) && (
+                              <span className="text-[9px] text-primary/70 font-bold uppercase tracking-wide">
+                                {a.uploaderDept || a.uploadedBy?.department?.name || ''}
+                                {a.uploadedBy?.name ? ` · ${a.uploadedBy.name}` : ''}
+                              </span>
+                            )}
+                            {a.stageName && <span className="text-[9px] text-muted-foreground/60 italic">{a.stageName}</span>}
+                            {a.createdAt && <span className="text-[9px] text-muted-foreground/50 font-mono">{new Date(a.createdAt).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
+                        <button onClick={() => setPreviewFile(a)} title="Preview" className="p-1.5 text-muted-foreground hover:text-primary transition-all rounded-lg hover:bg-primary/5 shrink-0"><Eye size={14} /></button>
+                        <button onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/attachments/${a.id}/download`, { credentials: 'include' });
+                            if (!res.ok) throw new Error();
+                            const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
+                            const dl = document.createElement('a');
+                            dl.href = url; dl.download = a.filename; document.body.appendChild(dl);
+                            dl.click(); dl.remove();
+                            setTimeout(() => URL.revokeObjectURL(url), 10000);
+                          } catch { toast.error('Download failed.'); }
+                        }} title="Download" className="p-1.5 text-muted-foreground hover:text-primary transition-all rounded-lg hover:bg-primary/5 shrink-0"><Download size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Vetting Chain History — most recent, shown above processing chain */}
               {detail?.vettingEvents?.length > 0 && (() => {
@@ -2736,13 +2742,13 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                 onClick={() => setIsFormOpen('Cash')}
                 className="bg-primary hover:bg-primary/90 text-white font-black py-3 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
               >
-                <Plus size={16} /> Cash Request
+                <Plus size={16} /> Fund Request
               </button>
               <button
                 onClick={() => setIsFormOpen('Material')}
                 className="bg-foreground hover:bg-foreground/90 text-background font-black py-3 px-5 rounded-2xl transition-all shadow-lg flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
               >
-                <Plus size={16} /> Material
+                <Plus size={16} /> Procurement
               </button>
             </div>
           </div>
