@@ -57,6 +57,7 @@ const DeptProfileContent = ({ user: _user }) => {
   const [codeForm, setCodeForm] = useState({ current: '', newCode: '', confirm: '' });
   const [showFields, setShowFields] = useState({ current: false, newCode: false, confirm: false });
   const [changingCode, setChangingCode] = useState(false);
+  const [sigTs, setSigTs] = useState(Date.now());
   const fileInputRef = useRef(null);
 
   const fetchProfile = async () => {
@@ -86,6 +87,7 @@ const DeptProfileContent = ({ user: _user }) => {
     try {
       await reqAPI.uploadDeptSignature(file);
       toast.success('Signature uploaded successfully');
+      setSigTs(Date.now());
       await fetchProfile();
     } catch (err) { toast.error(err.response?.data?.error || 'Upload failed'); }
     finally { setUploading(false); e.target.value = ''; }
@@ -210,22 +212,30 @@ const DeptProfileContent = ({ user: _user }) => {
         <div className="space-y-5">
           {/* Signature Upload */}
           <Card title="Official Signature" subtitle="Used on all PDF documents" icon={PenTool}>
-            <div className={`w-full aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-all ${
-              profile.hasSignature ? 'bg-emerald-50 border-emerald-200' : 'bg-muted/20 border-border hover:border-primary/40'
+            <div className={`w-full rounded-xl border-2 border-dashed overflow-hidden transition-all ${
+              profile.hasSignature ? 'border-emerald-200 bg-emerald-50/40' : 'bg-muted/20 border-border hover:border-primary/40'
             }`}>
               {profile.hasSignature ? (
-                <>
-                  <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center">
-                    <CheckCircle2 size={20} className="text-white" />
+                <div className="relative group">
+                  <img
+                    src={`/api/department/signature/image?t=${sigTs}`}
+                    alt="Official Signature"
+                    className="w-full max-h-40 object-contain p-3"
+                    onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                  />
+                  <div style={{ display: 'none' }} className="flex-col items-center justify-center gap-2 p-6">
+                    <CheckCircle2 size={20} className="text-emerald-500" />
+                    <p className="text-xs font-bold text-emerald-700">Signature Active</p>
                   </div>
-                  <p className="text-xs font-bold text-emerald-700">Signature Active</p>
-                  <p className="text-[10px] text-emerald-600/70">Click below to replace</p>
-                </>
+                  <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest bg-white/80 px-2 py-1 rounded-lg">Click below to replace</span>
+                  </div>
+                </div>
               ) : (
-                <>
+                <div className="flex flex-col items-center justify-center gap-3 p-8">
                   <Upload size={28} className="text-muted-foreground/30" />
                   <p className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-wider">No Signature</p>
-                </>
+                </div>
               )}
             </div>
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}

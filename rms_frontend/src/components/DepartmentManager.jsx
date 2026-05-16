@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useRef } from 'react';
 import {
   Plus, Trash2, Building2, Briefcase, Search, ChevronDown, ChevronRight,
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
   CheckCircle2, RotateCcw, Info, User, Mail, Phone, MapPin, BadgeCheck, Download,
-  Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles
+  Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles, Upload, PenTool
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
-import { deptAPI, settingsAPI, adminAPI } from '../lib/api';
+import { deptAPI, settingsAPI, adminAPI, reqAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import Modal from './Modal';
@@ -661,6 +662,11 @@ const DepartmentManager = ({ onViewChange }) => {
   const [purgingId, setPurgingId] = useState(null);
   const [viewingRecord, setViewingRecord] = useState(null);
 
+  // Signature management (admin override)
+  const [uploadingSigFor, setUploadingSigFor] = useState(null); // deptId currently uploading
+  const [sigTimestamps, setSigTimestamps] = useState({});       // { [deptId]: ts } for cache-busting
+  const sigFileRef = useRef(null);
+
   const loadDeletedRecords = async () => {
     setLoadingBin(true);
     try {
@@ -668,6 +674,21 @@ const DepartmentManager = ({ onViewChange }) => {
       setDeletedRecords(Array.isArray(data) ? data : data?.data || []);
     } catch { setDeletedRecords([]); }
     finally { setLoadingBin(false); }
+  };
+
+  const handleAdminSigUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !uploadingSigFor) return;
+    const deptId = uploadingSigFor;
+    setUploadingSigFor(`uploading_${deptId}`);
+    try {
+      await reqAPI.adminUploadDeptSignature(deptId, file);
+      setSigTimestamps(prev => ({ ...prev, [deptId]: Date.now() }));
+      toast.success('Signature updated and department notified.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Upload failed.');
+    } finally { setUploadingSigFor(null); }
   };
 
   const handlePurgeRecord = async (id) => {
@@ -856,6 +877,7 @@ const DepartmentManager = ({ onViewChange }) => {
                   <th className="py-4 px-4 rounded-tl-xl border-y border-l">Unit Name</th>
                   <th className="py-4 px-4 border-y">Category</th>
                   <th className="py-4 px-4 border-y">Login Code</th>
+                  <th className="py-4 px-4 border-y">Signature</th>
                   <th className="py-4 px-4 border-y">Head Official</th>
                   <th className="py-4 px-4 border-y">Official Email</th>
                   <th className="py-4 px-4 border-y">Contact Phone</th>
@@ -891,6 +913,36 @@ const DepartmentManager = ({ onViewChange }) => {
                           ) : (
                             <span className="text-[9px] text-muted-foreground/40 italic">Not set</span>
                           )}
+                        </td>
+                        <td className="py-4 px-4">
+                          {(() => {
+                            const ts = sigTimestamps[dept.id] || 0;
+                            const isUploading = uploadingSigFor === `uploading_${dept.id}`;
+                            return (
+                              <div className="flex flex-col items-center gap-1.5 min-w-[80px]">
+                                <div className="w-16 h-10 rounded-lg border border-border/40 bg-muted/20 overflow-hidden flex items-center justify-center">
+                                  <img
+                                    src={`/api/departments/${dept.id}/signature/image?t=${ts}`}
+                                    alt="sig"
+                                    className="max-w-full max-h-full object-contain"
+                                    onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                                  />
+                                  <div style={{ display: 'none' }} className="w-full h-full items-center justify-center">
+                                    <PenTool size={12} className="text-muted-foreground/30" />
+                                  </div>
+                                </div>
+                                <button
+                                  disabled={isUploading}
+                                  onClick={() => { setUploadingSigFor(dept.id); sigFileRef.current?.click(); }}
+                                  className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary hover:text-white text-primary transition-all flex items-center gap-1 disabled:opacity-50"
+                                  title={`Set/override signature for ${dept.name}`}
+                                >
+                                  {isUploading ? <Loader2 size={9} className="animate-spin" /> : <Upload size={9} />}
+                                  {isUploading ? 'Saving…' : 'Set'}
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="py-4 px-4 text-xs text-muted-foreground font-medium">{dept.headName || '—'}</td>
                         <td className="py-4 px-4 text-xs text-primary font-medium">{dept.headEmail || '—'}</td>
@@ -1113,6 +1165,15 @@ const DepartmentManager = ({ onViewChange }) => {
       {/* Deleted Record Detail Modal */}
       {viewingRecord && (
         <DeletedRecordModal rec={viewingRecord} onClose={() => setViewingRecord(null)} />
+
+        {/* Hidden file input for admin signature override */}
+        <input
+          type="file"
+          ref={sigFileRef}
+          className="hidden"
+          accept="image/png,image/jpeg"
+          onChange={handleAdminSigUpload}
+        />
       )}
 
       {/* Seal View Modal */}

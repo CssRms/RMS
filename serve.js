@@ -3084,6 +3084,85 @@ app.post('/api/department/signature', authenticateToken, upload.single('file'), 
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── GET department signature image (dept sees own; admin sees any) ────────────
+app.get('/api/department/signature/image', authenticateToken, async (req, res) => {
+  try {
+    const deptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    if (!deptId) return res.status(403).json({ error: 'Forbidden' });
+    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { headEmail: true } });
+    if (!dept?.headEmail) return res.status(404).json({ error: 'No signature on file' });
+    const headUser = await prisma.user.findFirst({ where: { email: dept.headEmail }, include: { signature: true } });
+    if (!headUser?.signature?.imageKey) return res.status(404).json({ error: 'No signature on file' });
+    const buf = await getObjectBuffer(headUser.signature.imageKey);
+    const ext = headUser.signature.imageKey.split('.').pop().toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+    res.set({ 'Content-Type': mime, 'Cache-Control': 'no-store' });
+    res.send(buf);
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+app.get('/api/departments/:id/signature/image', authenticateToken, async (req, res) => {
+  try {
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const deptId = parseInt(req.params.id);
+    const requesterDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    if (!isAdmin && requesterDeptId !== deptId) return res.status(403).json({ error: 'Forbidden' });
+    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { headEmail: true } });
+    if (!dept?.headEmail) return res.status(404).json({ error: 'No signature on file' });
+    const headUser = await prisma.user.findFirst({ where: { email: dept.headEmail }, include: { signature: true } });
+    if (!headUser?.signature?.imageKey) return res.status(404).json({ error: 'No signature on file' });
+    const buf = await getObjectBuffer(headUser.signature.imageKey);
+    const ext = headUser.signature.imageKey.split('.').pop().toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+    res.set({ 'Content-Type': mime, 'Cache-Control': 'no-store' });
+    res.send(buf);
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ── Admin override: upload signature for any department ──────────────────────
+app.post('/api/departments/:id/signature', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    if (normalizeRole(req.user.role) !== 'global_admin') return res.status(403).json({ error: 'Admin only' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const deptId = parseInt(req.params.id);
+    const dept = await prisma.department.findUnique({ where: { id: deptId } });
+    if (!dept) return res.status(404).json({ error: 'Department not found' });
+    if (!dept.headEmail) return res.status(400).json({ error: 'Department has no head email set — set it first' });
+
+    let headUser = await prisma.user.findFirst({ where: { email: dept.headEmail } });
+    if (!headUser) {
+      headUser = await prisma.user.create({
+        data: {
+          email: dept.headEmail,
+          name: dept.headName || 'Department Head',
+          role: 'department',
+          departmentId: deptId,
+          password: crypto.randomBytes(8).toString('hex')
+        }
+      });
+    }
+
+    const storageKey = generateStorageKey(`signatures/head-${deptId}`, req.file.originalname);
+    await putObject({ key: storageKey, body: req.file.buffer, contentType: req.file.mimetype });
+    await prisma.userSignature.upsert({
+      where: { userId: headUser.id },
+      update: { imageKey: storageKey },
+      create: { userId: headUser.id, imageKey: storageKey }
+    });
+
+    // Notify the department that admin has set/replaced their signature
+    await prisma.notification.create({
+      data: {
+        departmentId: deptId,
+        content: `⚠️ Your official signature has been set/updated by the system administrator. It will be used on all PDF documents going forward.`,
+        link: '/dept_profile'
+      }
+    }).catch(() => {});
+
+    res.json({ success: true, message: `Signature updated for ${dept.name}` });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 // ── END GOVERNANCE ROUTES ───────────────────────────────────────────────────
 
 // Public verification endpoint (rate-limited, no auth required)

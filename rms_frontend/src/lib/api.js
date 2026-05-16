@@ -238,6 +238,13 @@ export const reqAPI = {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
   },
+  async adminUploadDeptSignature(deptId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/departments/${deptId}/signature`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
   async deleteAttachment(attachmentId) {
     return api.delete(`/attachments/${attachmentId}`);
   },
