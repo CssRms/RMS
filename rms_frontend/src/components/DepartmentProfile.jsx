@@ -113,7 +113,7 @@ const DeptProfileContent = ({ user: _user }) => {
   const isComplete = profile.headName && profile.headEmail && profile.hasSignature;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-16">
+    <div className="w-full space-y-6 pb-16">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -132,9 +132,9 @@ const DeptProfileContent = ({ user: _user }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* LEFT — main form (2/3 width) */}
-        <div className="lg:col-span-2 space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] xl:grid-cols-[1fr_360px] gap-6">
+        {/* LEFT — main form */}
+        <div className="space-y-5">
           <Card title="Department Head Details" subtitle="Official representative of this department" icon={User}>
             <form onSubmit={handleSave} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -284,7 +284,7 @@ const AdminProfileContent = ({ user }) => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-16">
+    <div className="w-full space-y-6 pb-16">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight">
@@ -347,7 +347,7 @@ const DepartmentProfile = ({ user, onViewChange }) => {
   const isAdmin = user?.role === 'global_admin';
 
   return (
-    <div className="px-1 pt-2">
+    <div className="w-full">
       {isAdmin
         ? <AdminProfileContent user={user} />
         : <DeptProfileContent user={user} onViewChange={onViewChange} />
