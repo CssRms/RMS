@@ -184,10 +184,11 @@ const RequisitionForm = ({ isOpen, onClose }) => {
         try {
           setUploadProgress(0);
           await uploadAttachments(result[0].id, files, { onProgress: setUploadProgress });
+          setUploadProgress(100);
         } catch {
           toast.error('Requisition created but file upload failed. You can add files later.');
         } finally {
-          setUploadProgress(null);
+          setTimeout(() => setUploadProgress(null), 400);
         }
       }
 

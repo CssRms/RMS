@@ -1516,13 +1516,16 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
     try {
       const { uploadAttachments } = await import('../lib/store');
       await uploadAttachments(req.id, files, { ...stageCtx, onProgress: setUploadProgress });
+      setUploadProgress(100);
       const updated = await getRequisitionDetail(req.id);
       setDetail(updated);
       setNewFiles([]);
       toast.success(`${files.length} file(s) attached successfully.`);
     } catch (err) {
       toast.error(err?.response?.data?.error || 'File upload failed. Please try again.');
-    } finally { setUploading(false); setUploadProgress(null); }
+    } finally {
+      setTimeout(() => { setUploading(false); setUploadProgress(null); }, 400);
+    }
   };
 
   // Is this an incoming (target dept) requisition for the current user?
