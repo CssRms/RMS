@@ -1359,10 +1359,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const isAccount  = /\baccount\b/i.test(deptName);
   const isChairman = /ceo|chairman/i.test(deptName);
 
-  // Chairman always has oversight — show panel even if not the active vetting dept
-  const isChairmanOverride = isChairman && finalApprovalStatus === 'vetting' && finalApprovedByDeptId === user?.deptId;
-
-  if (!isCurrentVetter && !isChairmanOverride) return null;
+  // Only the active vetting dept sees this panel
+  if (!isCurrentVetter) return null;
   if (!finalApprovalStatus || finalApprovalStatus === 'none') return null;
   if (finalApprovalStatus === 'treated') return null;
 
