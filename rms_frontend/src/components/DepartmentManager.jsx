@@ -1165,16 +1165,16 @@ const DepartmentManager = ({ onViewChange }) => {
       {/* Deleted Record Detail Modal */}
       {viewingRecord && (
         <DeletedRecordModal rec={viewingRecord} onClose={() => setViewingRecord(null)} />
-
-        {/* Hidden file input for admin signature override */}
-        <input
-          type="file"
-          ref={sigFileRef}
-          className="hidden"
-          accept="image/png,image/jpeg"
-          onChange={handleAdminSigUpload}
-        />
       )}
+
+      {/* Hidden file input for admin signature override */}
+      <input
+        type="file"
+        ref={sigFileRef}
+        className="hidden"
+        accept="image/png,image/jpeg"
+        onChange={handleAdminSigUpload}
+      />
 
       {/* Seal View Modal */}
       {sealDept && (
