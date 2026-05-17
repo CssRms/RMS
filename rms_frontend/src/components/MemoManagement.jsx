@@ -610,6 +610,7 @@ const MemoManagement = ({ onViewChange }) => {
   };
 
   return (
+    <>
     <div className="w-full mx-auto pb-20 px-1 animate-slide-up">
         {showCreate ? (
           <MemoCreateForm
@@ -780,6 +781,7 @@ const MemoManagement = ({ onViewChange }) => {
           } finally { setDeletingMemo(false); }
         }}
       />
+    </>
   );
 };
 
