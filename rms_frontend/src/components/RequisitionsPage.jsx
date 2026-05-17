@@ -1495,6 +1495,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const [newFiles, setNewFiles]       = useState([]);
   const [uploading, setUploading]     = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [pendingDeleteAttachment, setPendingDeleteAttachment] = useState(null);
+  const [deletingAttachment, setDeletingAttachment] = useState(false);
   const [approveChecked, setApproveChecked] = useState(false);
   const [tagModal, setTagModal]     = useState(false);
   const fileInputRef                = React.useRef(null);
@@ -1952,17 +1954,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             {canDeleteAttachments && (
                               <button
                                 title="Delete attachment"
-                                onClick={async () => {
-                                  if (!window.confirm(`Delete "${a.filename}"? This cannot be undone.`)) return;
-                                  try {
-                                    await reqAPI.deleteAttachment(a.id);
-                                    const updated = await getRequisitionDetail(req.id);
-                                    setDetail(updated);
-                                    toast.success('Attachment deleted.');
-                                  } catch (err) {
-                                    toast.error(err?.response?.data?.error || 'Could not delete attachment.');
-                                  }
-                                }}
+                                onClick={() => setPendingDeleteAttachment(a)}
                                 className="p-1.5 text-muted-foreground hover:text-red-500 transition-all rounded-lg hover:bg-red-50 shrink-0"
                               >
                                 <Trash size={14} />
@@ -2465,6 +2457,25 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
           onTagged={() => getRequisitionDetail(req.id).then(d => setDetail(d))}
         />
       )}
+      <ConfirmModal
+        isOpen={!!pendingDeleteAttachment}
+        onClose={() => setPendingDeleteAttachment(null)}
+        isProcessing={deletingAttachment}
+        title="Delete Attachment"
+        message={`Delete "${pendingDeleteAttachment?.filename}"? This cannot be undone.`}
+        onConfirm={async () => {
+          setDeletingAttachment(true);
+          try {
+            await reqAPI.deleteAttachment(pendingDeleteAttachment.id);
+            const updated = await getRequisitionDetail(req.id);
+            setDetail(updated);
+            toast.success('Attachment deleted.');
+            setPendingDeleteAttachment(null);
+          } catch (err) {
+            toast.error(err?.response?.data?.error || 'Could not delete attachment.');
+          } finally { setDeletingAttachment(false); }
+        }}
+      />
     </div>
   );
 };
