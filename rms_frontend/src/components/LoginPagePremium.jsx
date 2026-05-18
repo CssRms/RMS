@@ -91,10 +91,9 @@ const LoginPagePremium = () => {
           <div className="w-full max-w-md text-center rounded-[2.5rem] px-10 py-12 space-y-5"
                style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
 
-            {/* CSS Group logo — uses CSS_Group.png, styled as a tall badge */}
+            {/* CSS Group logo — same image + sizing as the standard login desktop panel */}
             <div className="flex justify-center mb-2">
-              <div className="w-24 h-16 rounded-2xl overflow-hidden shadow-xl border-2 border-white/70"
-                   style={{ background: 'rgba(255,255,255,0.6)' }}>
+              <div className="w-32 h-20 rounded-2xl overflow-hidden bg-white/10 border border-white/20 shadow-inner">
                 <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-cover object-center" />
               </div>
             </div>
@@ -134,14 +133,14 @@ const LoginPagePremium = () => {
 
             <div className="bg-white rounded-[1.75rem] shadow-2xl overflow-hidden" style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.22)' }}>
 
-              {/* Mobile header bar */}
-              <div className="lg:hidden bg-primary px-5 py-4 flex items-center gap-3">
-                <div className="w-12 h-8 rounded-xl overflow-hidden border border-white/40 bg-white/10">
-                  <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-cover" />
+              {/* Mobile header bar — same logo style as standard login mobile header */}
+              <div className="lg:hidden bg-primary px-6 py-5 flex items-center gap-4">
+                <div className="w-20 h-11 rounded-xl overflow-hidden shrink-0 bg-white/10 p-0.5">
+                  <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-cover object-center" />
                 </div>
                 <div>
-                  <p className="text-[9px] text-white/70 font-bold uppercase tracking-[0.2em] leading-none">CSS Group</p>
-                  <p className="text-sm font-black text-white tracking-[0.12em] uppercase leading-tight">RMS Portal</p>
+                  <h1 className="text-base font-black text-white tracking-[0.1em] italic uppercase">RMS</h1>
+                  <p className="text-[10px] text-white/80 uppercase tracking-[0.3em] font-bold leading-none">Portal</p>
                 </div>
               </div>
 
@@ -279,7 +278,8 @@ const LoginPagePremium = () => {
       )}
 
       {/* ── PWA Install ── */}
-      {!isStandalone && (
+      {/* Only show when browser has offered native install — avoids confusing "open menu" toast */}
+      {!isStandalone && deferredPrompt && (
         <button onClick={handleInstallApp}
           className="lg:hidden fixed bottom-6 right-6 z-[100] bg-white/85 backdrop-blur-md border border-primary/20 hover:bg-white text-primary py-2.5 px-5 rounded-full shadow-2xl flex items-center gap-2.5 transition-all active:scale-95 group animate-in slide-in-from-bottom-10">
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
