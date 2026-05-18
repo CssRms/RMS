@@ -23,6 +23,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const fileRef = useRef(null);
   const slowTimerRef = useRef(null);
+  const skipUploadRef = useRef(null); // resolves the upload race to skip it
 
   useEffect(() => {
     const up = () => setIsOnline(true);
@@ -256,7 +257,11 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
         savedId = Array.isArray(result) ? result[0]?.id : result?.id;
       }
 
-      // Step 2 — upload files
+      // Request is safely on the server — clear autosave and badge immediately
+      try { localStorage.removeItem(lsKey); } catch { /* ignore */ }
+      window.dispatchEvent(new CustomEvent('rms:draftSaved'));
+
+      // Step 2 — upload files (with 45-second timeout so slow connections don't hang)
       if (files.length > 0) {
         if (!savedId) {
           toast('Requisition saved offline. Re-attach your files once it syncs to the server.', { icon: '📎', duration: 6000 });
@@ -265,11 +270,23 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
           setUploadStatus('uploading');
           setUploadProgress(0);
           try {
-            await uploadAttachments(savedId, files, { onProgress: setUploadProgress });
+            const uploadTimeout = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('UPLOAD_TIMEOUT')), 45000)
+            );
+            const skipSignal = new Promise((_, reject) => { skipUploadRef.current = () => reject(new Error('UPLOAD_TIMEOUT')); });
+            await Promise.race([
+              uploadAttachments(savedId, files, { onProgress: setUploadProgress }),
+              uploadTimeout,
+              skipSignal,
+            ]);
             setUploadStatus(navigator.onLine ? 'done' : 'queued');
           } catch (uploadErr) {
             setUploadStatus('error');
-            toast.error('Request sent but files could not be attached — ' + (uploadErr?.message || 'upload failed. You can attach them from the request detail later.'));
+            if (uploadErr?.message === 'UPLOAD_TIMEOUT') {
+              toast('Request submitted! File upload timed out — your connection is too slow. Open the request and attach files when your network improves.', { icon: '📎', duration: 8000 });
+            } else {
+              toast.error('Request submitted but file attachment failed. You can attach files from the request detail later.');
+            }
           }
         }
       }
@@ -279,7 +296,6 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
       clearTimeout(slowTimerRef.current);
       setSlowWarning(false);
 
-      try { localStorage.removeItem(lsKey); } catch { /* ignore */ }
       toast.success(isDraft ? 'Draft saved.' : `${type} request submitted successfully.`);
       onClose();
     } catch (err) {
@@ -657,11 +673,22 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
 
             {/* Slow network warning */}
             {slowWarning && (
-              <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 animate-in fade-in duration-500">
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 animate-in fade-in duration-500">
                 <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                <p className="text-[11px] font-medium leading-snug">
-                  This is taking longer than expected — your network may be slow. Please keep this page open and do not refresh.
-                </p>
+                <div className="flex-1 space-y-2">
+                  <p className="text-[11px] font-medium leading-snug">
+                    This is taking longer than expected — your network may be slow.
+                    {submitStep === 'uploading' && ' Your request is already saved. You can skip the upload and attach files later.'}
+                  </p>
+                  {submitStep === 'uploading' && (
+                    <button
+                      onClick={() => skipUploadRef.current?.()}
+                      className="text-[10px] font-black text-amber-700 underline hover:text-amber-900 transition-colors"
+                    >
+                      Skip upload &amp; close now →
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

@@ -143,6 +143,8 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
   const handleOpenDraft = (draft) => {
     setShowDrafts(false);
     if (draft._isLocal) {
+      // Remove from badge immediately so count drops right away
+      setDrafts(prev => prev.filter(d => d.id !== draft.id));
       // Tell the form to restore autosave data when it opens
       sessionStorage.setItem(`rms_restore_${draft.type}`, '1');
       // Persist form-open intent for the lazy-load fallback
