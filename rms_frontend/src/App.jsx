@@ -206,13 +206,20 @@ const AppContent = () => {
   const [deptProfile, setDeptProfile] = useState(null);
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [deepLinkReqId, setDeepLinkReqId] = useState(null);
-  const [loginStyle, setLoginStyle] = useState('standard');
+  // Read cached value first so there is zero flash on refresh
+  const [loginStyle, setLoginStyle] = useState(
+    () => sessionStorage.getItem('rms_login_style') || null
+  );
 
   useEffect(() => {
     fetch('/api/public/login-style')
       .then(r => r.json())
-      .then(d => { if (d?.value) setLoginStyle(d.value); })
-      .catch(() => {});
+      .then(d => {
+        const style = d?.value || 'standard';
+        setLoginStyle(style);
+        sessionStorage.setItem('rms_login_style', style);
+      })
+      .catch(() => setLoginStyle('standard'));
   }, []);
 
   // navigate(view) — normal navigation
@@ -279,6 +286,13 @@ const AppContent = () => {
       </div>
     );
   }
+
+  // loginStyle null = first visit, fetch in flight — show spinner to avoid standard→premium flash
+  if (!user && loginStyle === null) return (
+    <div className="min-h-screen bg-[#b8d9b8] flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+    </div>
+  );
 
   if (!user) return loginStyle === 'premium' ? <LoginPagePremium /> : <Login />;
 
