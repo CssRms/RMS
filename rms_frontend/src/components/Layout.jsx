@@ -82,7 +82,38 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
     setLoadingDrafts(true);
     try {
       const data = await reqAPI.getRequisitions({ status: 'draft' });
-      setDrafts(Array.isArray(data) ? data.filter(r => r.status === 'draft') : []);
+      const serverDrafts = Array.isArray(data) ? data.filter(r => r.status === 'draft') : [];
+
+      // Also surface any localStorage autosaves not yet promoted to a server draft
+      const localDrafts = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key?.startsWith('rms_autosave_')) continue;
+        try {
+          const raw = localStorage.getItem(key);
+          if (!raw) continue;
+          const snap = JSON.parse(raw);
+          // Expire snapshots older than 24 h
+          if (Date.now() - (snap.savedAt || 0) > 86400000) { localStorage.removeItem(key); continue; }
+          const hasContent = snap.subject?.trim() || snap.comment?.trim() ||
+            snap.items?.some(it => it.description?.trim());
+          if (!hasContent) continue;
+          // key format: rms_autosave_${type}_${deptId}
+          const typeSlug = key.replace('rms_autosave_', '').split('_')[0] || 'Cash';
+          localDrafts.push({
+            id: `local_${key}`,
+            _isLocal: true,
+            _lsKey: key,
+            title: snap.subject?.trim() || `${typeSlug} Draft`,
+            type: typeSlug,
+            amount: snap.items?.reduce((s, it) => s + ((parseFloat(it.qty) || 1) * (parseFloat(it.amount) || 0)), 0) || null,
+            updatedAt: new Date(snap.savedAt || Date.now()).toISOString(),
+            createdAt: new Date(snap.savedAt || Date.now()).toISOString(),
+          });
+        } catch { /* corrupt key — skip */ }
+      }
+
+      setDrafts([...serverDrafts, ...localDrafts]);
     } catch { setDrafts([]); }
     finally { setLoadingDrafts(false); }
   }, []);
@@ -96,19 +127,28 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
   const handleDeleteDraft = async (id) => {
     setDeletingDraftId(id);
     try {
-      await reqAPI.deleteRequisition(id);
-      setDrafts(prev => prev.filter(d => d.id !== id));
-      // Also tell requisitions page to refresh its list
-      window.dispatchEvent(new CustomEvent('globalHardRefresh'));
+      const draft = drafts.find(d => d.id === id);
+      if (draft?._isLocal) {
+        localStorage.removeItem(draft._lsKey);
+        setDrafts(prev => prev.filter(d => d.id !== id));
+      } else {
+        await reqAPI.deleteRequisition(id);
+        setDrafts(prev => prev.filter(d => d.id !== id));
+        window.dispatchEvent(new CustomEvent('globalHardRefresh'));
+      }
     } catch { /* ignore */ }
     finally { setDeletingDraftId(null); }
   };
 
   const handleOpenDraft = (draft) => {
     setShowDrafts(false);
-    // Navigate to requisitions first, then signal it to open the edit form
     onViewChange('requisitions');
-    window.dispatchEvent(new CustomEvent('rms:openDraftEdit', { detail: { id: draft.id, type: draft.type } }));
+    if (draft._isLocal) {
+      // Open a fresh form — CashRequestForm will auto-restore the autosave from localStorage
+      window.dispatchEvent(new CustomEvent('rms:openNewRequest', { detail: { type: draft.type } }));
+    } else {
+      window.dispatchEvent(new CustomEvent('rms:openDraftEdit', { detail: { id: draft.id, type: draft.type } }));
+    }
   };
 
   const handleNotifClick = async (n) => {
@@ -521,7 +561,12 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
                             <FilePen size={13} className="text-amber-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-bold text-foreground truncate leading-tight">{draft.title || 'Untitled Draft'}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-[12px] font-bold text-foreground truncate leading-tight">{draft.title || 'Untitled Draft'}</p>
+                              {draft._isLocal && (
+                                <span className="text-[8px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full shrink-0">Local</span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                               <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{draft.type || 'Request'}</span>
                               {amount && <span className="text-[9px] font-bold text-primary">{amount}</span>}

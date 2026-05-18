@@ -494,37 +494,48 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
               </div>
             )}
 
-            <input
-              id={`file-input-${type}`}
-              ref={fileRef}
-              type="file"
-              multiple
-              className="sr-only"
-              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-              onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
-              tabIndex={-1}
-            />
             {files.length > 0 && (
               <div className="space-y-2">
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-xl border border-border/50">
-                    <FileText size={13} className="text-primary shrink-0" />
-                    <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => { const url = URL.createObjectURL(f); window.open(url, '_blank'); }} className="p-1 text-muted-foreground hover:text-primary rounded shrink-0" title="Preview">
-                      <Eye size={12} />
-                    </button>
-                    <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0" title="Remove">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
+                {files.map((f, i) => {
+                  const ext = f.name.split('.').pop()?.toUpperCase() || '?';
+                  const extColor = ['PDF'].includes(ext) ? 'bg-red-100 text-red-700'
+                    : ['JPG','JPEG','PNG','GIF','WEBP'].includes(ext) ? 'bg-blue-100 text-blue-700'
+                    : ['DOC','DOCX'].includes(ext) ? 'bg-indigo-100 text-indigo-700'
+                    : ['XLS','XLSX'].includes(ext) ? 'bg-green-100 text-green-700'
+                    : 'bg-muted text-muted-foreground';
+                  const sizeLabel = f.size >= 1048576
+                    ? `${(f.size / 1048576).toFixed(1)} MB`
+                    : `${Math.max(1, Math.round(f.size / 1024))} KB`;
+                  return (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-xl border border-border/50 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <FileText size={13} className="text-primary shrink-0" />
+                      <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0 ${extColor}`}>{ext}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0 font-mono">{sizeLabel}</span>
+                      <button onClick={() => { const url = URL.createObjectURL(f); window.open(url, '_blank'); }} className="p-1 text-muted-foreground hover:text-primary rounded shrink-0" title="Preview">
+                        <Eye size={12} />
+                      </button>
+                      <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0" title="Remove">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <label
-              htmlFor={`file-input-${type}`}
               className={`flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center cursor-pointer select-none ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
             >
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                className="sr-only"
+                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+                onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+                tabIndex={-1}
+                disabled={submitting}
+              />
               <Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}
             </label>
 

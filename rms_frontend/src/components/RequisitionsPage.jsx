@@ -2667,6 +2667,17 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     return () => window.removeEventListener('rms:openDraftEdit', handleOpenDraftEdit);
   }, []);
 
+  // Open a fresh form for a local autosave (CashRequestForm restores from localStorage automatically)
+  useEffect(() => {
+    const handleOpenNewRequest = (e) => {
+      const { type } = e.detail || {};
+      setEditDraft(null);
+      setIsFormOpen(type || 'Cash');
+    };
+    window.addEventListener('rms:openNewRequest', handleOpenNewRequest);
+    return () => window.removeEventListener('rms:openNewRequest', handleOpenNewRequest);
+  }, []);
+
   const filtered = requisitions.filter(r => {
     if (isMemoRecord(r)) return false;
     const matchSearch  = r.title?.toLowerCase().includes(search.toLowerCase()) || String(r.id).includes(search);
