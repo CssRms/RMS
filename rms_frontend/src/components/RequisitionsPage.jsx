@@ -1378,6 +1378,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const fileRef                     = React.useRef(null);
   const [file, setFile]             = useState(null);
   const [forwardDeptId, setForwardDeptId] = useState('');
+  const [localPreview, setLocalPreview]   = useState(null); // { filename, blobUrl }
 
   const deptName = user?.name || '';
   const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
@@ -1434,6 +1435,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   };
 
   return (
+    <>
     <div className="space-y-3 border border-blue-200 rounded-2xl p-4 bg-blue-50/50 shadow-sm relative overflow-hidden">
       <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
       <div className="flex items-center gap-2 pl-1">
@@ -1455,6 +1457,14 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
           <div className="flex items-center gap-2 px-3 py-2 bg-blue-100 rounded-xl border border-blue-200">
             <FileText size={13} className="text-blue-600 shrink-0" />
             <span className="flex-1 truncate text-[11px] font-bold text-foreground">{file.name}</span>
+            <button
+              onClick={() => {
+                const url = URL.createObjectURL(file);
+                setLocalPreview({ filename: file.name, blobUrl: url });
+              }}
+              title="Preview"
+              className="p-0.5 text-blue-600 hover:text-blue-900 transition-all rounded shrink-0"
+            ><Eye size={12} /></button>
             <button onClick={() => setFile(null)} className="p-0.5 text-muted-foreground hover:text-destructive rounded shrink-0"><X size={12} /></button>
           </div>
         ) : (
@@ -1513,6 +1523,17 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         </div>
       )}
     </div>
+    {localPreview && (
+      <FilePreviewModal
+        attachment={{ filename: localPreview.filename }}
+        initialBlobUrl={localPreview.blobUrl}
+        onClose={() => {
+          URL.revokeObjectURL(localPreview.blobUrl);
+          setLocalPreview(null);
+        }}
+      />
+    )}
+    </>
   );
 };
 
