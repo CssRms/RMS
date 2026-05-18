@@ -1943,12 +1943,14 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                                <p className="truncate text-foreground font-bold text-[11px]">{a.filename}</p>
                                <div className="flex items-center gap-2 flex-wrap mt-0.5">
                                  <span className="text-[9px] text-muted-foreground font-mono">{a.size ? `${(a.size / 1024).toFixed(0)} KB` : 'N/A'}</span>
-                                 {(a.uploadedBy?.name || a.uploaderDept) && (
-                                   <span className="text-[9px] text-primary/70 font-bold uppercase tracking-wide">
-                                     {a.uploaderDept || a.uploadedBy?.department?.name || ''}
-                                     {a.uploadedBy?.name ? ` · ${a.uploadedBy.name}` : ''}
-                                   </span>
-                                 )}
+                                 {(() => {
+                                   const deptName = a.uploaderDept || a.uploadedBy?.department?.name || '';
+                                   const userName = a.uploadedBy?.name || '';
+                                   const label = [deptName, userName].filter(Boolean).join(' · ');
+                                   return label ? (
+                                     <span className="text-[9px] text-primary/70 font-bold uppercase tracking-wide">{label}</span>
+                                   ) : null;
+                                 })()}
                                  {a.stageName && (
                                    <span className="text-[9px] text-muted-foreground/60 italic">{a.stageName}</span>
                                  )}

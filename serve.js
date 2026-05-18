@@ -3205,7 +3205,11 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
         targetDepartment: { select: { name: true, code: true, headEmail: true, headName: true } },
         creator: { select: { name: true } },
         currentStage: true,
-        attachments: true,
+        attachments: {
+          include: {
+            uploadedBy: { select: { name: true, department: { select: { name: true } } } }
+          }
+        },
         approvals: {
           include: {
             stage: true,
