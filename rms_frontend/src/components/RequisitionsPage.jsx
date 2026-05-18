@@ -1048,6 +1048,7 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
   const [thresholds, setThresholds]   = useState(DEFAULT_THRESHOLDS);
   const [approveChecked, setApproveChecked] = useState(false);
   const [approveFile, setApproveFile] = useState(null);
+  const [vetDeptId, setVetDeptId]     = useState('');
   const fileRef = React.useRef(null);
 
   useEffect(() => {
@@ -1153,12 +1154,32 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
     );
   }
 
-  // ── Not yet approved: checkbox-driven sign flow ──────────────────────────────
+  // ── Vetting department options (same filter as VettingSelectionModal) ──────────
+  const vettingDepts = departments.filter(d =>
+    /\bicc\b|integrity|compliance|audit|\baccount\b/i.test(d.name || '')
+  );
+  const selectedVetDept    = vettingDepts.find(d => String(d.id) === String(vetDeptId));
+  const isVetAccountDirect = selectedVetDept && /\baccount\b/i.test(selectedVetDept.name);
+  const isVetAuditDirect   = selectedVetDept && /audit/i.test(selectedVetDept.name);
+  const vetPathHint = !vetDeptId ? null
+    : isVetAccountDirect ? 'Direct to Account — no further forwarding needed'
+    : isVetAuditDirect   ? 'ICC skipped — flow: Audit → Account'
+    : 'Full chain — flow: ICC → Audit → Account';
+
+  // ── Not yet approved: checkbox-driven sign + vetting in one action ───────────
   const handleApprove = async () => {
+    if (!vetDeptId) { toast.error('Please select a vetting department before approving.'); return; }
     setActing(true);
     try {
-      const result = await finalApproveRequisition(req.id, note);
-      if (result !== null) toast.success('Approved & signed successfully.');
+      const approveResult = await finalApproveRequisition(req.id, note);
+      if (approveResult === null) {
+        // Queued offline — also queue the vetting step
+        await sendToVettingRequisition(req.id, parseInt(vetDeptId));
+        toast('Approval & vetting queued — will process when reconnected.');
+      } else {
+        await sendToVettingRequisition(req.id, parseInt(vetDeptId));
+        toast.success('Approved, signed & sent to vetting in one step.');
+      }
       onApproved();
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Approval failed. Please try again.');
@@ -1198,6 +1219,31 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
             className="w-full bg-white border border-emerald-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 min-h-[60px] resize-none shadow-inner"
           />
 
+          {/* Required: select vetting department before approving */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest pl-1">
+              Send to Vetting — Required *
+            </label>
+            <select
+              value={vetDeptId}
+              onChange={e => setVetDeptId(e.target.value)}
+              className="w-full bg-white border border-emerald-300 rounded-xl p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 appearance-none shadow-sm"
+            >
+              <option value="">— Select first vetting department —</option>
+              {vettingDepts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {vettingDepts.length === 0 && <option disabled>No vetting departments found</option>}
+            </select>
+            {vetPathHint && (
+              <p className={`text-[11px] font-semibold px-3 py-2 rounded-lg ${
+                isVetAccountDirect ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                : isVetAuditDirect  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}>
+                {vetPathHint}
+              </p>
+            )}
+          </div>
+
           {/* Optional file attachment */}
           <div>
             <input
@@ -1227,11 +1273,11 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
 
           <button
             onClick={handleApprove}
-            disabled={acting}
+            disabled={acting || !vetDeptId}
             className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-emerald-500/20"
           >
             {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {acting ? 'Processing…' : 'Submit Approval'}
+            {acting ? 'Processing…' : 'Approve & Send to Vetting'}
           </button>
         </div>
       )}
