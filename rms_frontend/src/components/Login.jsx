@@ -105,14 +105,14 @@ const Login = () => {
               Requisition<br />
               <span className="italic font-black text-white/90">Management</span>
             </h1>
-            <p className="text-sm text-white/70 mt-5 leading-relaxed max-w-xs">
+            <p className="text-base text-white/80 mt-5 leading-relaxed max-w-xs">
               Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
             </p>
-            <div className="mt-8 space-y-3">
+            <div className="mt-8 space-y-3.5">
               {['End-to-end approval tracking', 'Offline draft capability', 'Multi-department oversight'].map((item, i) => (
                 <div key={i} className="flex items-center space-x-3">
-                  <CheckCircle2 size={14} className="text-white/50 flex-shrink-0" />
-                  <span className="text-xs text-white/60">{item}</span>
+                  <CheckCircle2 size={16} className="text-white/60 flex-shrink-0" />
+                  <span className="text-sm text-white/75 font-medium">{item}</span>
                 </div>
               ))}
             </div>

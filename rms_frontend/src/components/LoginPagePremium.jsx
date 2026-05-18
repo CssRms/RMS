@@ -118,11 +118,13 @@ const LoginPagePremium = () => {
           {/* "Requisition Management System" — Alice font */}
           <p style={{
             fontFamily: "'Alice', serif",
-            color: '#155215',
+            color: '#0d4a0d',
             fontWeight: 400,
-            fontSize: '1.55rem',
-            marginTop: '0.5rem',
-            textShadow: '0 1px 6px rgba(255,255,255,0.65)',
+            fontSize: '2.1rem',
+            marginTop: '0.6rem',
+            lineHeight: 1.25,
+            letterSpacing: '-0.01em',
+            textShadow: '0 2px 10px rgba(255,255,255,0.7)',
           }}>
             Requisition Management System
           </p>
@@ -131,27 +133,27 @@ const LoginPagePremium = () => {
           <p style={{
             fontFamily: "'Chewy', cursive",
             color: '#1a3d1a',
-            fontSize: '1.1rem',
-            lineHeight: 1.7,
-            marginTop: '0.9rem',
-            maxWidth: '22rem',
-            textShadow: '0 1px 4px rgba(255,255,255,0.65)',
+            fontSize: '1.35rem',
+            lineHeight: 1.65,
+            marginTop: '1rem',
+            maxWidth: '24rem',
+            textShadow: '0 1px 6px rgba(255,255,255,0.6)',
           }}>
             Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
           </p>
 
-          <div style={{ marginTop: '0.8rem' }} className="space-y-1.5">
+          <div style={{ marginTop: '1rem' }} className="space-y-2">
             {[
               'End-to-end approval tracking',
               'Offline draft capability',
               'Multi-department oversight',
             ].map((item, i) => (
-              <div key={i} className="flex items-center justify-center gap-2">
-                <CheckCircle2 size={16} style={{ color: '#0a5c0a', flexShrink: 0 }} />
+              <div key={i} className="flex items-center justify-center gap-2.5">
+                <CheckCircle2 size={18} style={{ color: '#0a5c0a', flexShrink: 0 }} />
                 <span style={{
                   fontFamily: "'Chewy', cursive",
                   color: '#1a3d1a',
-                  fontSize: '1.1rem',
+                  fontSize: '1.25rem',
                   textShadow: '0 1px 4px rgba(255,255,255,0.6)',
                 }}>
                   {item}
