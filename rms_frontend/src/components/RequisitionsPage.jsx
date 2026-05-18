@@ -1258,7 +1258,7 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
             className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-emerald-500/20"
           >
             {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {acting ? 'Processing…' : 'Approve & Send to Vetting'}
+            {acting ? 'Processing…' : 'Final Approve & Send to Vetting'}
           </button>
         </div>
       )}
