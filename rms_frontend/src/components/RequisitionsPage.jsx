@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, isMemoRecord } from '../lib/store';
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord } from '../lib/store';
 import { aiAPI, settingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -1153,8 +1153,20 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
     setActing(true);
     try {
       const approveResult = await finalApproveRequisition(req.id, note);
+
+      // Upload approval attachment to enclosures if provided
+      if (approveFile && req.id) {
+        try {
+          await uploadAttachments(req.id, [approveFile], {
+            uploaderDept: user?.name,
+            stageName: 'Final Approval',
+          });
+        } catch {
+          toast('Approved but attachment failed to upload — you can attach it from the document later.', { icon: '📎' });
+        }
+      }
+
       if (approveResult === null) {
-        // Queued offline — also queue the vetting step
         await sendToVettingRequisition(req.id, parseInt(vetDeptId));
         toast('Approval & vetting queued — will process when reconnected.');
       } else {

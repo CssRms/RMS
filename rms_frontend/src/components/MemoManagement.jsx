@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getMemoRecords, getDepartments, getRequisitionDetail } from '../lib/store';
+import { getMemoRecords, getDepartments, getRequisitionDetail, uploadAttachments } from '../lib/store';
 import { forwardAPI, memoAPI, reqAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import ConfirmModal from './ConfirmModal';
@@ -129,7 +129,7 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated, editDraft = nul
       }
 
       if (savedId && files.length > 0) {
-        try { await reqAPI.uploadAttachments(savedId, files); }
+        try { await uploadAttachments(savedId, files, { uploaderDept: user?.name, stageName: 'Initial Submission' }); }
         catch { toast.error('Memo submitted but some attachments failed to upload.'); }
       }
 

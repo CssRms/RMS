@@ -275,7 +275,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
             );
             const skipSignal = new Promise((_, reject) => { skipUploadRef.current = () => reject(new Error('UPLOAD_TIMEOUT')); });
             await Promise.race([
-              uploadAttachments(savedId, files, { onProgress: setUploadProgress }),
+              uploadAttachments(savedId, files, { onProgress: setUploadProgress, uploaderDept: user?.name, stageName: 'Initial Submission' }),
               uploadTimeout,
               skipSignal,
             ]);
