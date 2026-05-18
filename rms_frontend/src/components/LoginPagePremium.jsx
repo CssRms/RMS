@@ -20,22 +20,14 @@ const LoginPagePremium = () => {
 
   useEffect(() => {
     getDepartments().then(setDepartments);
-
-    const handleBeforeInstallPrompt = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
+    const handleBeforeInstallPrompt = (e) => { e.preventDefault(); setDeferredPrompt(e); };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     if (window.matchMedia('(display-mode: standalone)').matches) setIsStandalone(true);
-
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   const handleInstallApp = async () => {
-    if (!deferredPrompt) {
-      toast("To install: Open browser menu and select 'Add to Home Screen'", { icon: '📲' });
-      return;
-    }
+    if (!deferredPrompt) { toast("To install: Open browser menu → 'Add to Home Screen'", { icon: '📲' }); return; }
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') setDeferredPrompt(null);
@@ -63,9 +55,9 @@ const LoginPagePremium = () => {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#b8d9b8]">
+    <div className="relative min-h-screen overflow-hidden" style={{ background: '#8bc89b' }}>
 
-      {/* ── Background: poster always visible, video fades over it ── */}
+      {/* ── Background: poster shows instantly, video fades in over it ── */}
       <div className="absolute inset-0 z-0">
         <img
           src="/images/login-poster.webp"
@@ -74,13 +66,8 @@ const LoginPagePremium = () => {
           className="absolute inset-0 w-full h-full object-cover"
           style={{ opacity: videoReady ? 0 : 1, transition: 'opacity 1.5s ease' }}
         />
-        {/* Video always rendered — poster acts as fallback while it loads */}
         <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
+          autoPlay muted loop playsInline preload="auto"
           onCanPlayThrough={() => setVideoReady(true)}
           className="absolute inset-0 w-full h-full object-cover"
           style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 1.5s ease' }}
@@ -93,68 +80,64 @@ const LoginPagePremium = () => {
       {/* ── Page Layout ── */}
       <div className="relative z-10 min-h-screen flex flex-col lg:flex-row">
 
-        {/* ══════════════════════════════════════════════
-            LEFT BRANDING PANEL — Desktop only
-            Centered content floating over video
-        ══════════════════════════════════════════════ */}
-        <div className="hidden lg:flex lg:w-[48%] flex-col items-center justify-center text-center px-16 py-12">
+        {/* ══════════════════════════════════════
+            LEFT BRANDING — Desktop only
+        ══════════════════════════════════════ */}
+        <div className="hidden lg:flex lg:w-[48%] items-center justify-center px-12 py-10">
+          {/*
+            Frosted panel — subtle white backing so text is always readable
+            regardless of which video frame is showing behind it
+          */}
+          <div className="w-full max-w-md text-center rounded-[2.5rem] px-10 py-12 space-y-5"
+               style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
 
-          {/* Badge logo — centered, large */}
-          <div className="w-28 h-28 rounded-3xl overflow-hidden shadow-2xl border-4 border-white/50 mb-8"
-               style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)' }}>
-            <img src="/CSS_Badge.svg" alt="CSS Group" className="w-full h-full object-contain p-2"
-                 onError={(e) => { e.target.src = '/CSS_Group.png'; }} />
-          </div>
-
-          {/* Company name — large, bold, dark green */}
-          <h1 className="text-4xl font-black leading-tight tracking-tight mb-2"
-              style={{ color: '#0d3d0d', textShadow: '0 2px 12px rgba(255,255,255,0.7), 0 1px 3px rgba(255,255,255,0.9)' }}>
-            CSS GROUP OF COMPANIES
-          </h1>
-
-          {/* System name */}
-          <p className="text-lg font-bold italic mb-5"
-             style={{ color: '#155215', textShadow: '0 1px 8px rgba(255,255,255,0.7)' }}>
-            Requisition Management System
-          </p>
-
-          {/* Description */}
-          <p className="text-sm leading-relaxed mb-7 max-w-xs"
-             style={{ color: '#1a3d1a', textShadow: '0 1px 6px rgba(255,255,255,0.8)', fontWeight: 500 }}>
-            Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
-          </p>
-
-          {/* Bullet features */}
-          <div className="space-y-3">
-            {[
-              'End-to-end approval tracking',
-              'Offline draft capability',
-              'Multi-department oversight',
-            ].map((item, i) => (
-              <div key={i} className="flex items-center justify-center gap-2.5">
-                <CheckCircle2 size={15} style={{ color: '#0d5c0d', flexShrink: 0 }} />
-                <span className="text-sm font-semibold"
-                      style={{ color: '#1a3d1a', textShadow: '0 1px 6px rgba(255,255,255,0.7)' }}>
-                  {item}
-                </span>
+            {/* CSS Group logo — uses CSS_Group.png, styled as a tall badge */}
+            <div className="flex justify-center mb-2">
+              <div className="w-24 h-16 rounded-2xl overflow-hidden shadow-xl border-2 border-white/70"
+                   style={{ background: 'rgba(255,255,255,0.6)' }}>
+                <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-cover object-center" />
               </div>
-            ))}
+            </div>
+
+            <h1 style={{ color: '#0a3d0a', fontWeight: 900, fontSize: '1.85rem', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
+              CSS GROUP OF COMPANIES
+            </h1>
+
+            <p style={{ color: '#155215', fontWeight: 700, fontSize: '1.1rem', fontStyle: 'italic' }}>
+              Requisition Management System
+            </p>
+
+            <p style={{ color: '#1a3d1a', fontWeight: 500, fontSize: '0.875rem', lineHeight: 1.7 }}>
+              Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
+            </p>
+
+            <div className="space-y-2.5 pt-1">
+              {[
+                'End-to-end approval tracking',
+                'Offline draft capability',
+                'Multi-department oversight',
+              ].map((item, i) => (
+                <div key={i} className="flex items-center justify-center gap-2">
+                  <CheckCircle2 size={15} style={{ color: '#0d5c0d', flexShrink: 0 }} />
+                  <span style={{ color: '#1a3d1a', fontWeight: 600, fontSize: '0.875rem' }}>{item}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* ══════════════════════════════════════════════
+        {/* ══════════════════════════════════════
             RIGHT FORM PANEL
-        ══════════════════════════════════════════════ */}
+        ══════════════════════════════════════ */}
         <div className="flex-1 flex items-center justify-center p-5 lg:p-10 min-h-screen lg:min-h-0">
           <div className="w-full max-w-sm">
 
-            <div className="bg-white rounded-[1.75rem] shadow-2xl shadow-black/25 overflow-hidden">
+            <div className="bg-white rounded-[1.75rem] shadow-2xl overflow-hidden" style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.22)' }}>
 
-              {/* Mobile-only header bar */}
+              {/* Mobile header bar */}
               <div className="lg:hidden bg-primary px-5 py-4 flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full overflow-hidden border-2 border-white/40 bg-white/10 flex items-center justify-center">
-                  <img src="/CSS_Badge.svg" alt="CSS Group" className="w-full h-full object-contain p-0.5"
-                       onError={(e) => { e.target.src = '/CSS_Favicon.png'; }} />
+                <div className="w-12 h-8 rounded-xl overflow-hidden border border-white/40 bg-white/10">
+                  <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <p className="text-[9px] text-white/70 font-bold uppercase tracking-[0.2em] leading-none">CSS Group</p>
@@ -162,9 +145,8 @@ const LoginPagePremium = () => {
                 </div>
               </div>
 
-              {/* Form body */}
+              {/* Form */}
               <div className="p-7 space-y-5">
-
                 <div className="space-y-0.5">
                   <p className="text-sm text-muted-foreground font-medium">Welcome back</p>
                   <p className="text-[11px] text-muted-foreground/70">Authenticate to access the RMS portal</p>
@@ -184,46 +166,32 @@ const LoginPagePremium = () => {
 
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      Department / Unit
-                    </label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Department / Unit</label>
                     <div className="relative group">
                       <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" size={15} />
                       <select
-                        value={selectedDept}
-                        onChange={(e) => setSelectedDept(e.target.value)}
-                        disabled={isSubmitting}
-                        required
+                        value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
+                        disabled={isSubmitting} required
                         className="w-full bg-white border border-border rounded-xl pl-10 pr-4 py-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50 appearance-none cursor-pointer"
                       >
                         <option value="">Choose your unit...</option>
-                        {departments.map(dept => (
-                          <option key={dept.id} value={dept.name}>{dept.name}</option>
-                        ))}
+                        {departments.map(dept => <option key={dept.id} value={dept.name}>{dept.name}</option>)}
                       </select>
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                      Access Code
-                    </label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Access Code</label>
                     <div className="relative group">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" size={15} />
                       <input
                         type={showAccessCode ? 'text' : 'password'}
-                        value={accessCode}
-                        onChange={(e) => setAccessCode(e.target.value)}
-                        disabled={isSubmitting}
-                        required
+                        value={accessCode} onChange={(e) => setAccessCode(e.target.value)}
+                        disabled={isSubmitting} required placeholder="••••••••"
                         className="w-full bg-white border border-border rounded-xl pl-10 pr-12 py-3 text-sm text-foreground placeholder-muted-foreground/60 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50 font-mono tracking-widest"
-                        placeholder="••••••••"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowAccessCode(v => !v)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary transition-colors"
-                      >
+                      <button type="button" onClick={() => setShowAccessCode(v => !v)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary transition-colors">
                         {showAccessCode ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
                     </div>
@@ -237,35 +205,24 @@ const LoginPagePremium = () => {
                       </label>
                       <div className="relative group">
                         <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary/50 group-focus-within:text-primary transition-colors" size={15} />
-                        <input
-                          type="text"
-                          maxLength={6}
-                          value={mfaCode}
+                        <input type="text" maxLength={6} value={mfaCode}
                           onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
-                          disabled={isSubmitting}
+                          disabled={isSubmitting} placeholder="000000" required
                           className="w-full bg-primary/5 border border-primary/20 rounded-xl pl-10 pr-4 py-3 text-sm text-foreground placeholder-primary/30 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50 font-mono tracking-[0.5em] text-center"
-                          placeholder="000000"
-                          required
                         />
                       </div>
                     </div>
                   )}
 
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 text-sm"
-                  >
+                  <button type="submit" disabled={isSubmitting}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 text-sm">
                     <span>{isSubmitting ? 'Authenticating…' : 'Enter RMS Portal'}</span>
                     {!isSubmitting && <ArrowRight size={16} />}
                   </button>
 
                   <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowForgotCode(true)}
-                      className="text-[11px] text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 group"
-                    >
+                    <button type="button" onClick={() => setShowForgotCode(true)}
+                      className="text-[11px] text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 group">
                       <HelpCircle size={12} className="group-hover:scale-110 transition-transform" />
                       Forgot your access code?
                     </button>
@@ -281,7 +238,7 @@ const LoginPagePremium = () => {
         </div>
       </div>
 
-      {/* ── Forgot Access Code Modal ── */}
+      {/* ── Forgot Code Modal ── */}
       {showForgotCode && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 animate-in zoom-in-95 duration-200 relative">
@@ -294,15 +251,14 @@ const LoginPagePremium = () => {
                 <PhoneCall size={28} className="text-primary" />
               </div>
               <div className="space-y-1.5">
-                <h3 className="text-lg font-bold text-foreground tracking-tight">Need Help With Your Code?</h3>
+                <h3 className="text-lg font-bold text-foreground">Need Help With Your Code?</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">No worries — it happens to the best of us.</p>
               </div>
               <div className="w-full bg-primary/5 border border-primary/15 rounded-2xl p-5 space-y-3 text-left">
                 <p className="text-sm text-foreground font-semibold">Please reach out to 080********:</p>
                 <div className="space-y-2">
-                  {[
-                    ['1', 'Your System Administrator — they can reset your access code immediately from the Department Manager.'],
-                    ['2', 'The ICT Department — they will verify your identity and issue a new code promptly.'],
+                  {[['1','Your System Administrator — they can reset your access code immediately from the Department Manager.'],
+                    ['2','The ICT Department — they will verify your identity and issue a new code promptly.']
                   ].map(([num, text]) => (
                     <div key={num} className="flex items-start gap-2.5">
                       <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
@@ -313,9 +269,6 @@ const LoginPagePremium = () => {
                   ))}
                 </div>
               </div>
-              <p className="text-[10px] text-muted-foreground/70 leading-relaxed italic">
-                For security reasons, access codes cannot be self-recovered.
-              </p>
               <button onClick={() => setShowForgotCode(false)}
                 className="w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all active:scale-[0.98]">
                 Got it, thank you
@@ -325,7 +278,7 @@ const LoginPagePremium = () => {
         </div>
       )}
 
-      {/* ── PWA Install Button ── */}
+      {/* ── PWA Install ── */}
       {!isStandalone && (
         <button onClick={handleInstallApp}
           className="fixed bottom-6 right-6 z-[100] bg-white/85 backdrop-blur-md border border-primary/20 hover:bg-white text-primary py-2.5 px-5 rounded-full shadow-2xl flex items-center gap-2.5 transition-all active:scale-95 group animate-in slide-in-from-bottom-10">
