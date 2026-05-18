@@ -1107,18 +1107,27 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
 
   // ── Already approved: show signed badge + Send to Vet (+ Chairman self-treat) ─
   if (finalStatus && finalStatus !== 'none') {
+    const isVettingReturned = finalStatus === 'approved'
+      && !detail?.currentVettingDeptId
+      && !!(detail?.vettingEvents?.some(e => e.action === 'return'));
 
     return (
       <>
-        <div className="space-y-3 border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+        <div className={`space-y-3 border rounded-2xl p-4 shadow-sm relative overflow-hidden ${isVettingReturned ? 'border-amber-200 bg-amber-50/60' : 'border-emerald-200 bg-emerald-50/60'}`}>
+          <div className={`absolute top-0 left-0 w-1 h-full ${isVettingReturned ? 'bg-amber-500' : 'bg-emerald-500'}`} />
           <div className="flex items-center gap-2 pl-1">
-            <CheckCircle2 size={14} className="text-emerald-600" />
-            <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Signed & Approved</p>
-            <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
+            {isVettingReturned
+              ? <RotateCcw size={14} className="text-amber-600" />
+              : <CheckCircle2 size={14} className="text-emerald-600" />}
+            <p className={`text-[10px] font-black uppercase tracking-widest ${isVettingReturned ? 'text-amber-800' : 'text-emerald-800'}`}>
+              {isVettingReturned ? 'Returned from Vetting' : 'Signed & Approved'}
+            </p>
+            <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isVettingReturned ? 'bg-amber-100 border border-amber-300 text-amber-700' : 'bg-emerald-100 border border-emerald-300 text-emerald-700'}`}>{authorityLabel}</span>
           </div>
-          <p className="text-[11px] text-emerald-700/80 leading-relaxed pl-1">
-            Your approval has been recorded and the document is on its way to vetting.
+          <p className={`text-[11px] leading-relaxed pl-1 ${isVettingReturned ? 'text-amber-700/80' : 'text-emerald-700/80'}`}>
+            {isVettingReturned
+              ? 'Vetting returned this document. Use the action panel below to forward it for treatment.'
+              : 'Your approval has been recorded and the document is on its way to vetting.'}
           </p>
           {isChairman && finalStatus === 'approved' && (
             <button
@@ -1646,6 +1655,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const latestReturn = detail?.forwardEvents?.filter(e => e.action === 'returned').slice(-1)[0];
   // True when the req has been returned to the original creator's dept (fields locked, comment-only)
   const isReturnedToCreator = !!(latestReturn && detail?.targetDepartmentId === detail?.departmentId && user?.deptId === detail?.departmentId);
+  // True when a vetting dept returned the request back to this user's dept (needs re-routing)
+  const isVettingReturned = detail?.finalApprovalStatus === 'approved'
+    && !detail?.currentVettingDeptId
+    && !!(detail?.vettingEvents?.some(e => e.action === 'return'))
+    && detail?.targetDepartmentId === user?.deptId;
 
   const handleApprove = async (remarks) => {
     setActing(true);
@@ -1911,7 +1925,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
 
               {!isTaggedObserver && !approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading &&
-               !['treated', 'published', 'approved', 'vetting'].includes(detail?.finalApprovalStatus) && (
+               (!['treated', 'published', 'approved', 'vetting'].includes(detail?.finalApprovalStatus) || isVettingReturned) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                    <RespondPanel
                      req={req}
