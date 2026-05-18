@@ -1374,6 +1374,7 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
 // ── Vetting Panel (ICC / Audit / Account — role-specific auto-routing) ─────────
 const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const [comment, setComment]       = useState('');
+  const [vetChecked, setVetChecked] = useState(false);
   const [acting, setActing]         = useState(false);
   const fileRef                     = React.useRef(null);
   const [file, setFile]             = useState(null);
@@ -1408,6 +1409,22 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const primaryLabel   = isICC ? 'Submit to Audit' : isAudit ? 'Forward to Account' : 'Mark Treated';
   const primaryDisabled = (isICC && !auditDept) || (isAudit && !accountDept);
 
+  // Compute where Return sends the request (mirrors backend logic) for UI hint
+  const iccDeptInList = departments.find(d => /\bicc\b|integrity|compliance/i.test(d.name));
+  const auditDeptInList = departments.find(d => /\baudit\b/i.test(d.name));
+  const vettingEvts = detail?.vettingEvents || [];
+  const iccWasPresent = iccDeptInList && vettingEvts.some(e => e.deptId === iccDeptInList.id);
+  const auditWasPresent = auditDeptInList && vettingEvts.some(e => e.deptId === auditDeptInList.id);
+  const finalApproverDeptName = detail?.finalApprovedByDeptId
+    ? (departments.find(d => d.id === parseInt(detail.finalApprovedByDeptId))?.name || 'Approving Authority')
+    : 'Approving Authority';
+  const returnDestLabel = isICC ? finalApproverDeptName
+    : isAudit ? (iccWasPresent ? (iccDeptInList?.name || 'ICC') : finalApproverDeptName)
+    : isAccount ? (auditWasPresent ? (auditDeptInList?.name || 'Audit') : finalApproverDeptName)
+    : finalApproverDeptName;
+
+  const canAct = vetChecked && comment.trim().length > 0;
+
   const act = async (action) => {
     setActing(true);
     try {
@@ -1424,9 +1441,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         result = await vettingActionRequisition(req.id, { action: 'treated', comment: comment || undefined, file: file || undefined });
         if (result !== null) toast.success('Requisition marked as treated!');
       } else if (action === 'return') {
-        if (!comment.trim()) { toast.error('Please enter a reason before returning.'); setActing(false); return; }
         result = await vettingActionRequisition(req.id, { action: 'return', comment, file: file || undefined });
-        if (result !== null) toast.success('Returned to previous department.');
+        if (result !== null) toast.success(`Returned to ${returnDestLabel}.`);
       }
       onDone();
     } catch (err) {
@@ -1447,9 +1463,30 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
       <textarea
         value={comment}
         onChange={e => setComment(e.target.value)}
-        placeholder={canTreat ? 'Treatment remarks...' : 'Vetting comment or return reason (required to return)...'}
+        placeholder="Write your vetting remarks or return reason (required)..."
         className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-300 min-h-[72px] resize-none shadow-inner"
       />
+
+      {/* Confirmation checkbox — both comment + checkbox must be set before buttons activate */}
+      <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+        <input
+          type="checkbox"
+          checked={vetChecked}
+          onChange={e => setVetChecked(e.target.checked)}
+          className="mt-0.5 w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0"
+        />
+        <span className="text-[11px] text-blue-800 font-semibold leading-snug">
+          I confirm I have reviewed this document and my action below reflects my assessment.
+        </span>
+      </label>
+
+      {!canAct && (
+        <p className="text-[10px] text-blue-500/70 italic">
+          {!vetChecked && !comment.trim() ? 'Check the box and write a remark to unlock actions.'
+            : !vetChecked ? 'Check the confirmation box to unlock actions.'
+            : 'Write a remark to unlock actions.'}
+        </p>
+      )}
 
       <div>
         <input type="file" ref={fileRef} className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
@@ -1478,8 +1515,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
       {canTreat ? (
         /* Account / Chairman — Treat is primary; Forward (with dept picker) + Return always available */
         <div className="space-y-2 pt-1">
-          <button onClick={() => act('treated')} disabled={acting}
-            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
+          <button onClick={() => act('treated')} disabled={acting || !canAct}
+            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
             {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
             Mark Treated
           </button>
@@ -1494,32 +1531,42 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
               </select>
-              <button onClick={() => act('forward')} disabled={acting || !forwardDeptId}
+              <button onClick={() => act('forward')} disabled={acting || !forwardDeptId || !canAct}
                 className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
                 {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
                 Forward
               </button>
             </div>
-            <button onClick={() => act('return')} disabled={acting}
-              className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
-              {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-              Return
-            </button>
+            <div className="space-y-1">
+              <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">
+                Returns to: {returnDestLabel}
+              </p>
+              <button onClick={() => act('return')} disabled={acting || !canAct}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                Return
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         /* ICC / Audit — forward to next in chain + Return */
         <div className="grid grid-cols-2 gap-2 pt-1">
-          <button onClick={() => act('forward')} disabled={acting || primaryDisabled}
-            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
+          <button onClick={() => act('forward')} disabled={acting || primaryDisabled || !canAct}
+            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
             {acting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             {primaryLabel}
           </button>
-          <button onClick={() => act('return')} disabled={acting}
-            className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm shadow-sm">
-            {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-            Return
-          </button>
+          <div className="space-y-1">
+            <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">
+              Returns to: {returnDestLabel}
+            </p>
+            <button onClick={() => act('return')} disabled={acting || !canAct}
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+              {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+              Return
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -2368,7 +2415,13 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             : ev.comment || null;
                         } else if (isReturn) {
                           fromLabel = ev.deptName;
-                          toLabel = evts[origIdx - 1]?.deptName || null;
+                          const prevEvt = evts[origIdx - 1];
+                          // For sent_to_vetting, deptName is the RECEIVING dept — use actorName/finalApprover instead
+                          if (prevEvt?.action === 'sent_to_vetting') {
+                            toLabel = finalApproverDeptName || prevEvt?.actorName || null;
+                          } else {
+                            toLabel = prevEvt?.deptName || null;
+                          }
                           badgeText = 'Returned';
                           badgeColor = 'bg-amber-100 text-amber-700';
                           iconColor = 'bg-amber-500';
