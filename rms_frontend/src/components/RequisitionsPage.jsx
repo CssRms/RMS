@@ -1953,7 +1953,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                                    <span className="text-[9px] text-muted-foreground/60 italic">{a.stageName}</span>
                                  )}
                                  {a.createdAt && (
-                                   <span className="text-[9px] text-muted-foreground/50 font-mono">{new Date(a.createdAt).toLocaleDateString()}</span>
+                                   <span className="text-[9px] text-muted-foreground/50 font-mono">{new Date(a.createdAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}</span>
                                  )}
                                </div>
                             </div>
@@ -2392,11 +2392,21 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                               {description && (
                                 <p className="text-[10px] text-muted-foreground leading-relaxed">{description}</p>
                               )}
-                              {ev.attachmentName && (
-                                <p className="text-[9px] text-primary/70 mt-0.5 flex items-center gap-1">
-                                  <Paperclip size={9} /> {ev.attachmentName}
-                                </p>
-                              )}
+                              {ev.attachmentName && (() => {
+                                const matchedAtt = detail?.attachments?.find(a => a.filename === ev.attachmentName);
+                                return (
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <Paperclip size={9} className="text-primary/70 shrink-0" />
+                                    <span className="text-[9px] text-primary/70 truncate max-w-[140px]">{ev.attachmentName}</span>
+                                    {matchedAtt && (
+                                      <button onClick={() => setPreviewFile(matchedAtt)} title="Preview attachment"
+                                        className="p-0.5 text-muted-foreground hover:text-primary transition-all rounded shrink-0">
+                                        <Eye size={10} />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               {/* Timestamp */}
                               <p className="text-[8px] text-muted-foreground/50 mt-1 font-mono">
                                 {ev.createdAt ? new Date(ev.createdAt).toLocaleString() : ''}
