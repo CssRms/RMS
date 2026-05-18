@@ -281,7 +281,7 @@ const LoginPagePremium = () => {
       {/* ── PWA Install ── */}
       {!isStandalone && (
         <button onClick={handleInstallApp}
-          className="fixed bottom-6 right-6 z-[100] bg-white/85 backdrop-blur-md border border-primary/20 hover:bg-white text-primary py-2.5 px-5 rounded-full shadow-2xl flex items-center gap-2.5 transition-all active:scale-95 group animate-in slide-in-from-bottom-10">
+          className="lg:hidden fixed bottom-6 right-6 z-[100] bg-white/85 backdrop-blur-md border border-primary/20 hover:bg-white text-primary py-2.5 px-5 rounded-full shadow-2xl flex items-center gap-2.5 transition-all active:scale-95 group animate-in slide-in-from-bottom-10">
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Smartphone size={16} />
           </div>
