@@ -144,8 +144,11 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
     setShowDrafts(false);
     onViewChange('requisitions');
     if (draft._isLocal) {
-      // Open a fresh form — CashRequestForm will auto-restore the autosave from localStorage
+      // Persist intent so RequisitionsPage can pick it up after lazy-load
+      sessionStorage.setItem('rms_pending_open_request', draft.type);
+      // Also fire event for the already-mounted case
       window.dispatchEvent(new CustomEvent('rms:openNewRequest', { detail: { type: draft.type } }));
+      setTimeout(() => window.dispatchEvent(new CustomEvent('rms:openNewRequest', { detail: { type: draft.type } })), 400);
     } else {
       window.dispatchEvent(new CustomEvent('rms:openDraftEdit', { detail: { id: draft.id, type: draft.type } }));
     }

@@ -2545,6 +2545,14 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
           localStorage.removeItem('rms_pending_requisition_id');
           await openReqById(pendingId, data);
         }
+
+        // Check for "open new form" intent from local-draft Continue action
+        const pendingFormType = sessionStorage.getItem('rms_pending_open_request');
+        if (pendingFormType) {
+          sessionStorage.removeItem('rms_pending_open_request');
+          setEditDraft(null);
+          setIsFormOpen(pendingFormType);
+        }
       }
     } catch {
       setSyncStale(true);
