@@ -523,21 +523,22 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
                 })}
               </div>
             )}
-            <label
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+              onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+            />
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => fileRef.current?.click()}
               className={`flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center cursor-pointer select-none ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
             >
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                className="sr-only"
-                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-                onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
-                tabIndex={-1}
-                disabled={submitting}
-              />
               <Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}
-            </label>
+            </button>
 
             {/* Staged files notice — files upload when request is submitted */}
             {files.length > 0 && uploadStatus === 'idle' && (
