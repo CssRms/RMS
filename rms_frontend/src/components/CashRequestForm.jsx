@@ -14,6 +14,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   const [targetDeptId, setTargetDeptId] = useState('');
   const [items, setItems] = useState([{ qty: 1, description: '', amount: '' }]);
   const [files, setFiles] = useState([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('idle'); // 'idle' | 'uploading' | 'done' | 'queued' | 'error'
   const [submitStep, setSubmitStep] = useState(null); // null | 'creating' | 'uploading' | 'finalizing'
@@ -88,11 +89,26 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
     setFiles([]);
   }, [isOpen, editDraft?.id]);
 
+  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB — matches server limit
+
   const addFiles = (newFiles) => {
-    setFiles(prev => {
-      const existing = new Set(prev.map(f => f.name + f.size));
-      return [...prev, ...Array.from(newFiles).filter(f => !existing.has(f.name + f.size))];
+    const oversized = [];
+    const valid = [];
+    Array.from(newFiles).forEach(f => {
+      if (f.size > MAX_FILE_BYTES) oversized.push(f.name);
+      else valid.push(f);
     });
+    if (oversized.length) {
+      toast.error(`File${oversized.length > 1 ? 's' : ''} too large (max 10 MB): ${oversized.join(', ')}`);
+    }
+    if (valid.length) {
+      setFiles(prev => {
+        const existing = new Set(prev.map(f => f.name + f.size));
+        return [...prev, ...valid.filter(f => !existing.has(f.name + f.size))];
+      });
+    }
+    // Force-remount the input so the browser allows the dialog to open again next time
+    setFileInputKey(k => k + 1);
   };
   const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
 
@@ -110,9 +126,13 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
     try { localStorage.setItem(lsKey, JSON.stringify(snapshot)); } catch { /* storage full */ }
   }, [subject, comment, items, targetDeptId, urgency, isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On open: restore from localStorage if no editDraft and snapshot is < 24h old
+  // On open: restore from localStorage ONLY when user explicitly clicked "Continue editing"
+  // (Continue sets sessionStorage flag rms_restore_${type}='1' before opening the form)
   useEffect(() => {
     if (!isOpen || isEditing) return;
+    const restoreFlag = `rms_restore_${type}`;
+    if (sessionStorage.getItem(restoreFlag) !== '1') return; // fresh new request — don't restore
+    sessionStorage.removeItem(restoreFlag);
     try {
       const raw = localStorage.getItem(lsKey);
       if (!raw) return;
@@ -123,6 +143,9 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
       if (snap.items?.length) setItems(snap.items);
       if (snap.targetDeptId) setTargetDeptId(snap.targetDeptId);
       if (snap.urgency) setUrgency(snap.urgency);
+      // Data is now in state — clear the localStorage key so the badge disappears
+      localStorage.removeItem(lsKey);
+      window.dispatchEvent(new CustomEvent('rms:draftSaved'));
     } catch { /* corrupt */ }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -524,12 +547,13 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
               </div>
             )}
             <input
+              key={fileInputKey}
               ref={fileRef}
               type="file"
               multiple
-              style={{ display: 'none' }}
+              className="hidden"
               accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-              onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+              onChange={e => addFiles(e.target.files)}
             />
             <button
               type="button"

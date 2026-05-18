@@ -31,16 +31,58 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated, editDraft = nul
   const [targetMode, setTargetMode] = useState('dept'); // 'dept' | 'publish'
   const [targetDeptId, setTargetDeptId] = useState('');
   const [files, setFiles] = useState([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef(null);
 
+  const MAX_FILE_BYTES = 10 * 1024 * 1024;
   const addFiles = (newFiles) => {
-    setFiles(prev => {
-      const existing = new Set(prev.map(f => f.name + f.size));
-      return [...prev, ...Array.from(newFiles).filter(f => !existing.has(f.name + f.size))];
+    const oversized = [];
+    const valid = [];
+    Array.from(newFiles).forEach(f => {
+      if (f.size > MAX_FILE_BYTES) oversized.push(f.name);
+      else valid.push(f);
     });
+    if (oversized.length) toast.error(`File${oversized.length > 1 ? 's' : ''} too large (max 10 MB): ${oversized.join(', ')}`);
+    if (valid.length) {
+      setFiles(prev => {
+        const existing = new Set(prev.map(f => f.name + f.size));
+        return [...prev, ...valid.filter(f => !existing.has(f.name + f.size))];
+      });
+    }
+    setFileInputKey(k => k + 1);
   };
   const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
+
+  // Autosave key (skipped when editing a server draft)
+  const lsKey = `rms_autosave_Memo_${user?.deptId || 'x'}`;
+
+  // Save to localStorage on every change (new forms only)
+  useEffect(() => {
+    if (isEditing) return;
+    if (!subject.trim() && !message.trim()) return;
+    try { localStorage.setItem(lsKey, JSON.stringify({ subject, message, targetMode, targetDeptId, savedAt: Date.now() })); }
+    catch { /* storage full */ }
+  }, [subject, message, targetMode, targetDeptId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore only when user explicitly clicked "Continue editing" (flag set by Layout)
+  useEffect(() => {
+    if (isEditing) return;
+    if (sessionStorage.getItem('rms_restore_Memo') !== '1') return;
+    sessionStorage.removeItem('rms_restore_Memo');
+    try {
+      const raw = localStorage.getItem(lsKey);
+      if (!raw) return;
+      const snap = JSON.parse(raw);
+      if (Date.now() - (snap.savedAt || 0) > 86400000) { localStorage.removeItem(lsKey); return; }
+      if (snap.subject) setSubject(snap.subject);
+      if (snap.message) setMessage(snap.message);
+      if (snap.targetMode) setTargetMode(snap.targetMode);
+      if (snap.targetDeptId) setTargetDeptId(snap.targetDeptId);
+      localStorage.removeItem(lsKey);
+      window.dispatchEvent(new CustomEvent('rms:draftSaved'));
+    } catch { /* corrupt */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter target options per routing rules
   const targetOptions = departments.filter(d => {
@@ -99,6 +141,8 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated, editDraft = nul
       } else {
         toast.success(isEditing ? 'Draft updated successfully.' : 'Memo submitted successfully.');
       }
+      try { localStorage.removeItem(lsKey); } catch { /* ignore */ }
+      window.dispatchEvent(new CustomEvent('rms:draftSaved'));
       onCreated();
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to create memo');
@@ -157,34 +201,46 @@ const MemoCreateForm = ({ user, departments, onClose, onCreated, editDraft = nul
           <div className="space-y-3">
             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest pl-2">Attachments (optional)</label>
             <input
+              key={fileInputKey}
               ref={fileRef}
               type="file"
               multiple
               className="hidden"
               accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-              onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+              onChange={e => addFiles(e.target.files)}
             />
             {files.length > 0 && (
               <div className="space-y-2">
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-xl border border-border/50">
-                    <FileText size={13} className="text-primary shrink-0" />
-                    <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => { const url = URL.createObjectURL(f); window.open(url, '_blank'); }} className="p-1 text-muted-foreground hover:text-primary rounded shrink-0" title="Preview">
-                      <Eye size={12} />
-                    </button>
-                    <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0" title="Remove">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
+                {files.map((f, i) => {
+                  const ext = f.name.split('.').pop()?.toUpperCase() || '?';
+                  const extColor = ['PDF'].includes(ext) ? 'bg-red-100 text-red-700'
+                    : ['JPG','JPEG','PNG','GIF','WEBP'].includes(ext) ? 'bg-blue-100 text-blue-700'
+                    : ['DOC','DOCX'].includes(ext) ? 'bg-indigo-100 text-indigo-700'
+                    : ['XLS','XLSX'].includes(ext) ? 'bg-green-100 text-green-700'
+                    : 'bg-muted text-muted-foreground';
+                  const sizeLabel = f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(f.size / 1024))} KB`;
+                  return (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-xl border border-border/50 animate-in fade-in duration-200">
+                      <FileText size={13} className="text-primary shrink-0" />
+                      <span className="flex-1 truncate text-xs font-bold text-foreground">{f.name}</span>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0 ${extColor}`}>{ext}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0 font-mono">{sizeLabel}</span>
+                      <button onClick={() => { const url = URL.createObjectURL(f); window.open(url, '_blank'); }} className="p-1 text-muted-foreground hover:text-primary rounded shrink-0" title="Preview">
+                        <Eye size={12} />
+                      </button>
+                      <button onClick={() => removeFile(i)} className="p-1 text-muted-foreground hover:text-destructive rounded shrink-0" title="Remove">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <button
               type="button"
+              disabled={submitting}
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center"
+              className={`flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 px-3 py-2 rounded-xl border border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all w-full justify-center cursor-pointer ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
             >
               <Paperclip size={14} /> {files.length > 0 ? 'Add more files' : 'Attach supporting documents'}
             </button>
@@ -571,6 +627,25 @@ const MemoManagement = ({ onViewChange }) => {
   }, []);
 
   useEffect(() => { loadMemos(); }, [loadMemos]);
+
+  // Open new Memo form when triggered by local-draft "Continue editing" in navbar
+  useEffect(() => {
+    const handle = (e) => {
+      if ((e.detail?.type || 'Memo') === 'Memo') {
+        setDraftToEdit(null);
+        setShowCreate(true);
+      }
+    };
+    window.addEventListener('rms:openNewRequest', handle);
+    // Also check sessionStorage fallback (component was lazy-loaded after event fired)
+    const pending = sessionStorage.getItem('rms_pending_open_request');
+    if (pending === 'Memo') {
+      sessionStorage.removeItem('rms_pending_open_request');
+      setDraftToEdit(null);
+      setShowCreate(true);
+    }
+    return () => window.removeEventListener('rms:openNewRequest', handle);
+  }, []);
 
   const filteredMemos = memos.filter(m => {
     if (tab === 'incoming') return user?.deptId && m.targetDepartmentId === user.deptId;

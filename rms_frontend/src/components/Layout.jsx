@@ -142,14 +142,20 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
 
   const handleOpenDraft = (draft) => {
     setShowDrafts(false);
-    onViewChange('requisitions');
     if (draft._isLocal) {
-      // Persist intent so RequisitionsPage can pick it up after lazy-load
+      // Tell the form to restore autosave data when it opens
+      sessionStorage.setItem(`rms_restore_${draft.type}`, '1');
+      // Persist form-open intent for the lazy-load fallback
       sessionStorage.setItem('rms_pending_open_request', draft.type);
-      // Also fire event for the already-mounted case
+      // Navigate to the correct view for this draft type
+      const targetView = draft.type === 'Memo' ? 'memos' : 'requisitions';
+      onViewChange(targetView);
+      // Fire event for the already-mounted case (+ 400 ms fallback)
       window.dispatchEvent(new CustomEvent('rms:openNewRequest', { detail: { type: draft.type } }));
       setTimeout(() => window.dispatchEvent(new CustomEvent('rms:openNewRequest', { detail: { type: draft.type } })), 400);
     } else {
+      const targetView = draft.type === 'Memo' ? 'memos' : 'requisitions';
+      onViewChange(targetView);
       window.dispatchEvent(new CustomEvent('rms:openDraftEdit', { detail: { id: draft.id, type: draft.type } }));
     }
   };
