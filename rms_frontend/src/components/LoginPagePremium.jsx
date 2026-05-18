@@ -23,7 +23,17 @@ const LoginPagePremium = () => {
     const handleBeforeInstallPrompt = (e) => { e.preventDefault(); setDeferredPrompt(e); };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     if (window.matchMedia('(display-mode: standalone)').matches) setIsStandalone(true);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Load premium fonts only when this screen is active
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Gagalin&family=Alice&family=Chewy&display=swap';
+    document.head.appendChild(link);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      document.head.removeChild(link);
+    };
   }, []);
 
   const handleInstallApp = async () => {
@@ -93,42 +103,44 @@ const LoginPagePremium = () => {
             className="w-28 h-[4.5rem] object-cover object-center rounded-2xl shadow-lg mb-6"
           />
 
-          {/* Main headline — very large, bold, dark green */}
+          {/* "CSS GROUP OF COMPANIES" — Gagalin font */}
           <h1 style={{
+            fontFamily: "'Gagalin', sans-serif",
             color: '#0a3d0a',
-            fontWeight: 900,
-            fontSize: '3rem',
+            fontSize: '3.2rem',
             lineHeight: 1.1,
-            letterSpacing: '0.02em',
-            textShadow: '0 2px 8px rgba(255,255,255,0.6)',
+            letterSpacing: '0.01em',
+            textShadow: '0 2px 8px rgba(255,255,255,0.65)',
           }}>
             CSS GROUP OF COMPANIES
           </h1>
 
+          {/* "Requisition Management System" — Alice font */}
           <p style={{
+            fontFamily: "'Alice', serif",
             color: '#155215',
-            fontWeight: 700,
-            fontSize: '1.35rem',
-            fontStyle: 'italic',
-            marginTop: '0.6rem',
-            textShadow: '0 1px 6px rgba(255,255,255,0.6)',
+            fontWeight: 400,
+            fontSize: '1.55rem',
+            marginTop: '0.5rem',
+            textShadow: '0 1px 6px rgba(255,255,255,0.65)',
           }}>
             Requisition Management System
           </p>
 
+          {/* Description + bullets — Chewy font */}
           <p style={{
+            fontFamily: "'Chewy', cursive",
             color: '#1a3d1a',
-            fontWeight: 500,
-            fontSize: '0.9rem',
-            lineHeight: 1.75,
-            marginTop: '1rem',
+            fontSize: '1.1rem',
+            lineHeight: 1.7,
+            marginTop: '0.9rem',
             maxWidth: '22rem',
-            textShadow: '0 1px 4px rgba(255,255,255,0.7)',
+            textShadow: '0 1px 4px rgba(255,255,255,0.65)',
           }}>
             Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
           </p>
 
-          <div style={{ marginTop: '1.2rem' }} className="space-y-2">
+          <div style={{ marginTop: '0.8rem' }} className="space-y-1.5">
             {[
               'End-to-end approval tracking',
               'Offline draft capability',
@@ -136,7 +148,12 @@ const LoginPagePremium = () => {
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-center gap-2">
                 <CheckCircle2 size={16} style={{ color: '#0a5c0a', flexShrink: 0 }} />
-                <span style={{ color: '#1a3d1a', fontWeight: 600, fontSize: '0.9rem', textShadow: '0 1px 4px rgba(255,255,255,0.6)' }}>
+                <span style={{
+                  fontFamily: "'Chewy', cursive",
+                  color: '#1a3d1a',
+                  fontSize: '1.1rem',
+                  textShadow: '0 1px 4px rgba(255,255,255,0.6)',
+                }}>
                   {item}
                 </span>
               </div>
