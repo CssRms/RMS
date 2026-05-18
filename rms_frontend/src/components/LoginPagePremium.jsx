@@ -82,46 +82,65 @@ const LoginPagePremium = () => {
 
         {/* ══════════════════════════════════════
             LEFT BRANDING — Desktop only
+            Text floats directly on video — no panel
         ══════════════════════════════════════ */}
-        <div className="hidden lg:flex lg:w-[48%] items-center justify-center px-12 py-10">
-          {/*
-            Frosted panel — subtle white backing so text is always readable
-            regardless of which video frame is showing behind it
-          */}
-          <div className="w-full max-w-md text-center rounded-[2.5rem] px-10 py-12 space-y-5"
-               style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
+        <div className="hidden lg:flex lg:w-[48%] flex-col items-center text-center pt-16 px-10">
 
-            {/* CSS Group logo — same image + sizing as the standard login desktop panel */}
-            <div className="flex justify-center mb-2">
-              <div className="w-32 h-20 rounded-2xl overflow-hidden bg-white/10 border border-white/20 shadow-inner">
-                <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-cover object-center" />
+          {/* Logo — no box, just the image */}
+          <img
+            src="/CSS_Group.png"
+            alt="CSS Group"
+            className="w-28 h-[4.5rem] object-cover object-center rounded-2xl shadow-lg mb-6"
+          />
+
+          {/* Main headline — very large, bold, dark green */}
+          <h1 style={{
+            color: '#0a3d0a',
+            fontWeight: 900,
+            fontSize: '3rem',
+            lineHeight: 1.1,
+            letterSpacing: '0.02em',
+            textShadow: '0 2px 8px rgba(255,255,255,0.6)',
+          }}>
+            CSS GROUP OF COMPANIES
+          </h1>
+
+          <p style={{
+            color: '#155215',
+            fontWeight: 700,
+            fontSize: '1.35rem',
+            fontStyle: 'italic',
+            marginTop: '0.6rem',
+            textShadow: '0 1px 6px rgba(255,255,255,0.6)',
+          }}>
+            Requisition Management System
+          </p>
+
+          <p style={{
+            color: '#1a3d1a',
+            fontWeight: 500,
+            fontSize: '0.9rem',
+            lineHeight: 1.75,
+            marginTop: '1rem',
+            maxWidth: '22rem',
+            textShadow: '0 1px 4px rgba(255,255,255,0.7)',
+          }}>
+            Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
+          </p>
+
+          <div style={{ marginTop: '1.2rem' }} className="space-y-2">
+            {[
+              'End-to-end approval tracking',
+              'Offline draft capability',
+              'Multi-department oversight',
+            ].map((item, i) => (
+              <div key={i} className="flex items-center justify-center gap-2">
+                <CheckCircle2 size={16} style={{ color: '#0a5c0a', flexShrink: 0 }} />
+                <span style={{ color: '#1a3d1a', fontWeight: 600, fontSize: '0.9rem', textShadow: '0 1px 4px rgba(255,255,255,0.6)' }}>
+                  {item}
+                </span>
               </div>
-            </div>
-
-            <h1 style={{ color: '#0a3d0a', fontWeight: 900, fontSize: '1.85rem', lineHeight: 1.15, letterSpacing: '-0.01em' }}>
-              CSS GROUP OF COMPANIES
-            </h1>
-
-            <p style={{ color: '#155215', fontWeight: 700, fontSize: '1.1rem', fontStyle: 'italic' }}>
-              Requisition Management System
-            </p>
-
-            <p style={{ color: '#1a3d1a', fontWeight: 500, fontSize: '0.875rem', lineHeight: 1.7 }}>
-              Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
-            </p>
-
-            <div className="space-y-2.5 pt-1">
-              {[
-                'End-to-end approval tracking',
-                'Offline draft capability',
-                'Multi-department oversight',
-              ].map((item, i) => (
-                <div key={i} className="flex items-center justify-center gap-2">
-                  <CheckCircle2 size={15} style={{ color: '#0d5c0d', flexShrink: 0 }} />
-                  <span style={{ color: '#1a3d1a', fontWeight: 600, fontSize: '0.875rem' }}>{item}</span>
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
         </div>
 
