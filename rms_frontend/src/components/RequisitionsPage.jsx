@@ -1118,38 +1118,19 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
             <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
           </div>
           <p className="text-[11px] text-emerald-700/80 leading-relaxed pl-1">
-            Your approval has been recorded. Forward the document, send it to vetting, or treat it directly.
+            Your approval has been recorded and the document is on its way to vetting.
           </p>
-          <div className={`grid gap-2 ${isChairman ? 'grid-cols-2' : ''}`}>
+          {isChairman && finalStatus === 'approved' && (
             <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all text-sm shadow-md shadow-emerald-500/20"
+              onClick={handleSelfTreat}
+              disabled={treating}
+              className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-purple-500/20 w-full"
             >
-              <Send size={15} />
-              Send to Vet
+              {treating ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              Mark Treated
             </button>
-            {isChairman && finalStatus === 'approved' && (
-              <button
-                onClick={handleSelfTreat}
-                disabled={treating}
-                className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-purple-500/20"
-              >
-                {treating ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-                Mark Treated
-              </button>
-            )}
-          </div>
+          )}
         </div>
-
-        {showModal && (
-          <VettingSelectionModal
-            reqId={req.id}
-            user={user}
-            departments={departments}
-            onClose={() => setShowModal(false)}
-            onDone={() => { setShowModal(false); onApproved(); }}
-          />
-        )}
       </>
     );
   }
