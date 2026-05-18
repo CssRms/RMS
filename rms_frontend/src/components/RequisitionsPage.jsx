@@ -837,27 +837,7 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
   const { user: currentUser } = useAuth();
   const { aiEnabled } = useAIFeatures();
 
-  // ── Hierarchy-based forward targets ─────────────────────────────────────────
-  const currentDeptName = currentUser?.name || '';
-  const currentIsChairman = /ceo|chairman/i.test(currentDeptName);
-  const currentIsGM       = /general\s*manager|\bgm\b/i.test(currentDeptName);
-  const currentIsHR       = /\bhr\b|human\s*resource/i.test(currentDeptName);
-
-  const forwardDepts = departments.filter(d => {
-    if (d.id === detail?.targetDepartmentId) return false;
-    const n = d.name || '';
-    // Chairman can forward to any department except the one already holding it.
-    if (currentIsChairman) return true;
-    // GM → Chairman ONLY (strict upward routing)
-    if (currentIsGM) return /ceo|chairman/i.test(n);
-    // HR → all departments except Chairman/CEO
-    if (currentIsHR) return !/ceo|chairman/i.test(n);
-    // Regular depts: peer depts + HR (not GM, Chairman, Audit, Account)
-    return !/general\s*manager|\bgm\b|ceo|chairman|audit|account/i.test(n);
-  });
-  const selectedForwardDept = forwardDepts.find(d => String(d.id) === String(targetId));
-  const openForwardSelector = () => { setMode('forward'); setFwdListOpen(true); };
-
+  // ── Forward target resolution ────────────────────────────────────────────────
   // Work out who "Return to Sender" will actually send to by reading the
   // forwardEvents chain — it's whoever LAST sent the document to the current holder,
   // NOT necessarily the original creator. This prevents ISAC → ISAC loops.
@@ -870,6 +850,18 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
     ? departments.find(d => d.id === lastInbound.fromDeptId)
     : departments.find(d => d.id === req.departmentId);
   const returnLabel = returnTarget ? `Return to ${returnTarget.name}` : 'Return to Sender';
+
+  // Forward is open to ALL departments except:
+  //   1. The current holder (you can't forward to yourself)
+  //   2. The immediate sender (Return already handles going back to them)
+  // Role-based restrictions only apply at creation time, not during forwarding.
+  const forwardDepts = departments.filter(d => {
+    if (d.id === detail?.targetDepartmentId) return false; // current holder
+    if (lastInbound && d.id === lastInbound.fromDeptId) return false; // immediate sender (use Return)
+    return true;
+  });
+  const selectedForwardDept = forwardDepts.find(d => String(d.id) === String(targetId));
+  const openForwardSelector = () => { setMode('forward'); setFwdListOpen(true); };
 
   const handleRefineNote = async () => {
     if (note.trim().length < 5) return;
