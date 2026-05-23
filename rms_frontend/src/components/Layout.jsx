@@ -69,7 +69,7 @@ const REFRESH_STEPS = [
   { key: 'page',   label: 'Syncing current page data' },
 ];
 
-const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotifications, showBell, setShowBell, onLogout, onViewChange, currentView, actionAlert }) => {
+const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotifications, showBell, setShowBell, onLogout, onViewChange, currentView, actionAlert, onChatDeepLink }) => {
   const { isOnline, networkQuality } = useNetwork();
   const qcfg = QUALITY_CFG[networkQuality] || QUALITY_CFG.strong;
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -176,7 +176,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
     if (n.link) {
       const chatMatch = n.link.match(/[?&]chat=([^&]+)/);
       if (chatMatch) {
-        setChatDeepLink(chatMatch[1]);
+        onChatDeepLink?.(chatMatch[1]);
         return;
       }
     }
@@ -971,6 +971,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         onViewChange={onViewChange}
         currentView={currentView}
         actionAlert={actionAlert}
+        onChatDeepLink={setChatDeepLink}
       />
 
       {/* Persistent offline banner — always visible while disconnected */}
