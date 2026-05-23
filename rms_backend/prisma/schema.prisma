@@ -331,6 +331,10 @@ model ChatMessage {
   mediaType   String?     // "audio" | "image" | "file"
   mediaName   String?     // original filename
   mediaMime   String?     // MIME type
+  replyToId   Int?
+  replyTo     ChatMessage?  @relation("ChatReplies", fields: [replyToId], references: [id])
+  replies     ChatMessage[] @relation("ChatReplies")
+  editedAt    DateTime?
   createdAt   DateTime    @default(now())
 }
 

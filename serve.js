@@ -1729,6 +1729,16 @@ app.get('/api/chat/conversations', authenticateToken, async (req, res) => {
   } catch (err) { sendError(res, 500, err.message); }
 });
 
+const chatMsgInclude = {
+  fromDept: { select: { id: true, name: true } },
+  replyTo: {
+    select: {
+      id: true, body: true, mediaType: true, mediaName: true, mediaKey: true,
+      fromDept: { select: { name: true } }
+    }
+  }
+};
+
 // GET /api/chat/group?before=<id>&limit=50 — group channel messages
 app.get('/api/chat/group', authenticateToken, async (req, res) => {
   try {
@@ -1738,7 +1748,7 @@ app.get('/api/chat/group', authenticateToken, async (req, res) => {
       where: { toDeptId: null, ...(before ? { id: { lt: before } } : {}) },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { fromDept: { select: { id: true, name: true } } }
+      include: chatMsgInclude
     });
     res.json(messages.reverse());
   } catch (err) { sendError(res, 500, err.message); }
@@ -1763,7 +1773,7 @@ app.get('/api/chat/dm/:deptId', authenticateToken, async (req, res) => {
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { fromDept: { select: { id: true, name: true } } }
+      include: chatMsgInclude
     });
     res.json(messages.reverse());
   } catch (err) { sendError(res, 500, err.message); }
@@ -1781,18 +1791,24 @@ app.post('/api/chat/send', authenticateToken, async (req, res) => {
       mediaType: z.enum(['audio', 'image', 'file']).optional(),
       mediaName: z.string().optional(),
       mediaMime: z.string().optional(),
+      replyToId: z.number().int().optional(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid message' });
-    const { body, toDeptId, mediaKey, mediaType, mediaName, mediaMime } = parsed.data;
+    const { body, toDeptId, mediaKey, mediaType, mediaName, mediaMime, replyToId } = parsed.data;
     if (!body && !mediaKey) return res.status(400).json({ error: 'Message body or media required' });
     if (toDeptId && toDeptId === myDeptId) return res.status(400).json({ error: 'Cannot message yourself' });
 
     const msg = await prisma.chatMessage.create({
       data: {
         fromDeptId: myDeptId, toDeptId: toDeptId || null, body, readBy: [myDeptId],
-        ...(mediaKey ? { mediaKey, mediaType, mediaName, mediaMime } : {})
+        ...(mediaKey ? { mediaKey, mediaType, mediaName, mediaMime } : {}),
+        ...(replyToId ? { replyToId } : {})
       },
-      include: { fromDept: { select: { id: true, name: true } }, toDept: { select: { id: true, name: true } } }
+      include: {
+        fromDept: { select: { id: true, name: true } },
+        toDept: { select: { id: true, name: true } },
+        replyTo: { select: { id: true, body: true, mediaType: true, mediaName: true, mediaKey: true, fromDept: { select: { name: true } } } }
+      }
     });
 
     // Build human-readable preview for notifications
@@ -1906,6 +1922,35 @@ app.post('/api/chat/read', authenticateToken, async (req, res) => {
       `;
     }
     res.json({ success: true });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// PATCH /api/chat/messages/:id — edit own text message
+app.patch('/api/chat/messages/:id', authenticateToken, async (req, res) => {
+  try {
+    const myDeptId = toIntOrNull(req.user?.deptId);
+    if (!myDeptId) return res.status(403).json({ error: 'Department account required' });
+    const msgId = parseInt(req.params.id);
+    if (isNaN(msgId)) return res.status(400).json({ error: 'Invalid message ID' });
+    const parsed = z.object({ body: z.string().min(1).max(2000) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid body' });
+
+    const existing = await prisma.chatMessage.findUnique({ where: { id: msgId } });
+    if (!existing) return res.status(404).json({ error: 'Message not found' });
+    if (existing.fromDeptId !== myDeptId) return res.status(403).json({ error: 'Not your message' });
+    if (existing.mediaKey) return res.status(400).json({ error: 'Cannot edit media messages' });
+
+    const updated = await prisma.chatMessage.update({
+      where: { id: msgId },
+      data: { body: parsed.data.body, editedAt: new Date() },
+      include: { fromDept: { select: { id: true, name: true } } }
+    });
+
+    // Broadcast edit to recipient(s) with _action flag so client distinguishes from new messages
+    const targetIds = existing.toDeptId ? [existing.toDeptId] : null;
+    broadcastChatSSE({ ...updated, _action: 'edit' }, targetIds);
+
+    res.json(updated);
   } catch (err) { sendError(res, 500, err.message); }
 });
 

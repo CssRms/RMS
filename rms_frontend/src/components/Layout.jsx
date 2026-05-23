@@ -779,6 +779,8 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         });
         es.addEventListener('chat_message', (e) => {
           window.dispatchEvent(new CustomEvent('rms:chatMessage', { detail: e.data }));
+          // Skip notification refresh for edit events (no new notif created)
+          try { if (JSON.parse(e.data)?._action === 'edit') return; } catch {}
           getNotifications().then(data => setNotifications(data)).catch(() => {});
         });
         es.onerror = () => {
