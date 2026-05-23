@@ -1656,6 +1656,187 @@ app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── Chat API ──────────────────────────────────────────────────────────────────
+
+// Helper: broadcast a chat_message SSE event to specific dept(s) or all
+function broadcastChatSSE(msg, targetDeptIds /* null = all */) {
+  const payload = `event: chat_message\ndata: ${JSON.stringify(msg)}\n\n`;
+  for (const [, { res, user }] of sseClients) {
+    if (normalizeRole(user?.role) !== 'department') continue;
+    const deptId = toIntOrNull(user?.deptId);
+    if (!deptId) continue;
+    if (targetDeptIds === null || targetDeptIds.includes(deptId)) {
+      try { res.write(payload); } catch (_) {}
+    }
+  }
+}
+
+// GET /api/chat/conversations — inbox list: group unread + DM threads
+app.get('/api/chat/conversations', authenticateToken, async (req, res) => {
+  try {
+    const myDeptId = toIntOrNull(req.user?.deptId);
+    if (!myDeptId) return res.json({ group: { unread: 0, lastMessage: null }, dms: [] });
+
+    // Group unread
+    const groupUnread = await prisma.chatMessage.count({
+      where: { toDeptId: null, NOT: { readBy: { has: myDeptId } }, fromDeptId: { not: myDeptId } }
+    });
+    const lastGroupMsg = await prisma.chatMessage.findFirst({
+      where: { toDeptId: null },
+      orderBy: { createdAt: 'desc' },
+      include: { fromDept: { select: { name: true } } }
+    });
+
+    // DM threads — get all messages involving my dept (excluding group)
+    const dmMessages = await prisma.chatMessage.findMany({
+      where: {
+        toDeptId: { not: null },
+        OR: [{ fromDeptId: myDeptId }, { toDeptId: myDeptId }]
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { fromDept: { select: { id: true, name: true } }, toDept: { select: { id: true, name: true } } }
+    });
+
+    // Build per-partner summary
+    const dmMap = new Map();
+    for (const m of dmMessages) {
+      const partnerId = m.fromDeptId === myDeptId ? m.toDeptId : m.fromDeptId;
+      const partnerName = m.fromDeptId === myDeptId ? m.toDept?.name : m.fromDept?.name;
+      if (!dmMap.has(partnerId)) {
+        const unread = dmMessages.filter(x =>
+          ((x.fromDeptId === partnerId && x.toDeptId === myDeptId)) &&
+          !x.readBy.includes(myDeptId)
+        ).length;
+        dmMap.set(partnerId, { deptId: partnerId, deptName: partnerName, lastMessage: m, unread });
+      }
+    }
+
+    res.json({
+      group: { unread: groupUnread, lastMessage: lastGroupMsg },
+      dms: [...dmMap.values()]
+    });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// GET /api/chat/group?before=<id>&limit=50 — group channel messages
+app.get('/api/chat/group', authenticateToken, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+    const before = req.query.before ? parseInt(req.query.before) : undefined;
+    const messages = await prisma.chatMessage.findMany({
+      where: { toDeptId: null, ...(before ? { id: { lt: before } } : {}) },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { fromDept: { select: { id: true, name: true } } }
+    });
+    res.json(messages.reverse());
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// GET /api/chat/dm/:deptId?before=<id>&limit=50 — DM thread
+app.get('/api/chat/dm/:deptId', authenticateToken, async (req, res) => {
+  try {
+    const myDeptId = toIntOrNull(req.user?.deptId);
+    const otherDeptId = parseInt(req.params.deptId);
+    if (!myDeptId || isNaN(otherDeptId)) return res.status(400).json({ error: 'Invalid dept' });
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+    const before = req.query.before ? parseInt(req.query.before) : undefined;
+    const messages = await prisma.chatMessage.findMany({
+      where: {
+        toDeptId: { not: null },
+        OR: [
+          { fromDeptId: myDeptId, toDeptId: otherDeptId },
+          { fromDeptId: otherDeptId, toDeptId: myDeptId }
+        ],
+        ...(before ? { id: { lt: before } } : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { fromDept: { select: { id: true, name: true } } }
+    });
+    res.json(messages.reverse());
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// POST /api/chat/send — send a message
+app.post('/api/chat/send', authenticateToken, async (req, res) => {
+  try {
+    const myDeptId = toIntOrNull(req.user?.deptId);
+    if (!myDeptId) return res.status(403).json({ error: 'Department account required' });
+    const parsed = z.object({
+      body: z.string().min(1).max(2000),
+      toDeptId: z.number().int().optional()
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid message' });
+    const { body, toDeptId } = parsed.data;
+    if (toDeptId && toDeptId === myDeptId) return res.status(400).json({ error: 'Cannot message yourself' });
+
+    const msg = await prisma.chatMessage.create({
+      data: { fromDeptId: myDeptId, toDeptId: toDeptId || null, body, readBy: [myDeptId] },
+      include: { fromDept: { select: { id: true, name: true } }, toDept: { select: { id: true, name: true } } }
+    });
+
+    // SSE push
+    if (toDeptId) {
+      broadcastChatSSE(msg, [toDeptId]);
+      // In-app notification for DM
+      await prisma.notification.create({
+        data: {
+          departmentId: toDeptId,
+          content: `💬 ${msg.fromDept.name}: ${body.length > 60 ? body.slice(0, 60) + '…' : body}`,
+          link: `?chat=dm:${myDeptId}`
+        }
+      }).catch(() => {});
+      await sendPushNotification([toDeptId], {
+        title: `Message from ${msg.fromDept.name}`,
+        body: body.length > 80 ? body.slice(0, 80) + '…' : body,
+        url: `/?chat=dm:${myDeptId}`
+      });
+    } else {
+      // Group — push to all depts except sender
+      broadcastChatSSE(msg, null);
+      const allDepts = await prisma.department.findMany({ select: { id: true } });
+      const otherIds = allDepts.map(d => d.id).filter(id => id !== myDeptId);
+      for (const deptId of otherIds) {
+        await prisma.notification.create({
+          data: {
+            departmentId: deptId,
+            content: `📢 ${msg.fromDept.name} (All): ${body.length > 60 ? body.slice(0, 60) + '…' : body}`,
+            link: '?chat=group'
+          }
+        }).catch(() => {});
+      }
+      await sendPushNotification(otherIds, {
+        title: `${msg.fromDept.name} — All Departments`,
+        body: body.length > 80 ? body.slice(0, 80) + '…' : body,
+        url: '/?chat=group'
+      });
+    }
+
+    res.json(msg);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// POST /api/chat/read — mark messages as read
+app.post('/api/chat/read', authenticateToken, async (req, res) => {
+  try {
+    const myDeptId = toIntOrNull(req.user?.deptId);
+    if (!myDeptId) return res.status(403).json({ error: 'Department account required' });
+    const parsed = z.object({ messageIds: z.array(z.number().int()) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload' });
+    const { messageIds } = parsed.data;
+    // Add myDeptId to readBy for each message (only if not already present)
+    for (const id of messageIds) {
+      await prisma.$executeRaw`
+        UPDATE "ChatMessage"
+        SET "readBy" = array_append("readBy", ${myDeptId})
+        WHERE id = ${id} AND NOT (${myDeptId} = ANY("readBy"))
+      `;
+    }
+    res.json({ success: true });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
 app.post('/api/requisition-types', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
   try {
     const parsed = z.object({

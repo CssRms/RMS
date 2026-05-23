@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
+import ChatWidget from './ChatWidget';
 
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
 
@@ -170,6 +171,15 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
     }
 
     setShowBell(false);
+
+    // Chat deep-link: ?chat=group or ?chat=dm:5
+    if (n.link) {
+      const chatMatch = n.link.match(/[?&]chat=([^&]+)/);
+      if (chatMatch) {
+        setChatDeepLink(chatMatch[1]);
+        return;
+      }
+    }
 
     let matchedId = null;
     let memoMatched = false;
@@ -767,6 +777,10 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         es.addEventListener('requisition_updated', () => {
           getNotifications().then(data => setNotifications(data)).catch(() => {});
         });
+        es.addEventListener('chat_message', (e) => {
+          window.dispatchEvent(new CustomEvent('rms:chatMessage', { detail: e.data }));
+          getNotifications().then(data => setNotifications(data)).catch(() => {});
+        });
         es.onerror = () => {
           if (closed) return;
           es.close();
@@ -921,6 +935,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [hrPortalOpen, setHrPortalOpen] = useState(false);
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
+  const [chatDeepLink, setChatDeepLink] = useState(null);
 
   useEffect(() => {
     const loadFeatureFlags = async () => {
@@ -1148,6 +1163,10 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         </nav>
       </div>
 
+      <ChatWidget
+        initialDeepLink={chatDeepLink}
+        onDeepLinkConsumed={() => setChatDeepLink(null)}
+      />
     </div>
   );
 };

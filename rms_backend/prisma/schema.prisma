@@ -56,6 +56,8 @@ model Department {
   stamp           DepartmentStamp?
   signingKeys          DepartmentKey[]
   notifications        Notification[]
+  sentMessages         ChatMessage[]    @relation("ChatSender")
+  receivedMessages     ChatMessage[]    @relation("ChatRecipient")
   targetedRequisitions Requisition[]    @relation("RequisitionTarget")
   forwardEventsFrom    ForwardEvent[]   @relation("ForwardFrom")
   forwardEventsTo      ForwardEvent[]   @relation("ForwardTo")
@@ -315,6 +317,17 @@ model RequisitionTag {
   taggedAt       DateTime    @default(now())
 
   @@unique([requisitionId, deptId])
+}
+
+model ChatMessage {
+  id          Int         @id @default(autoincrement())
+  fromDeptId  Int
+  fromDept    Department  @relation("ChatSender", fields: [fromDeptId], references: [id])
+  toDeptId    Int?        // null = group broadcast
+  toDept      Department? @relation("ChatRecipient", fields: [toDeptId], references: [id])
+  body        String      @db.Text
+  readBy      Int[]       // deptIds that have opened/read this message
+  createdAt   DateTime    @default(now())
 }
 
 model DeletedRecord {
