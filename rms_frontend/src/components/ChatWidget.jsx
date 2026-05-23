@@ -19,12 +19,12 @@ const fmt = (iso) => {
 };
 
 const chatAPI = {
-  conversations: () => api.get('/chat/conversations').then(r => r.data),
-  group:  (before) => api.get('/chat/group',  { params: before ? { before } : {} }).then(r => r.data),
-  dm:     (deptId, before) => api.get(`/chat/dm/${deptId}`, { params: before ? { before } : {} }).then(r => r.data),
-  send:   (body, toDeptId) => api.post('/chat/send', { body, ...(toDeptId ? { toDeptId } : {}) }).then(r => r.data),
-  read:   (ids) => api.post('/chat/read', { messageIds: ids }).then(r => r.data),
-  depts:  () => api.get('/departments').then(r => r.data),
+  conversations: () => api.get('/chat/conversations'),
+  group:  (before) => api.get('/chat/group',  { params: before ? { before } : {} }),
+  dm:     (deptId, before) => api.get(`/chat/dm/${deptId}`, { params: before ? { before } : {} }),
+  send:   (body, toDeptId) => api.post('/chat/send', { body, ...(toDeptId ? { toDeptId } : {}) }),
+  read:   (ids) => api.post('/chat/read', { messageIds: ids }),
+  depts:  () => api.get('/departments'),
 };
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
