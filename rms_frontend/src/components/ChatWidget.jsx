@@ -316,7 +316,7 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
           : <Avatar name={thread.deptName} size={8} />
         }
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-sm text-foreground truncate">{isGroup ? 'All Departments' : thread.deptName}</p>
+          <p className="font-bold text-sm text-foreground truncate">{isGroup ? 'Group Chats' : thread.deptName}</p>
           <p className="text-[10px] text-muted-foreground">{isGroup ? 'Visible to all departments' : 'Direct message'}</p>
         </div>
       </div>
@@ -491,10 +491,13 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 shrink-0">
         <p className="font-black text-sm text-foreground uppercase tracking-wide">Messages</p>
-        <button onClick={onNewDM}
-          className="w-7 h-7 rounded-full bg-primary/10 hover:bg-primary/20 flex items-center justify-center text-primary transition-colors"
-          title="New direct message">
-          <Plus size={14} />
+        <button
+          onClick={onNewDM}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+          title="Start a direct message"
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest">Chats</span>
+          <Plus size={12} />
         </button>
       </div>
 
@@ -513,7 +516,7 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="font-bold text-sm text-foreground">All Departments</p>
+                  <p className="font-bold text-sm text-foreground">Group Chats</p>
                   {group?.lastMessage && (
                     <p className="text-[10px] text-muted-foreground shrink-0">{fmt(group.lastMessage.createdAt)}</p>
                   )}
