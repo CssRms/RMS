@@ -3,9 +3,12 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import {
   MessageCircle, X, ArrowLeft, Send, Users, MessageSquare,
-  ChevronRight, Plus, Loader2
+  ChevronRight, Plus, Loader2, Mic, StopCircle, Paperclip,
+  FileText, Download
 } from 'lucide-react';
 import api from '../lib/api';
+
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmt = (iso) => {
@@ -18,13 +21,35 @@ const fmt = (iso) => {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+const fmtRecTime = (s) =>
+  `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+const msgPreviewText = (m, myDeptId) => {
+  if (!m) return '';
+  const prefix = m.fromDeptId === myDeptId ? 'You: ' : '';
+  if (m.mediaType === 'audio' && !m.body) return prefix + '🎤 Voice message';
+  if (m.mediaType === 'image' && !m.body) return prefix + '📷 Image';
+  if (m.mediaType === 'file' && !m.body) return `${prefix}📎 ${m.mediaName || 'File'}`;
+  return prefix + (m.body || '');
+};
+
 const chatAPI = {
   conversations: () => api.get('/chat/conversations'),
   group:  (before) => api.get('/chat/group',  { params: before ? { before } : {} }),
   dm:     (deptId, before) => api.get(`/chat/dm/${deptId}`, { params: before ? { before } : {} }),
-  send:   (body, toDeptId) => api.post('/chat/send', { body, ...(toDeptId ? { toDeptId } : {}) }),
+  send:   (body, toDeptId, mediaKey, mediaType, mediaName, mediaMime) =>
+    api.post('/chat/send', {
+      body: body || '',
+      ...(toDeptId ? { toDeptId } : {}),
+      ...(mediaKey ? { mediaKey, mediaType, mediaName, mediaMime } : {})
+    }),
   read:   (ids) => api.post('/chat/read', { messageIds: ids }),
   depts:  () => api.get('/departments'),
+  upload: (formData) => api.post('/chat/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  mediaUrl: (key, download = false) =>
+    `${API_BASE}/chat/media?key=${encodeURIComponent(key)}${download ? '&download=1' : ''}`,
 };
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
@@ -40,26 +65,73 @@ const Avatar = ({ name, size = 8 }) => {
 };
 
 // ── Message bubble ────────────────────────────────────────────────────────────
-const Bubble = ({ msg, isMe }) => (
-  <div className={`flex gap-2 items-end ${isMe ? 'flex-row-reverse' : ''}`}>
-    {!isMe && <Avatar name={msg.fromDept?.name} size={6} />}
-    <div className={`max-w-[75%] space-y-0.5 ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
-      {!isMe && (
-        <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide pl-1">
-          {msg.fromDept?.name}
-        </p>
-      )}
-      <div className={`px-3 py-2 rounded-2xl text-[13px] leading-relaxed break-words ${
-        isMe
-          ? 'bg-primary text-primary-foreground rounded-br-sm'
-          : 'bg-muted text-foreground rounded-bl-sm'
-      }`}>
-        {msg.body}
+const Bubble = ({ msg, isMe }) => {
+  const mediaUrl = msg.mediaKey ? chatAPI.mediaUrl(msg.mediaKey) : null;
+  const downloadUrl = msg.mediaKey ? chatAPI.mediaUrl(msg.mediaKey, true) : null;
+
+  return (
+    <div className={`flex gap-2 items-end ${isMe ? 'flex-row-reverse' : ''}`}>
+      {!isMe && <Avatar name={msg.fromDept?.name} size={6} />}
+      <div className={`max-w-[75%] space-y-0.5 ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
+        {!isMe && (
+          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide pl-1">
+            {msg.fromDept?.name}
+          </p>
+        )}
+        <div className={`rounded-2xl overflow-hidden ${
+          isMe
+            ? 'bg-primary text-primary-foreground rounded-br-sm'
+            : 'bg-muted text-foreground rounded-bl-sm'
+        }`}>
+          {/* Image */}
+          {msg.mediaType === 'image' && mediaUrl && (
+            <a href={downloadUrl} target="_blank" rel="noreferrer" className="block">
+              <img
+                src={mediaUrl}
+                alt={msg.mediaName || 'image'}
+                className="max-w-full max-h-[220px] w-full object-cover"
+              />
+            </a>
+          )}
+          {/* Audio / voice note */}
+          {msg.mediaType === 'audio' && mediaUrl && (
+            <div className={`flex items-center gap-2 px-3 py-2 ${isMe ? 'text-primary-foreground' : 'text-foreground'}`}>
+              <Mic size={13} className="shrink-0 opacity-60" />
+              <audio controls src={mediaUrl} className="h-7" style={{ minWidth: 0, maxWidth: '180px' }} />
+            </div>
+          )}
+          {/* Generic file */}
+          {msg.mediaType === 'file' && downloadUrl && (
+            <a
+              href={downloadUrl}
+              download={msg.mediaName}
+              target="_blank"
+              rel="noreferrer"
+              className={`flex items-center gap-2 px-3 py-2.5 hover:opacity-75 transition-opacity ${
+                isMe ? 'text-primary-foreground' : 'text-foreground'
+              }`}
+            >
+              <FileText size={15} className="shrink-0 opacity-70" />
+              <span className="text-[12px] font-medium truncate max-w-[140px]">{msg.mediaName || 'File'}</span>
+              <Download size={11} className="shrink-0 opacity-60" />
+            </a>
+          )}
+          {/* Text body */}
+          {msg.body ? (
+            <p className={`px-3 py-2 text-[13px] leading-relaxed break-words ${msg.mediaKey ? 'pt-1' : ''}`}>
+              {msg.body}
+            </p>
+          ) : !msg.mediaKey && (
+            <p className="px-3 py-2 text-[13px] leading-relaxed break-words italic opacity-50">
+              (empty)
+            </p>
+          )}
+        </div>
+        <p className="text-[9px] text-muted-foreground/60 px-1">{fmt(msg.createdAt)}</p>
       </div>
-      <p className="text-[9px] text-muted-foreground/60 px-1">{fmt(msg.createdAt)}</p>
     </div>
-  </div>
-);
+  );
+};
 
 // ── Thread view ───────────────────────────────────────────────────────────────
 const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
@@ -67,8 +139,21 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Media attachment state
+  const [pendingFile, setPendingFile] = useState(null); // { file, url, type }
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
+
+  // Voice recording state
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const isGroup = thread.type === 'group';
 
   const load = useCallback(async () => {
@@ -77,7 +162,6 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
         ? await chatAPI.group()
         : await chatAPI.dm(thread.deptId);
       setMessages(data);
-      // Mark unread
       const unread = data.filter(m => m.fromDeptId !== myDeptId && !m.readBy?.includes(myDeptId));
       if (unread.length) chatAPI.read(unread.map(m => m.id)).catch(() => {});
     } catch { /* ignore */ }
@@ -86,32 +170,20 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  // scroll to bottom whenever messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // focus input on mount
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || sending) return;
-    setSending(true);
-    setInput('');
-    try {
-      const msg = await chatAPI.send(text, isGroup ? undefined : thread.deptId);
-      setMessages(prev => [...prev, msg]);
-      onNewMessage?.();
-    } catch { toast.error('Failed to send message.'); setInput(text); }
-    finally { setSending(false); }
-  };
+  // Recording timer
+  useEffect(() => {
+    if (!recording) { setRecSecs(0); return; }
+    const t = setInterval(() => setRecSecs(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [recording]);
 
-  const onKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  };
-
-  // Listen for incoming SSE chat messages while thread is open
+  // Listen for incoming SSE messages
   useEffect(() => {
     const handler = (e) => {
       try {
@@ -131,6 +203,106 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
     window.addEventListener('rms:chatMessage', handler);
     return () => window.removeEventListener('rms:chatMessage', handler);
   }, [thread, isGroup, myDeptId]);
+
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (pendingFile?.url) URL.revokeObjectURL(pendingFile.url);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, []); // eslint-disable-line
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isImg = file.type.startsWith('image/');
+    setPendingFile({ file, url: isImg ? URL.createObjectURL(file) : null, type: isImg ? 'image' : 'file' });
+    e.target.value = '';
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : '';
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(t => t.stop());
+      };
+      mediaRecorderRef.current = mr;
+      mr.start(250);
+      setRecording(true);
+    } catch (err) {
+      if (err.name === 'NotAllowedError') toast.error('Microphone permission denied.');
+      else toast.error('Could not start recording.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setRecording(false);
+  };
+
+  const cancelPending = () => {
+    if (pendingFile?.url) URL.revokeObjectURL(pendingFile.url);
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setPendingFile(null);
+    setAudioBlob(null);
+    setAudioUrl(null);
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    const hasMedia = !!(pendingFile || audioBlob);
+    if ((!text && !hasMedia) || sending || recording) return;
+    setSending(true);
+    const savedInput = text;
+    setInput('');
+
+    try {
+      let mediaKey = null, mediaType = null, mediaName = null, mediaMime = null;
+
+      if (pendingFile) {
+        const fd = new FormData();
+        fd.append('file', pendingFile.file);
+        const up = await chatAPI.upload(fd);
+        mediaKey = up.key; mediaType = up.type; mediaName = up.name; mediaMime = up.mime;
+      } else if (audioBlob) {
+        const ext = audioBlob.type.includes('ogg') ? 'ogg'
+          : audioBlob.type.includes('mp4') ? 'mp4' : 'webm';
+        const fd = new FormData();
+        fd.append('file', audioBlob, `voice-${Date.now()}.${ext}`);
+        const up = await chatAPI.upload(fd);
+        mediaKey = up.key; mediaType = 'audio'; mediaName = up.name; mediaMime = audioBlob.type;
+      }
+
+      const msg = await chatAPI.send(text, isGroup ? undefined : thread.deptId, mediaKey, mediaType, mediaName, mediaMime);
+      setMessages(prev => [...prev, msg]);
+      if (pendingFile?.url) URL.revokeObjectURL(pendingFile.url);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setPendingFile(null);
+      setAudioBlob(null);
+      setAudioUrl(null);
+      onNewMessage?.();
+    } catch {
+      toast.error('Failed to send message.');
+      setInput(savedInput);
+    }
+    finally { setSending(false); }
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -166,32 +338,102 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {/* Pending media preview */}
+      {(pendingFile || audioUrl) && (
+        <div className="px-3 pt-2 shrink-0">
+          <div className="relative inline-flex items-center gap-2 bg-muted/60 border border-border/40 rounded-xl px-2.5 py-1.5 max-w-full">
+            {pendingFile?.type === 'image' && pendingFile.url && (
+              <img src={pendingFile.url} alt="" className="w-10 h-10 object-cover rounded-lg shrink-0" />
+            )}
+            {pendingFile?.type === 'file' && <FileText size={15} className="text-muted-foreground shrink-0" />}
+            {audioUrl && (
+              <>
+                <Mic size={13} className="text-primary shrink-0" />
+                <audio controls src={audioUrl} className="h-6 max-w-[140px]" />
+              </>
+            )}
+            {pendingFile && (
+              <span className="text-xs text-foreground truncate max-w-[120px]">{pendingFile.file.name}</span>
+            )}
+            <button
+              onClick={cancelPending}
+              className="w-4 h-4 rounded-full bg-muted-foreground/20 flex items-center justify-center text-muted-foreground hover:bg-rose-100 hover:text-rose-500 transition-colors shrink-0 ml-1"
+            >
+              <X size={9} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Input area */}
       <div className="px-3 py-3 border-t border-border/40 shrink-0">
-        <div className="flex items-end gap-2 bg-muted/40 rounded-2xl px-3 py-2">
+        <div className="flex items-end gap-1.5 bg-muted/40 rounded-2xl px-3 py-2">
+          {/* File / image attach */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!!audioBlob || recording}
+            className="text-muted-foreground hover:text-primary transition-colors shrink-0 mb-0.5 disabled:opacity-30"
+            title="Attach file or image"
+          >
+            <Paperclip size={16} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+
+          {/* Text input */}
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Type a message…"
+            placeholder={recording ? 'Recording…' : 'Type a message…'}
+            disabled={recording}
             rows={1}
-            className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground resize-none outline-none max-h-[80px] leading-relaxed"
+            className="flex-1 bg-transparent text-sm text-foreground placeholder-muted-foreground resize-none outline-none max-h-[80px] leading-relaxed disabled:opacity-40"
             style={{ minHeight: '24px' }}
             onInput={e => {
               e.target.style.height = 'auto';
               e.target.style.height = Math.min(e.target.scrollHeight, 80) + 'px';
             }}
           />
+
+          {/* Mic button + timer */}
+          {recording && (
+            <span className="text-[10px] font-mono text-rose-500 shrink-0 mb-0.5 tabular-nums">
+              {fmtRecTime(recSecs)}
+            </span>
+          )}
           <button
+            type="button"
+            onClick={recording ? stopRecording : startRecording}
+            disabled={!!pendingFile || sending}
+            className={`shrink-0 mb-0.5 transition-colors disabled:opacity-30 ${
+              recording ? 'text-rose-500 animate-pulse' : 'text-muted-foreground hover:text-primary'
+            }`}
+            title={recording ? 'Stop recording' : 'Record voice note'}
+          >
+            {recording ? <StopCircle size={16} /> : <Mic size={16} />}
+          </button>
+
+          {/* Send button */}
+          <button
+            type="button"
             onClick={send}
-            disabled={!input.trim() || sending}
+            disabled={(!input.trim() && !pendingFile && !audioBlob) || sending || recording}
             className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground transition-all disabled:opacity-40 shrink-0 hover:bg-primary/90"
           >
             {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
           </button>
         </div>
-        <p className="text-[9px] text-muted-foreground/50 text-center mt-1">Enter to send · Shift+Enter for new line</p>
+        <p className="text-[9px] text-muted-foreground/50 text-center mt-1">
+          Enter to send · Shift+Enter for new line
+        </p>
       </div>
     </div>
   );
@@ -247,7 +489,6 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 shrink-0">
         <p className="font-black text-sm text-foreground uppercase tracking-wide">Messages</p>
         <button onClick={onNewDM}
@@ -279,7 +520,7 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
                 </div>
                 <p className="text-xs text-muted-foreground truncate mt-0.5">
                   {group?.lastMessage
-                    ? `${group.lastMessage.fromDept?.name}: ${group.lastMessage.body}`
+                    ? msgPreviewText(group.lastMessage, myDeptId)
                     : 'Shared channel for all departments'}
                 </p>
               </div>
@@ -308,7 +549,7 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
                       </div>
                       {dm.lastMessage && (
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {dm.lastMessage.fromDeptId === myDeptId ? 'You: ' : ''}{dm.lastMessage.body}
+                          {msgPreviewText(dm.lastMessage, myDeptId)}
                         </p>
                       )}
                     </div>
@@ -341,6 +582,10 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
 // ── Main ChatWidget ───────────────────────────────────────────────────────────
 export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
   const { user } = useAuth();
+
+  const myDeptId = user?.deptId ? parseInt(user.deptId) : null;
+  const isActive = !!(user && user.role === 'department' && myDeptId);
+
   const [open, setOpen] = useState(false);
   const [screen, setScreen] = useState('inbox'); // 'inbox' | 'thread' | 'new'
   const [activeThread, setActiveThread] = useState(null);
@@ -348,53 +593,56 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
   const [convLoading, setConvLoading] = useState(false);
   const [totalUnread, setTotalUnread] = useState(0);
 
-  const myDeptId = user?.deptId ? parseInt(user.deptId) : null;
-
-  // Only show for department accounts
-  if (!user || user.role !== 'department' || !myDeptId) return null;
-
   const loadConversations = useCallback(async () => {
+    if (!isActive) return;
     setConvLoading(true);
     try {
       const data = await chatAPI.conversations();
-      setConversations(data);
-      const unread = (data.group?.unread || 0) + data.dms.reduce((s, d) => s + (d.unread || 0), 0);
-      setTotalUnread(unread);
+      if (data && typeof data === 'object') {
+        setConversations(data);
+        const unread = (data.group?.unread || 0) + (data.dms || []).reduce((s, d) => s + (d.unread || 0), 0);
+        setTotalUnread(unread);
+      }
     } catch {}
     finally { setConvLoading(false); }
-  }, []);
+  }, [isActive]);
 
-  useEffect(() => { loadConversations(); }, [loadConversations]);
-
-  // Refresh conversations every 30s when widget is closed
   useEffect(() => {
-    if (open) return;
+    if (isActive) loadConversations();
+  }, [isActive, loadConversations]);
+
+  // Refresh every 30s when widget is closed
+  useEffect(() => {
+    if (!isActive || open) return;
     const t = setInterval(loadConversations, 30000);
     return () => clearInterval(t);
-  }, [open, loadConversations]);
+  }, [isActive, open, loadConversations]);
 
   // Handle incoming SSE chat_message events
   useEffect(() => {
+    if (!isActive) return;
     const handler = (e) => {
       try {
         const msg = JSON.parse(e.detail);
-        if (msg.fromDeptId === myDeptId) return; // own message
+        if (msg.fromDeptId === myDeptId) return;
         loadConversations();
-        // If widget is open and we're already in the right thread, don't toast
         const inRightThread = open && screen === 'thread' && (
           (!msg.toDeptId && activeThread?.type === 'group') ||
           (msg.toDeptId && activeThread?.type === 'dm' && activeThread?.deptId === msg.fromDeptId)
         );
         if (!inRightThread) {
           const label = msg.toDeptId ? msg.fromDept?.name : `📢 ${msg.fromDept?.name} (All)`;
+          const preview = msgPreviewText(msg, myDeptId);
           toast(
             (t) => (
               <button onClick={() => {
                 toast.dismiss(t.id);
-                openThread(msg.toDeptId ? { type: 'dm', deptId: msg.fromDeptId, deptName: msg.fromDept?.name } : { type: 'group' });
+                openThread(msg.toDeptId
+                  ? { type: 'dm', deptId: msg.fromDeptId, deptName: msg.fromDept?.name }
+                  : { type: 'group' });
               }} className="text-left w-full">
                 <p className="font-bold text-xs">{label}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">{msg.body}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">{preview}</p>
               </button>
             ),
             { icon: '💬', duration: 5000 }
@@ -404,12 +652,12 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
     };
     window.addEventListener('rms:chatMessage', handler);
     return () => window.removeEventListener('rms:chatMessage', handler);
-  }, [open, screen, activeThread, myDeptId, loadConversations]);
+  }, [isActive, open, screen, activeThread, myDeptId, loadConversations]);
 
-  // Handle deep-link from notification click (e.g. ?chat=dm:5 or ?chat=group)
+  // Handle deep-link from notification click (?chat=group or ?chat=dm:5)
   useEffect(() => {
     const link = initialDeepLink;
-    if (!link) return;
+    if (!link || !isActive) return;
     if (link === 'group') {
       openThread({ type: 'group' });
     } else if (link.startsWith('dm:')) {
@@ -417,7 +665,7 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
       if (!isNaN(deptId)) openThread({ type: 'dm', deptId, deptName: '' });
     }
     onDeepLinkConsumed?.();
-  }, [initialDeepLink]);
+  }, [initialDeepLink, isActive]);
 
   const openThread = (thread) => {
     setActiveThread(thread);
@@ -430,6 +678,8 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
     setOpen(true);
     loadConversations();
   };
+
+  if (!isActive) return null;
 
   return (
     <>
@@ -449,7 +699,7 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-[340px] h-[520px] bg-card border border-border/60 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
+        <div className="fixed bottom-24 right-6 z-50 w-[340px] h-[540px] bg-card border border-border/60 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
           {screen === 'inbox' && (
             <InboxView
               myDeptId={myDeptId}

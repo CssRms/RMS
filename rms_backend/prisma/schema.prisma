@@ -325,8 +325,12 @@ model ChatMessage {
   fromDept    Department  @relation("ChatSender", fields: [fromDeptId], references: [id])
   toDeptId    Int?        // null = group broadcast
   toDept      Department? @relation("ChatRecipient", fields: [toDeptId], references: [id])
-  body        String      @db.Text
+  body        String      @default("") @db.Text
   readBy      Int[]       // deptIds that have opened/read this message
+  mediaKey    String?     // S3 key for attached media
+  mediaType   String?     // "audio" | "image" | "file"
+  mediaName   String?     // original filename
+  mediaMime   String?     // MIME type
   createdAt   DateTime    @default(now())
 }
 

@@ -187,6 +187,17 @@ const upload = multer({
   }
 });
 
+// Chat-specific multer: allows audio + higher size limit
+const chatUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) return cb(null, true);
+    if (file.mimetype.startsWith('audio/') || file.mimetype.startsWith('video/webm')) return cb(null, true);
+    cb(Object.assign(new Error(`File type not allowed: ${file.mimetype}`), { status: 415 }));
+  }
+});
+
 // Middleware
 const isProd = process.env.NODE_ENV === 'production';
 const allowedOrigins = (process.env.CORS_ORIGIN || '')
@@ -1764,32 +1775,51 @@ app.post('/api/chat/send', authenticateToken, async (req, res) => {
     const myDeptId = toIntOrNull(req.user?.deptId);
     if (!myDeptId) return res.status(403).json({ error: 'Department account required' });
     const parsed = z.object({
-      body: z.string().min(1).max(2000),
-      toDeptId: z.number().int().optional()
+      body: z.string().max(2000).default(''),
+      toDeptId: z.number().int().optional(),
+      mediaKey: z.string().optional(),
+      mediaType: z.enum(['audio', 'image', 'file']).optional(),
+      mediaName: z.string().optional(),
+      mediaMime: z.string().optional(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid message' });
-    const { body, toDeptId } = parsed.data;
+    const { body, toDeptId, mediaKey, mediaType, mediaName, mediaMime } = parsed.data;
+    if (!body && !mediaKey) return res.status(400).json({ error: 'Message body or media required' });
     if (toDeptId && toDeptId === myDeptId) return res.status(400).json({ error: 'Cannot message yourself' });
 
     const msg = await prisma.chatMessage.create({
-      data: { fromDeptId: myDeptId, toDeptId: toDeptId || null, body, readBy: [myDeptId] },
+      data: {
+        fromDeptId: myDeptId, toDeptId: toDeptId || null, body, readBy: [myDeptId],
+        ...(mediaKey ? { mediaKey, mediaType, mediaName, mediaMime } : {})
+      },
       include: { fromDept: { select: { id: true, name: true } }, toDept: { select: { id: true, name: true } } }
     });
+
+    // Build human-readable preview for notifications
+    const msgPreview = body
+      ? (body.length > 60 ? body.slice(0, 60) + '…' : body)
+      : mediaType === 'audio' ? '🎤 Voice message'
+      : mediaType === 'image' ? '📷 Image'
+      : `📎 ${mediaName || 'File'}`;
+    const pushPreview = body
+      ? (body.length > 80 ? body.slice(0, 80) + '…' : body)
+      : mediaType === 'audio' ? '🎤 Voice message'
+      : mediaType === 'image' ? '📷 Image'
+      : `📎 ${mediaName || 'File'}`;
 
     // SSE push
     if (toDeptId) {
       broadcastChatSSE(msg, [toDeptId]);
-      // In-app notification for DM
       await prisma.notification.create({
         data: {
           departmentId: toDeptId,
-          content: `💬 ${msg.fromDept.name}: ${body.length > 60 ? body.slice(0, 60) + '…' : body}`,
+          content: `💬 ${msg.fromDept.name}: ${msgPreview}`,
           link: `?chat=dm:${myDeptId}`
         }
       }).catch(() => {});
       await sendPushNotification([toDeptId], {
         title: `Message from ${msg.fromDept.name}`,
-        body: body.length > 80 ? body.slice(0, 80) + '…' : body,
+        body: pushPreview,
         url: `/?chat=dm:${myDeptId}`
       });
     } else {
@@ -1801,19 +1831,61 @@ app.post('/api/chat/send', authenticateToken, async (req, res) => {
         await prisma.notification.create({
           data: {
             departmentId: deptId,
-            content: `📢 ${msg.fromDept.name} (All): ${body.length > 60 ? body.slice(0, 60) + '…' : body}`,
+            content: `📢 ${msg.fromDept.name} (All): ${msgPreview}`,
             link: '?chat=group'
           }
         }).catch(() => {});
       }
       await sendPushNotification(otherIds, {
         title: `${msg.fromDept.name} — All Departments`,
-        body: body.length > 80 ? body.slice(0, 80) + '…' : body,
+        body: pushPreview,
         url: '/?chat=group'
       });
     }
 
     res.json(msg);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// POST /api/chat/upload — upload media (image / file / voice note) for chat
+app.post('/api/chat/upload', authenticateToken, chatUpload.single('file'), async (req, res) => {
+  try {
+    const myDeptId = toIntOrNull(req.user?.deptId);
+    if (!myDeptId) return res.status(403).json({ error: 'Department account required' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const mime = req.file.mimetype;
+    let mediaType = 'file';
+    if (mime.startsWith('image/')) mediaType = 'image';
+    else if (mime.startsWith('audio/') || mime === 'video/webm') mediaType = 'audio';
+    const key = generateStorageKey('chat', req.file.originalname || `voice-${Date.now()}.webm`);
+    await putObject({ key, body: req.file.buffer, contentType: mime });
+    res.json({ key, name: req.file.originalname || 'voice-message.webm', type: mediaType, mime });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// GET /api/chat/media?key=<storageKey>&download=1 — serve chat media with auth
+app.get('/api/chat/media', authenticateToken, async (req, res) => {
+  try {
+    const key = req.query.key;
+    if (!key || typeof key !== 'string' || !key.startsWith('chat/')) {
+      return res.status(400).json({ error: 'Invalid media key' });
+    }
+    const download = req.query.download === '1';
+    const ext = key.split('.').pop()?.toLowerCase() || '';
+    const mimeMap = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+      webp: 'image/webp', webm: 'audio/webm', ogg: 'audio/ogg', mp3: 'audio/mpeg',
+      wav: 'audio/wav', mp4: 'audio/mp4', pdf: 'application/pdf',
+      doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      txt: 'text/plain', csv: 'text/csv'
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+    const filename = key.split('/').pop();
+    const stream = await getObjectStream(key);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${filename}"`);
+    stream.pipe(res);
   } catch (err) { sendError(res, 500, err.message); }
 });
 
