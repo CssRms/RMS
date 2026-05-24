@@ -2716,11 +2716,24 @@ app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) =>
       returnTargetId = newTargetId;
     }
 
+    // If forwarding to Account on an approved requisition, auto-activate vetting
+    // mode so Account always sees the Treat panel regardless of routing path.
+    let extraVettingData = {};
+    if (!returnToSender && returnTargetId && requisition.finalApprovalStatus === 'approved') {
+      const targetDept = await prisma.department.findUnique({
+        where: { id: returnTargetId }, select: { name: true }
+      });
+      if (targetDept && /\baccount\b/i.test(targetDept.name)) {
+        extraVettingData = { currentVettingDeptId: returnTargetId };
+      }
+    }
+
     const updated = await prisma.requisition.update({
       where: { id: parseInt(id) },
       data: {
         targetDepartmentId: returnTargetId,
-        forwardNote: note || null
+        forwardNote: note || null,
+        ...extraVettingData
       },
       include: { department: true, targetDepartment: true }
     });
@@ -2959,10 +2972,20 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
 
-    // Allow: current vetting dept, final approving dept (Chairman has full oversight), or admin
+    // Resolve acting dept name for Account check
+    const actingDeptRecord = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true } })
+      : null;
+    const isAccountDept = actingDeptRecord && /\baccount\b/i.test(actingDeptRecord.name);
+
+    // Allow: current vetting dept, final approving dept (Chairman), admin,
+    // OR Account dept whenever they hold the request on an approved/vetting requisition
+    // — Account must always be able to treat regardless of routing path.
     const canAct = isAdmin
       || (requisition.currentVettingDeptId === userDeptId)
-      || (requisition.finalApprovedByDeptId === userDeptId);
+      || (requisition.finalApprovedByDeptId === userDeptId)
+      || (isAccountDept && requisition.targetDepartmentId === userDeptId
+          && ['approved', 'vetting'].includes(requisition.finalApprovalStatus));
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });

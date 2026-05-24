@@ -1401,7 +1401,15 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const deptName = user?.name || '';
   const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
   const finalApprovedByDeptId  = detail?.finalApprovedByDeptId  ? parseInt(detail.finalApprovedByDeptId)  : null;
-  const isCurrentVetter        = user?.deptId && currentVettingDeptId === user.deptId;
+  // Account always gets the treat panel when they hold an approved/vetting request,
+  // regardless of whether currentVettingDeptId was explicitly set.
+  const _isAccountDept = /\baccount\b/i.test(user?.name || '');
+  const _fas = detail?.finalApprovalStatus;
+  const isCurrentVetter = user?.deptId && (
+    currentVettingDeptId === user.deptId ||
+    (_isAccountDept && detail?.targetDepartmentId === user.deptId &&
+      (_fas === 'approved' || _fas === 'vetting'))
+  );
   const finalApprovalStatus    = detail?.finalApprovalStatus;
 
   const isICC      = /\bicc\b|integrity|compliance/i.test(deptName);
