@@ -1107,15 +1107,17 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
 
   // ── Already approved: show signed badge + Send to Vet (+ Chairman self-treat) ─
   if (finalStatus && finalStatus !== 'none') {
+    const returnEvt  = detail?.vettingEvents?.slice().reverse().find(e => e.action === 'return');
     const isVettingReturned = finalStatus === 'approved'
       && !detail?.currentVettingDeptId
-      && !!(detail?.vettingEvents?.some(e => e.action === 'return'));
+      && !!returnEvt;
+    const returnWasVetted = !!returnEvt?.vetted;
 
     return (
       <>
         <div className={`space-y-3 border rounded-2xl p-4 shadow-sm relative overflow-hidden ${isVettingReturned ? 'border-amber-200 bg-amber-50/60' : 'border-emerald-200 bg-emerald-50/60'}`}>
           <div className={`absolute top-0 left-0 w-1 h-full ${isVettingReturned ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-          <div className="flex items-center gap-2 pl-1">
+          <div className="flex items-center gap-2 pl-1 flex-wrap">
             {isVettingReturned
               ? <RotateCcw size={14} className="text-amber-600" />
               : <CheckCircle2 size={14} className="text-emerald-600" />}
@@ -1123,10 +1125,16 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
               {isVettingReturned ? 'Returned from Vetting' : 'Signed & Approved'}
             </p>
             <span className={`ml-auto px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isVettingReturned ? 'bg-amber-100 border border-amber-300 text-amber-700' : 'bg-emerald-100 border border-emerald-300 text-emerald-700'}`}>{authorityLabel}</span>
+            {/* Vetted status pill — shown to GM/recipient when vetting dept returns the doc */}
+            {isVettingReturned && (
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${returnWasVetted ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
+                {returnWasVetted ? '✓ Vetted' : '✗ Not Vetted'}
+              </span>
+            )}
           </div>
           <p className={`text-[11px] leading-relaxed pl-1 ${isVettingReturned ? 'text-amber-700/80' : 'text-emerald-700/80'}`}>
             {isVettingReturned
-              ? 'Vetting returned this document. Use the action panel below to forward it for treatment.'
+              ? `Vetting returned this document${returnWasVetted ? ' (document was vetted)' : ' (document was not vetted)'}. Use the action panel below to forward it for treatment.`
               : 'Your approval has been recorded and the document is on its way to vetting.'}
           </p>
           {isChairman && finalStatus === 'approved' && (
@@ -1432,7 +1440,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     : isAccount ? (auditWasPresent ? (auditDeptInList?.name || 'Audit') : finalApproverDeptName)
     : finalApproverDeptName;
 
-  const canAct = vetChecked && comment.trim().length > 0;
+  const canAct = comment.trim().length > 0; // only comment is required; vetChecked is informational
 
   const act = async (action) => {
     setActing(true);
@@ -1444,14 +1452,14 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         else if (isAudit) nextDeptId = accountDept?.id;
         else              nextDeptId = forwardDeptId ? parseInt(forwardDeptId) : null;
         if (!nextDeptId) { toast.error(canTreat ? 'Please select a department to forward to.' : 'Next department not found.'); setActing(false); return; }
-        result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined });
-        if (result !== null) toast.success(isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded successfully.');
+        result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined, vetted: vetChecked });
+        if (result !== null) toast.success(vetChecked ? (isICC ? 'Vetted & submitted to Audit.' : isAudit ? 'Vetted & forwarded to Account.' : 'Vetted & forwarded.') : (isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded.'));
       } else if (action === 'treated') {
-        result = await vettingActionRequisition(req.id, { action: 'treated', comment: comment || undefined, file: file || undefined });
+        result = await vettingActionRequisition(req.id, { action: 'treated', comment: comment || undefined, file: file || undefined, vetted: vetChecked });
         if (result !== null) toast.success('Requisition marked as treated!');
       } else if (action === 'return') {
-        result = await vettingActionRequisition(req.id, { action: 'return', comment, file: file || undefined });
-        if (result !== null) toast.success(`Returned to ${returnDestLabel}.`);
+        result = await vettingActionRequisition(req.id, { action: 'return', comment, file: file || undefined, vetted: vetChecked });
+        if (result !== null) toast.success(vetChecked ? `Returned (Vetted) to ${returnDestLabel}.` : `Returned to ${returnDestLabel}.`);
       }
       onDone();
     } catch (err) {
@@ -1476,7 +1484,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-300 min-h-[72px] resize-none shadow-inner"
       />
 
-      {/* Confirmation checkbox — both comment + checkbox must be set before buttons activate */}
+      {/* Vetted checkbox — optional; marks whether this dept actually performed vetting */}
       <label className="flex items-start gap-2.5 cursor-pointer select-none group">
         <input
           type="checkbox"
@@ -1485,16 +1493,15 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
           className="mt-0.5 w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0"
         />
         <span className="text-[11px] text-blue-800 font-semibold leading-snug">
-          I confirm I have reviewed this document and my action below reflects my assessment.
+          I have vetted this document
+          {vetChecked
+            ? <span className="ml-1 text-emerald-600 font-black">(Vetted ✓)</span>
+            : <span className="ml-1 text-muted-foreground font-normal italic">(optional — leave unchecked to act without vetting)</span>}
         </span>
       </label>
 
       {!canAct && (
-        <p className="text-[10px] text-blue-500/70 italic">
-          {!vetChecked && !comment.trim() ? 'Check the box and write a remark to unlock actions.'
-            : !vetChecked ? 'Check the confirmation box to unlock actions.'
-            : 'Write a remark to unlock actions.'}
-        </p>
+        <p className="text-[10px] text-blue-500/70 italic">Write a remark to unlock actions.</p>
       )}
 
       <div>
@@ -1543,7 +1550,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
               <button onClick={() => act('forward')} disabled={acting || !forwardDeptId || !canAct}
                 className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
                 {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                Forward
+                {vetChecked ? 'Vetted & Forward' : 'Forward (Unvetted)'}
               </button>
             </div>
             <div className="space-y-1">
@@ -1553,7 +1560,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
               <button onClick={() => act('return')} disabled={acting || !canAct}
                 className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
                 {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-                Return
+                {vetChecked ? 'Return (Vetted)' : 'Return'}
               </button>
             </div>
           </div>
@@ -1564,7 +1571,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
           <button onClick={() => act('forward')} disabled={acting || primaryDisabled || !canAct}
             className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
             {acting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            {primaryLabel}
+            {vetChecked ? `Vetted & ${primaryLabel}` : `${primaryLabel} (Unvetted)`}
           </button>
           <div className="space-y-1">
             <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">
@@ -1573,7 +1580,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             <button onClick={() => act('return')} disabled={acting || !canAct}
               className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
               {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-              Return
+              {vetChecked ? 'Return (Vetted)' : 'Return'}
             </button>
           </div>
         </div>
@@ -2421,11 +2428,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                         } else if (isForward) {
                           fromLabel = ev.deptName;
                           toLabel = nextEvt?.deptName || null;
-                          badgeText = 'Forwarded';
-                          badgeColor = 'bg-blue-100 text-blue-700';
-                          iconColor = 'bg-blue-500';
+                          badgeText = ev.vetted ? 'Vetted & Forwarded' : 'Forwarded (Unvetted)';
+                          badgeColor = ev.vetted ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-600';
+                          iconColor = ev.vetted ? 'bg-emerald-500' : 'bg-blue-500';
                           description = toLabel
-                            ? `${fromLabel} reviewed and forwarded to ${toLabel}.${ev.comment ? ` Note: "${ev.comment}"` : ''}`
+                            ? `${fromLabel} ${ev.vetted ? 'vetted and forwarded' : 'forwarded (without vetting)'} to ${toLabel}.${ev.comment ? ` Note: "${ev.comment}"` : ''}`
                             : ev.comment || null;
                         } else if (isReturn) {
                           fromLabel = ev.deptName;
@@ -2436,11 +2443,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           } else {
                             toLabel = prevEvt?.deptName || null;
                           }
-                          badgeText = 'Returned';
+                          badgeText = ev.vetted ? 'Returned (Vetted)' : 'Returned';
                           badgeColor = 'bg-amber-100 text-amber-700';
                           iconColor = 'bg-amber-500';
                           description = toLabel
-                            ? `${fromLabel} returned the document to ${toLabel}.${ev.comment ? ` Reason: "${ev.comment}"` : ''}`
+                            ? `${fromLabel} ${ev.vetted ? '(vetted)' : ''} returned the document to ${toLabel}.${ev.comment ? ` Reason: "${ev.comment}"` : ''}`
                             : ev.comment || null;
                         } else if (isTreated) {
                           fromLabel = ev.deptName;

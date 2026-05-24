@@ -122,6 +122,7 @@ model VettingEvent {
   deptId          Int
   deptName        String?
   action          String
+  vetted          Boolean     @default(false)
   comment         String?     @db.Text
   attachmentKey   String?
   attachmentName  String?

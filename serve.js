@@ -2943,10 +2943,11 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
     const parsed = z.object({
       action: z.enum(['forward', 'treated', 'return']),
       comment: z.string().optional(),
-      nextDeptId: z.union([z.string(), z.number()]).transform(v => parseInt(String(v))).optional()
+      nextDeptId: z.union([z.string(), z.number()]).transform(v => parseInt(String(v))).optional(),
+      vetted: z.union([z.boolean(), z.string()]).transform(v => v === true || v === 'true').optional().default(false),
     }).safeParse(body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid vetting payload' });
-    const { action, comment, nextDeptId } = parsed.data;
+    const { action, comment, nextDeptId, vetted } = parsed.data;
 
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
@@ -3001,6 +3002,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         deptId: userDeptId || 0,
         deptName: actingDeptName,
         action,
+        vetted: vetted || false,
         comment: comment || null,
         attachmentKey,
         attachmentName,

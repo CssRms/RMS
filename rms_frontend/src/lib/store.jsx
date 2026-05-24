@@ -719,9 +719,9 @@ export async function sendToVettingRequisition(reqId, vettingDeptId) {
   }
 }
 
-export async function vettingActionRequisition(reqId, { action, comment, nextDeptId, file } = {}) {
+export async function vettingActionRequisition(reqId, { action, comment, nextDeptId, file, vetted } = {}) {
   try {
-    return await vettingAPI.vettingAction(reqId, { action, comment, nextDeptId, file });
+    return await vettingAPI.vettingAction(reqId, { action, comment, nextDeptId, file, vetted });
   } catch (err) {
     if (!isNetworkError(err)) throw err;
 
