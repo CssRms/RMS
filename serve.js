@@ -46,6 +46,23 @@ const {
 const { sendEmail } = require('./lib/mailer');
 const webpush = require('web-push');
 
+// Apply any pending schema migrations before the server starts.
+// Must run at runtime (not build time) because the DB is only reachable from
+// Railway's runtime network, not from the isolated build container.
+{
+  const { execSync } = require('child_process');
+  try {
+    logger.info('[startup] Running prisma db push…');
+    execSync(
+      'npx prisma db push --schema=rms_backend/prisma/schema.prisma --accept-data-loss',
+      { stdio: 'inherit' }
+    );
+    logger.info('[startup] prisma db push completed.');
+  } catch (e) {
+    logger.warn('[startup] prisma db push failed (schema may already be in sync): ' + e.message);
+  }
+}
+
 const app = express();
 const prisma = new PrismaClient();
 let isSystemReady = false; // Flag for database/seed readiness
@@ -1792,17 +1809,19 @@ app.post('/api/chat/send', authenticateToken, async (req, res) => {
       mediaName: z.string().optional(),
       mediaMime: z.string().optional(),
       replyToId: z.number().int().optional(),
+      reqRef: z.string().max(1000).optional(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid message' });
-    const { body, toDeptId, mediaKey, mediaType, mediaName, mediaMime, replyToId } = parsed.data;
-    if (!body && !mediaKey) return res.status(400).json({ error: 'Message body or media required' });
+    const { body, toDeptId, mediaKey, mediaType, mediaName, mediaMime, replyToId, reqRef } = parsed.data;
+    if (!body && !mediaKey && !reqRef) return res.status(400).json({ error: 'Message body, media, or request reference required' });
     if (toDeptId && toDeptId === myDeptId) return res.status(400).json({ error: 'Cannot message yourself' });
 
     const msg = await prisma.chatMessage.create({
       data: {
         fromDeptId: myDeptId, toDeptId: toDeptId || null, body, readBy: [myDeptId],
         ...(mediaKey ? { mediaKey, mediaType, mediaName, mediaMime } : {}),
-        ...(replyToId ? { replyToId } : {})
+        ...(replyToId ? { replyToId } : {}),
+        ...(reqRef ? { reqRef } : {}),
       },
       include: {
         fromDept: { select: { id: true, name: true } },
@@ -1812,13 +1831,16 @@ app.post('/api/chat/send', authenticateToken, async (req, res) => {
     });
 
     // Build human-readable preview for notifications
+    const reqRefTitle = reqRef ? (() => { try { return JSON.parse(reqRef)?.title; } catch { return null; } })() : null;
     const msgPreview = body
       ? (body.length > 60 ? body.slice(0, 60) + '…' : body)
+      : reqRefTitle ? `📋 ${reqRefTitle}`
       : mediaType === 'audio' ? '🎤 Voice message'
       : mediaType === 'image' ? '📷 Image'
       : `📎 ${mediaName || 'File'}`;
     const pushPreview = body
       ? (body.length > 80 ? body.slice(0, 80) + '…' : body)
+      : reqRefTitle ? `📋 ${reqRefTitle}`
       : mediaType === 'audio' ? '🎤 Voice message'
       : mediaType === 'image' ? '📷 Image'
       : `📎 ${mediaName || 'File'}`;

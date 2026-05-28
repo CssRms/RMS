@@ -5,7 +5,7 @@ import {
   MessageCircle, X, ArrowLeft, Send, Users, MessageSquare,
   ChevronRight, Plus, Loader2, Mic, StopCircle, Paperclip,
   FileText, Download, ChevronDown, Reply, Forward, Copy, PenLine,
-  Check
+  Check, Link2, ExternalLink, Search
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -28,6 +28,7 @@ const mediaPreview = (m) =>
   m?.mediaType === 'audio' ? '🎤 Voice message'
   : m?.mediaType === 'image' ? '📷 Image'
   : m?.mediaType === 'file'  ? `📎 ${m.mediaName || 'File'}`
+  : m?.reqRef ? (() => { try { return `📋 ${JSON.parse(m.reqRef)?.title || 'Request'}`; } catch { return '📋 Request'; } })()
   : m?.body || '';
 
 const msgPreviewText = (m, myDeptId) => {
@@ -41,12 +42,13 @@ const chatAPI = {
   conversations: () => api.get('/chat/conversations'),
   group:  (before) => api.get('/chat/group', { params: before ? { before } : {} }),
   dm:     (deptId, before) => api.get(`/chat/dm/${deptId}`, { params: before ? { before } : {} }),
-  send:   (body, toDeptId, mediaKey, mediaType, mediaName, mediaMime, replyToId) =>
+  send:   (body, toDeptId, mediaKey, mediaType, mediaName, mediaMime, replyToId, reqRef) =>
     api.post('/chat/send', {
       body: body || '',
       ...(toDeptId  ? { toDeptId }                                    : {}),
       ...(mediaKey  ? { mediaKey, mediaType, mediaName, mediaMime }   : {}),
       ...(replyToId ? { replyToId }                                   : {}),
+      ...(reqRef    ? { reqRef }                                      : {}),
     }),
   edit:   (id, body) => api.patch(`/chat/messages/${id}`, { body }),
   read:   (ids) => api.post('/chat/read', { messageIds: ids }),
@@ -210,6 +212,135 @@ const QuoteBlock = ({ replyTo, isMe }) => (
   </div>
 );
 
+// ── ReqRefCard — requisition link inside a bubble ────────────────────────────
+const ReqRefCard = ({ reqRef, isMe }) => {
+  let ref = null;
+  try { ref = JSON.parse(reqRef); } catch { return null; }
+  if (!ref) return null;
+
+  const handleClick = () => {
+    localStorage.setItem('rms_pending_requisition_id', String(ref.id));
+    window.dispatchEvent(new CustomEvent('openRequisition', { detail: String(ref.id) }));
+  };
+
+  const statusColor = {
+    approved: 'text-green-600', pending: 'text-amber-600',
+    rejected: 'text-red-600',  treated: 'text-blue-600',
+    partial:  'text-orange-600', vetting: 'text-purple-600',
+    draft: 'text-gray-500',
+  };
+
+  return (
+    <button type="button" onClick={handleClick}
+      className={`w-full text-left px-2.5 pt-2.5 pb-2 border-b ${isMe ? 'border-white/20' : 'border-border/30'}`}>
+      <div className={`flex items-start gap-2 rounded-xl px-2.5 py-2 ${isMe ? 'bg-white/10' : 'bg-primary/5 border border-primary/15'}`}>
+        <div className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isMe ? 'bg-white/15' : 'bg-primary/10'}`}>
+          <FileText size={13} className={isMe ? 'text-white/70' : 'text-primary'} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={`text-[9px] font-black uppercase tracking-wide ${isMe ? 'text-white/50' : 'text-muted-foreground'}`}>
+            Request Reference
+          </p>
+          <p className={`text-[12px] font-bold truncate leading-tight mt-0.5 ${isMe ? 'text-white' : 'text-foreground'}`}>
+            {ref.title}
+          </p>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {ref.type && (
+              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isMe ? 'bg-white/15 text-white/70' : 'bg-muted text-muted-foreground'}`}>
+                {ref.type}
+              </span>
+            )}
+            {ref.amount != null && (
+              <span className={`text-[9px] font-semibold ${isMe ? 'text-white/60' : 'text-muted-foreground'}`}>
+                ₦{Number(ref.amount).toLocaleString()}
+              </span>
+            )}
+            {ref.status && (
+              <span className={`text-[9px] font-black capitalize ${isMe ? 'text-white/60' : (statusColor[ref.status] || 'text-muted-foreground')}`}>
+                {ref.status}
+              </span>
+            )}
+          </div>
+        </div>
+        <ExternalLink size={11} className={`shrink-0 mt-1 ${isMe ? 'text-white/40' : 'text-primary/40'}`} />
+      </div>
+    </button>
+  );
+};
+
+// ── ReqRefPicker — bottom sheet to pick a requisition ────────────────────────
+const ReqRefPicker = ({ onSelect, onClose }) => {
+  const [reqs, setReqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    api.get('/requisitions')
+      .then(data => setReqs(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = reqs.filter(r =>
+    r.title?.toLowerCase().includes(search.toLowerCase()) ||
+    r.type?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const statusColor = (s) => ({
+    approved: 'bg-green-100 text-green-700', pending: 'bg-amber-100 text-amber-700',
+    rejected: 'bg-red-100 text-red-700',     treated: 'bg-blue-100 text-blue-700',
+    partial:  'bg-orange-100 text-orange-700', vetting: 'bg-purple-100 text-purple-700',
+    draft: 'bg-gray-100 text-gray-600', published: 'bg-sky-100 text-sky-700',
+  }[s] || 'bg-gray-100 text-gray-600');
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end" onClick={onClose}>
+      <div className="w-full bg-card rounded-t-3xl max-h-[75vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/40 shrink-0">
+          <p className="font-black text-sm uppercase tracking-wide">Attach Request</p>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 py-2 border-b border-border/20 shrink-0">
+          <div className="flex items-center gap-2 bg-muted/40 rounded-xl px-3 py-2">
+            <Search size={13} className="text-muted-foreground shrink-0" />
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search requests…"
+              className="flex-1 bg-transparent text-sm outline-none placeholder-muted-foreground" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {loading && <div className="flex justify-center py-8"><Loader2 size={16} className="animate-spin text-muted-foreground" /></div>}
+          {!loading && filtered.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center pt-8">No requests found</p>
+          )}
+          {filtered.map(r => (
+            <button key={r.id} onClick={() => onSelect(r)}
+              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors border-b border-border/10 text-left">
+              <div className="w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center shrink-0 mt-0.5">
+                <FileText size={13} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground truncate">{r.title}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {r.type && <span className="text-[10px] text-muted-foreground">{r.type}</span>}
+                  {r.amount != null && (
+                    <span className="text-[10px] text-muted-foreground">₦{Number(r.amount).toLocaleString()}</span>
+                  )}
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full capitalize ${statusColor(r.status)}`}>
+                    {r.status}
+                  </span>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── ActionMenu popup ──────────────────────────────────────────────────────────
 const ActionMenu = ({ msg, isMe, onReply, onForward, onCopy, onEdit, onClose }) => (
   <div className="flex flex-col overflow-hidden">
@@ -267,6 +398,9 @@ const Bubble = ({ msg, isMe, onReply, onForward, onPreview, onEdit }) => {
         }`}>
           {/* Quote */}
           {msg.replyTo && <QuoteBlock replyTo={msg.replyTo} isMe={isMe} />}
+
+          {/* Request reference */}
+          {msg.reqRef && <ReqRefCard reqRef={msg.reqRef} isMe={isMe} />}
 
           {/* Image — opens preview modal, never navigates */}
           {msg.mediaType === 'image' && mediaUrl && (
@@ -390,6 +524,8 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
   const [editingMsg, setEditingMsg] = useState(null);
   const [previewMsg, setPreviewMsg] = useState(null);
   const [forwardMsg, setForwardMsg] = useState(null);
+  const [pendingReqRef, setPendingReqRef] = useState(null); // { id, title, type, amount, status, deptName }
+  const [showReqPicker, setShowReqPicker] = useState(false);
 
   const bottomRef  = useRef(null);
   const inputRef   = useRef(null);
@@ -512,7 +648,7 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
     // ── normal send ──
     const text = input.trim();
     const hasMedia = !!(pendingFile || audioBlob);
-    if ((!text && !hasMedia) || sending || recording) return;
+    if ((!text && !hasMedia && !pendingReqRef) || sending || recording) return;
     setSending(true);
     const savedInput = text;
     setInput('');
@@ -533,16 +669,20 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
         mediaKey = up.key; mediaType = 'audio'; mediaName = up.name; mediaMime = audioBlob.type;
       }
 
+      const reqRefStr = pendingReqRef ? JSON.stringify(pendingReqRef) : undefined;
+
       const msg = await chatAPI.send(
         text,
         isGroup ? undefined : thread.deptId,
         mediaKey, mediaType, mediaName, mediaMime,
-        replyingTo?.id
+        replyingTo?.id,
+        reqRefStr
       );
       setMessages(prev => [...prev, msg]);
       if (pendingFile?.url) URL.revokeObjectURL(pendingFile.url);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setPendingFile(null); setAudioBlob(null); setAudioUrl(null);
+      setPendingReqRef(null);
       setReplyingTo(null);
       onNewMessage?.();
     } catch {
@@ -613,6 +753,22 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
         {/* Reply bar */}
         {replyingTo && !editingMsg && <ReplyBar replyingTo={replyingTo} onCancel={() => setReplyingTo(null)} />}
 
+        {/* Pending request reference preview */}
+        {pendingReqRef && (
+          <div className="px-3 pt-2 shrink-0">
+            <div className="flex items-center gap-2 bg-primary/8 border border-primary/20 rounded-xl px-3 py-2">
+              <Link2 size={12} className="text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] font-black text-primary uppercase tracking-wide">Attached Request</p>
+                <p className="text-[11px] text-foreground font-semibold truncate">{pendingReqRef.title}</p>
+              </div>
+              <button onClick={() => setPendingReqRef(null)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                <X size={12} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Pending media preview */}
         {(pendingFile || audioUrl) && (
           <div className="px-3 pt-2 shrink-0">
@@ -639,6 +795,13 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
               <Paperclip size={16} />
             </button>
             <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" className="hidden" onChange={handleFileSelect} />
+
+            <button type="button" onClick={() => setShowReqPicker(true)}
+              disabled={!!editingMsg || recording}
+              className={`transition-colors shrink-0 mb-0.5 disabled:opacity-30 ${pendingReqRef ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}
+              title="Attach a request reference">
+              <Link2 size={16} />
+            </button>
 
             <textarea
               ref={inputRef}
@@ -669,7 +832,7 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
             )}
 
             <button type="button" onClick={handleSend}
-              disabled={(!input.trim() && !pendingFile && !audioBlob) || sending || recording}
+              disabled={(!input.trim() && !pendingFile && !audioBlob && !pendingReqRef) || sending || recording}
               className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground transition-all disabled:opacity-40 shrink-0 hover:bg-primary/90">
               {sending ? <Loader2 size={13} className="animate-spin" /> : editingMsg ? <Check size={13} /> : <Send size={13} />}
             </button>
@@ -692,6 +855,22 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
           myDeptId={myDeptId}
           onClose={() => setForwardMsg(null)}
           onDone={onNewMessage}
+        />
+      )}
+      {showReqPicker && (
+        <ReqRefPicker
+          onSelect={(r) => {
+            setPendingReqRef({
+              id: r.id,
+              title: r.title,
+              type: r.type,
+              amount: r.amount ?? null,
+              status: r.status,
+              deptName: r.department?.name ?? null,
+            });
+            setShowReqPicker(false);
+          }}
+          onClose={() => setShowReqPicker(false)}
         />
       )}
     </>

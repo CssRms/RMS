@@ -342,6 +342,7 @@ model ChatMessage {
   replyTo     ChatMessage?  @relation("ChatReplies", fields: [replyToId], references: [id])
   replies     ChatMessage[] @relation("ChatReplies")
   editedAt    DateTime?
+  reqRef      String?       @db.Text
   createdAt   DateTime    @default(now())
 }
 
