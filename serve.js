@@ -2282,45 +2282,54 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
         } catch (fwdErr) { logger.warn('[FWD] Forward event creation failed:', fwdErr.message); }
       }
 
-      if (!isDraft) {
-        if (!isMemoPayload && useWorkflow && firstStage?.role) {
-          await notifyRole(firstStage.role, `New Requisition: ${created.title}`, created.id);
-        }
-        const originDept = await prisma.department.findUnique({ where: { id: originDeptId } });
-        const targetDeptForEmail = targetDepartmentId
-          ? await prisma.department.findUnique({ where: { id: targetDepartmentId } })
-          : null;
-        await notifyDepartmentHead({
-          departmentId: originDeptId,
-          requisition: { ...created, department: originDept || null },
-          subject: isMemoPayload ? `Your Memo has been Submitted: ${created.title}` : `Your Requisition has been Submitted: ${created.title}`,
-          lines: [
-            `Department: ${originDept?.name || 'Department'}`,
-            targetDeptForEmail ? `Sent To: ${targetDeptForEmail.name}` : null,
-            `Type: ${created.type}`,
-            amountLine(created.type, created.amount),
-            `Urgency: ${created.urgency || 'normal'}`,
-          ].filter(Boolean)
-        });
-
-        // Notify target department if specified
-        if (targetDepartmentId) {
-          const originDept = await prisma.department.findUnique({ where: { id: originDeptId } });
-          await notifyDepartmentHead({
-            departmentId: targetDepartmentId,
-            requisition: created,
-            subject: isMemoPayload ? `Incoming Memo: ${created.title}` : `Incoming Requisition: ${created.title}`,
-            lines: [
-              `From Department: ${originDept?.name || 'Department'}`,
-              `Type: ${created.type}`,
-              amountLine(created.type, created.amount),
-              `Urgency: ${created.urgency || 'normal'}`,
-              `Description: ${created.description || '—'}`
-            ]
-          });
-        }
-      }
       createdRecords.push(created);
+
+      // Fire post-creation notifications asynchronously — do NOT await before responding
+      if (!isDraft) {
+        const _created = created;
+        const _isMemoPayload = isMemoPayload;
+        const _useWorkflow = useWorkflow;
+        const _firstStageRole = firstStage?.role;
+        const _originDeptId = originDeptId;
+        const _targetDepartmentId = targetDepartmentId;
+        setImmediate(async () => {
+          try {
+            if (!_isMemoPayload && _useWorkflow && _firstStageRole) {
+              await notifyRole(_firstStageRole, `New Requisition: ${_created.title}`, _created.id);
+            }
+            const originDept = await prisma.department.findUnique({ where: { id: _originDeptId } });
+            const targetDeptForEmail = _targetDepartmentId
+              ? await prisma.department.findUnique({ where: { id: _targetDepartmentId } })
+              : null;
+            await notifyDepartmentHead({
+              departmentId: _originDeptId,
+              requisition: { ..._created, department: originDept || null },
+              subject: _isMemoPayload ? `Your Memo has been Submitted: ${_created.title}` : `Your Requisition has been Submitted: ${_created.title}`,
+              lines: [
+                `Department: ${originDept?.name || 'Department'}`,
+                targetDeptForEmail ? `Sent To: ${targetDeptForEmail.name}` : null,
+                `Type: ${_created.type}`,
+                amountLine(_created.type, _created.amount),
+                `Urgency: ${_created.urgency || 'normal'}`,
+              ].filter(Boolean)
+            });
+            if (_targetDepartmentId) {
+              await notifyDepartmentHead({
+                departmentId: _targetDepartmentId,
+                requisition: _created,
+                subject: _isMemoPayload ? `Incoming Memo: ${_created.title}` : `Incoming Requisition: ${_created.title}`,
+                lines: [
+                  `From Department: ${originDept?.name || 'Department'}`,
+                  `Type: ${_created.type}`,
+                  amountLine(_created.type, _created.amount),
+                  `Urgency: ${_created.urgency || 'normal'}`,
+                  `Description: ${_created.description || '—'}`
+                ]
+              });
+            }
+          } catch (e) { logger.warn('[NOTIFY] Post-create notifications failed:', e.message); }
+        });
+      }
     }
 
     res.json([...createdRecords, ...existingRecords]);
