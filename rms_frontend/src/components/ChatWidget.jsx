@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import {
@@ -997,6 +997,10 @@ const InboxView = ({ myDeptId, onOpenThread, onNewDM, conversations, loading }) 
   );
 };
 
+// ── drag constants ────────────────────────────────────────────────────────────
+const BTN = 56, PW = 340, PH = 540, GAP = 8, EDGE = 12;
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
 // ── ChatWidget (main) ─────────────────────────────────────────────────────────
 export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
   const { user } = useAuth();
@@ -1009,6 +1013,81 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
   const [conversations, setConversations] = useState({ group: { unread: 0, lastMessage: null }, dms: [] });
   const [convLoading, setConvLoading] = useState(false);
   const [totalUnread, setTotalUnread] = useState(0);
+
+  // ── draggable position ────────────────────────────────────────────────────
+  const [pos, setPos] = useState(null); // null until first paint; { x, y } = button top-left
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ on: false, sx: 0, sy: 0, bx: 0, by: 0, moved: false });
+
+  const initPos = () => ({ x: window.innerWidth - BTN - 24, y: window.innerHeight - BTN - 24 });
+
+  // Set initial position and keep it in bounds on resize
+  useEffect(() => {
+    setPos(initPos());
+    const onResize = () => setPos(p => ({
+      x: clampN(p ? p.x : window.innerWidth - BTN - 24, EDGE, window.innerWidth  - BTN - EDGE),
+      y: clampN(p ? p.y : window.innerHeight - BTN - 24, EDGE, window.innerHeight - BTN - EDGE),
+    }));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Global pointer/touch move + up listeners for drag
+  useEffect(() => {
+    const xy = (e) => e.touches
+      ? { cx: e.touches[0].clientX, cy: e.touches[0].clientY }
+      : { cx: e.clientX, cy: e.clientY };
+
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d.on) return;
+      const { cx, cy } = xy(e);
+      const dx = cx - d.sx, dy = cy - d.sy;
+      if (!d.moved && Math.hypot(dx, dy) < 6) return;
+      if (!d.moved) { d.moved = true; if (e.cancelable) e.preventDefault(); }
+      setDragging(true);
+      setPos({
+        x: clampN(d.bx + dx, EDGE, window.innerWidth  - BTN - EDGE),
+        y: clampN(d.by + dy, EDGE, window.innerHeight - BTN - EDGE),
+      });
+    };
+
+    const onUp = () => { dragRef.current.on = false; setTimeout(() => setDragging(false), 0); };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend',  onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend',  onUp);
+    };
+  }, []);
+
+  const onDragStart = (e) => {
+    const p = pos || initPos();
+    const { cx, cy } = e.touches
+      ? { cx: e.touches[0].clientX, cy: e.touches[0].clientY }
+      : { cx: e.clientX, cy: e.clientY };
+    dragRef.current = { on: true, sx: cx, sy: cy, bx: p.x, by: p.y, moved: false };
+  };
+
+  // Panel anchors near the button; always stays fully inside the viewport
+  const panelStyle = useMemo(() => {
+    if (!pos) return {};
+    const vw = window.innerWidth, vh = window.innerHeight;
+    // horizontal: right-align to button, then clamp
+    const left = clampN(pos.x + BTN - PW, EDGE, vw - PW - EDGE);
+    // vertical: prefer above button; fall back to below; last resort: best fit
+    let top;
+    if (pos.y - GAP >= PH + EDGE)                   top = pos.y - PH - GAP;
+    else if (vh - (pos.y + BTN + GAP) >= PH + EDGE) top = pos.y + BTN + GAP;
+    else                                              top = clampN(pos.y - PH - GAP, EDGE, vh - PH - EDGE);
+    return { left: `${left}px`, top: `${top}px` };
+  }, [pos]);
+  // ─────────────────────────────────────────────────────────────────────────
 
   const loadConversations = useCallback(async () => {
     if (!isActive) return;
@@ -1083,23 +1162,32 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
 
   if (!isActive) return null;
 
+  const btnStyle = pos ? { left: `${pos.x}px`, top: `${pos.y}px` } : { bottom: '24px', right: '24px' };
+
   return (
     <>
-      {/* Floating button */}
-      <button onClick={open ? () => setOpen(false) : handleOpenInbox}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-2xl flex items-center justify-center hover:bg-primary/90 transition-all active:scale-95"
-        title="Messages">
+      {/* Floating button — draggable */}
+      <button
+        onMouseDown={onDragStart}
+        onTouchStart={onDragStart}
+        onClick={() => { if (dragRef.current.moved) return; open ? setOpen(false) : handleOpenInbox(); }}
+        style={btnStyle}
+        className={`fixed z-50 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-2xl flex items-center justify-center hover:bg-primary/90 active:scale-95 select-none touch-none ${dragging ? 'cursor-grabbing shadow-xl scale-105' : 'cursor-grab'}`}
+        title="Messages (drag to move)">
         {open ? <X size={22} /> : <MessageCircle size={22} />}
         {!open && totalUnread > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 border-2 border-background flex items-center justify-center text-[9px] font-black text-white">
+          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 border-2 border-background flex items-center justify-center text-[9px] font-black text-white pointer-events-none">
             {totalUnread > 9 ? '9+' : totalUnread}
           </span>
         )}
       </button>
 
-      {/* Panel */}
+      {/* Panel — floats near the button */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-[340px] h-[540px] bg-card border border-border/60 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
+        <div
+          className="fixed z-50 w-[340px] h-[540px] bg-card border border-border/60 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in duration-200"
+          style={panelStyle}
+        >
           {screen === 'inbox' && (
             <InboxView myDeptId={myDeptId} conversations={conversations} loading={convLoading}
               onOpenThread={openThread} onNewDM={() => setScreen('new')} />
