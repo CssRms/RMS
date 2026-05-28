@@ -213,8 +213,6 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
     setSubmitting(true);
     setSlowWarning(false);
     setUploadProgress(0);
-
-    // Show "taking longer than expected" after 10 seconds
     slowTimerRef.current = setTimeout(() => setSlowWarning(true), 10000);
 
     try {
@@ -246,7 +244,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
         ...(targetDeptId && { targetDepartmentId: parseInt(targetDeptId) }),
       };
 
-      // Step 1 — create / update requisition
+      // Step 1 — create / update requisition (the only blocking step)
       setSubmitStep('creating');
       let savedId;
       if (isEditing) {
@@ -257,50 +255,40 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
         savedId = Array.isArray(result) ? result[0]?.id : result?.id;
       }
 
-      // Request is safely on the server — clear autosave and badge immediately
+      // Requisition is on the server — clear autosave, reset spinner, close form immediately
       try { localStorage.removeItem(lsKey); } catch { /* ignore */ }
       window.dispatchEvent(new CustomEvent('rms:draftSaved'));
+      clearTimeout(slowTimerRef.current);
+      setSlowWarning(false);
+      setSubmitting(false);
+      setSubmitStep(null);
+      toast.success(isDraft ? 'Draft saved.' : `${type} request submitted successfully.`);
+      onClose(); // ← unblocks the user right away; file upload continues below
 
-      // Step 2 — upload files (with 45-second timeout so slow connections don't hang)
+      // Step 2 — upload files in the background (non-blocking to the user)
       if (files.length > 0) {
         if (!savedId) {
-          toast('Requisition saved offline. Re-attach your files once it syncs to the server.', { icon: '📎', duration: 6000 });
+          toast('Requisition saved offline. Re-attach your files once it syncs.', { icon: '📎', duration: 6000 });
         } else {
-          setSubmitStep('uploading');
-          setUploadStatus('uploading');
-          setUploadProgress(0);
+          const uploadToastId = toast.loading(`Uploading ${files.length} file(s)…`, { duration: Infinity });
           try {
-            const uploadTimeout = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('UPLOAD_TIMEOUT')), 45000)
-            );
-            const skipSignal = new Promise((_, reject) => { skipUploadRef.current = () => reject(new Error('UPLOAD_TIMEOUT')); });
-            await Promise.race([
-              uploadAttachments(savedId, files, { onProgress: setUploadProgress, uploaderDept: user?.name, stageName: 'Initial Submission' }),
-              uploadTimeout,
-              skipSignal,
-            ]);
-            setUploadStatus(navigator.onLine ? 'done' : 'queued');
-          } catch (uploadErr) {
-            setUploadStatus('error');
-            if (uploadErr?.message === 'UPLOAD_TIMEOUT') {
-              toast('Request submitted! File upload timed out — your connection is too slow. Open the request and attach files when your network improves.', { icon: '📎', duration: 8000 });
-            } else {
-              toast.error('Request submitted but file attachment failed. You can attach files from the request detail later.');
-            }
+            await uploadAttachments(savedId, files, {
+              uploaderDept: user?.name,
+              stageName: 'Initial Submission',
+            });
+            toast.dismiss(uploadToastId);
+            toast.success('File(s) attached successfully.');
+          } catch {
+            toast.dismiss(uploadToastId);
+            toast('File attachment failed. Open the request to re-attach.', { icon: '📎', duration: 6000 });
           }
         }
       }
-
-      // Step 3 — finalizing
-      setSubmitStep('finalizing');
-      clearTimeout(slowTimerRef.current);
-      setSlowWarning(false);
-
-      toast.success(isDraft ? 'Draft saved.' : `${type} request submitted successfully.`);
-      onClose();
     } catch (err) {
       clearTimeout(slowTimerRef.current);
       setSlowWarning(false);
+      setSubmitting(false);
+      setSubmitStep(null);
       const msg = err?.response?.data?.error || err?.message || 'Submission failed.';
       const status = err?.response?.status;
       if (status === 0 || !navigator.onLine) {
@@ -310,10 +298,6 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
       } else {
         toast.error(msg);
       }
-    } finally {
-      clearTimeout(slowTimerRef.current);
-      setSubmitting(false);
-      setSubmitStep(null);
     }
   };
 
