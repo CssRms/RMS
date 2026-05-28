@@ -3433,16 +3433,31 @@ app.get('/api/department/signature/image', authenticateToken, async (req, res) =
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// 1×1 transparent PNG used as a silent fallback when no signature is on file
+const TRANSPARENT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64'
+);
+
 app.get('/api/departments/:id/signature/image', authenticateToken, async (req, res) => {
   try {
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
     const deptId = parseInt(req.params.id);
     const requesterDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
-    if (!isAdmin && requesterDeptId !== deptId) return res.status(403).json({ error: 'Forbidden' });
+    if (!isAdmin && requesterDeptId !== deptId) {
+      res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      return res.send(TRANSPARENT_PNG);
+    }
     const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { headEmail: true } });
-    if (!dept?.headEmail) return res.status(404).json({ error: 'No signature on file' });
+    if (!dept?.headEmail) {
+      res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      return res.send(TRANSPARENT_PNG);
+    }
     const headUser = await prisma.user.findFirst({ where: { email: dept.headEmail }, include: { signature: true } });
-    if (!headUser?.signature?.imageKey) return res.status(404).json({ error: 'No signature on file' });
+    if (!headUser?.signature?.imageKey) {
+      res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      return res.send(TRANSPARENT_PNG);
+    }
     const buf = await getObjectBuffer(headUser.signature.imageKey);
     const ext = headUser.signature.imageKey.split('.').pop().toLowerCase();
     const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
