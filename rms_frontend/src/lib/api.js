@@ -280,13 +280,16 @@ export const vettingAPI = {
   async sendToVetting(reqId, vettingDeptId) {
     return api.post(`/requisitions/${reqId}/send-to-vetting`, { vettingDeptId });
   },
-  async vettingAction(reqId, { action, comment, nextDeptId, file, vetted }) {
+  async vettingAction(reqId, { action, comment, nextDeptId, file, vetted, amountDisbursed, treatmentType, treatmentReason }) {
     const formData = new FormData();
     formData.append('action', action);
     if (comment) formData.append('comment', comment);
     if (nextDeptId) formData.append('nextDeptId', String(nextDeptId));
     if (file) formData.append('file', file);
     formData.append('vetted', vetted ? 'true' : 'false');
+    if (amountDisbursed != null) formData.append('amountDisbursed', String(amountDisbursed));
+    if (treatmentType) formData.append('treatmentType', treatmentType);
+    if (treatmentReason) formData.append('treatmentReason', treatmentReason);
     return api.post(`/requisitions/${reqId}/vetting-action`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });

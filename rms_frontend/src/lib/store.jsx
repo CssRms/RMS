@@ -719,9 +719,9 @@ export async function sendToVettingRequisition(reqId, vettingDeptId) {
   }
 }
 
-export async function vettingActionRequisition(reqId, { action, comment, nextDeptId, file, vetted } = {}) {
+export async function vettingActionRequisition(reqId, { action, comment, nextDeptId, file, vetted, amountDisbursed, treatmentType, treatmentReason } = {}) {
   try {
-    return await vettingAPI.vettingAction(reqId, { action, comment, nextDeptId, file, vetted });
+    return await vettingAPI.vettingAction(reqId, { action, comment, nextDeptId, file, vetted, amountDisbursed, treatmentType, treatmentReason });
   } catch (err) {
     if (!isNetworkError(err)) throw err;
 
@@ -737,7 +737,7 @@ export async function vettingActionRequisition(reqId, { action, comment, nextDep
         clientId: generateClientId(),
         reqId,
         fileKey,
-        payload: { action, comment, nextDeptId },
+        payload: { action, comment, nextDeptId, amountDisbursed, treatmentType, treatmentReason },
         retryCount: 0,
         nextAttemptAt: Date.now(),
         lastError: null
@@ -747,7 +747,7 @@ export async function vettingActionRequisition(reqId, { action, comment, nextDep
       return null;
     }
 
-    await queueOfflineAction('vettingAction', reqId, { action, comment, nextDeptId });
+    await queueOfflineAction('vettingAction', reqId, { action, comment, nextDeptId, amountDisbursed, treatmentType, treatmentReason });
     return null;
   }
 }

@@ -105,6 +105,9 @@ model Requisition {
   currentVettingDeptId  Int?
   treatedByDeptId       Int?
   treatedAt             DateTime?
+  amountDisbursed       Float?
+  treatmentType         String?
+  treatmentReason       String?
   vettingEvents         VettingEvent[]
   tags                  RequisitionTag[]
 
@@ -127,6 +130,9 @@ model VettingEvent {
   attachmentKey   String?
   attachmentName  String?
   actorName       String?
+  amountDisbursed Float?
+  treatmentType   String?
+  treatmentReason String?
   createdAt       DateTime    @default(now())
 }
 

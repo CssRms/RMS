@@ -27,6 +27,7 @@ const statusColors = {
   // Final states
   vetting:    'bg-blue-50 border-blue-200 text-blue-700',
   treated:    'bg-indigo-50 border-indigo-200 text-indigo-700',
+  partial:    'bg-orange-50 border-orange-200 text-orange-700',
   published:  'bg-emerald-50 border-emerald-200 text-emerald-700',
 };
 
@@ -1396,19 +1397,22 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const fileRef                     = React.useRef(null);
   const [file, setFile]             = useState(null);
   const [forwardDeptId, setForwardDeptId] = useState('');
-  const [localPreview, setLocalPreview]   = useState(null); // { filename, blobUrl }
+  const [localPreview, setLocalPreview]   = useState(null);
+  // Disbursement state (Account / Chairman treat flow)
+  const [amountInput, setAmountInput]     = useState('');
+  const [treatChoice, setTreatChoice]     = useState(''); // 'partial' | 'adjusted'
+  const [treatReason, setTreatReason]     = useState('');
+  const [treatReasonCustom, setTreatReasonCustom] = useState('');
 
   const deptName = user?.name || '';
   const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
   const finalApprovedByDeptId  = detail?.finalApprovedByDeptId  ? parseInt(detail.finalApprovedByDeptId)  : null;
-  // Account always gets the treat panel when they hold an approved/vetting request,
-  // regardless of whether currentVettingDeptId was explicitly set.
   const _isAccountDept = /\baccount\b/i.test(user?.name || '');
   const _fas = detail?.finalApprovalStatus;
   const isCurrentVetter = user?.deptId && (
     currentVettingDeptId === user.deptId ||
     (_isAccountDept && detail?.targetDepartmentId === user.deptId &&
-      (_fas === 'approved' || _fas === 'vetting'))
+      (_fas === 'approved' || _fas === 'vetting' || _fas === 'partial'))
   );
   const finalApprovalStatus    = detail?.finalApprovalStatus;
 
@@ -1424,6 +1428,18 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
 
   // Account and Chairman always treat — they also have Forward + Return options
   const canTreat = isAccount || isChairman;
+
+  // Disbursement calculations (only relevant when canTreat)
+  const reqAmount        = parseFloat(detail?.amount || req.amount || 0);
+  const alreadyDisbursed = parseFloat(detail?.amountDisbursed || 0);
+  const balanceDue       = reqAmount - alreadyDisbursed;
+  const isPartialMode    = finalApprovalStatus === 'partial';
+  const hasAmount        = reqAmount > 0;
+  const parsedInput      = parseFloat(amountInput);
+  const inputIsValid     = !hasAmount || (!isNaN(parsedInput) && parsedInput > 0 && parsedInput <= balanceDue);
+  const isUnderpaying    = hasAmount && inputIsValid && parsedInput < balanceDue;
+  const needsTreatChoice = isUnderpaying && !treatChoice;
+  const needsTreatReason = isUnderpaying && treatChoice === 'adjusted' && !treatReason;
 
   // Auto-resolve next/return dept from departments list (no dropdown needed)
   const auditDept   = departments.find(d => /\baudit\b/i.test(d.name));
@@ -1448,7 +1464,10 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     : isAccount ? (auditWasPresent ? (auditDeptInList?.name || 'Audit') : finalApproverDeptName)
     : finalApproverDeptName;
 
-  const canAct = comment.trim().length > 0; // only comment is required; vetChecked is informational
+  const canAct = comment.trim().length > 0
+    && (!canTreat || !hasAmount || inputIsValid)  // treat: amount must be valid
+    && !needsTreatChoice                           // treat: must pick partial vs adjusted when underpaying
+    && !needsTreatReason;                          // treat: adjusted requires a reason
 
   const act = async (action) => {
     setActing(true);
@@ -1463,8 +1482,25 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined, vetted: vetChecked });
         if (result !== null) toast.success(vetChecked ? (isICC ? 'Vetted & submitted to Audit.' : isAudit ? 'Vetted & forwarded to Account.' : 'Vetted & forwarded.') : (isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded.'));
       } else if (action === 'treated') {
-        result = await vettingActionRequisition(req.id, { action: 'treated', comment: comment || undefined, file: file || undefined, vetted: vetChecked });
-        if (result !== null) toast.success('Requisition marked as treated!');
+        const disbursed = hasAmount && !isNaN(parsedInput) ? parsedInput : undefined;
+        const type = !isUnderpaying ? 'full' : treatChoice;
+        const reason = treatChoice === 'adjusted'
+          ? (treatReason === 'other' ? treatReasonCustom : treatReason) || undefined
+          : undefined;
+        result = await vettingActionRequisition(req.id, {
+          action: 'treated',
+          comment: comment || undefined,
+          file: file || undefined,
+          vetted: vetChecked,
+          amountDisbursed: disbursed,
+          treatmentType: type,
+          treatmentReason: reason,
+        });
+        if (result !== null) {
+          if (type === 'partial') toast.success(`Partial payment of ₦${disbursed?.toLocaleString()} recorded. Balance pending.`);
+          else if (type === 'adjusted') toast.success(`Requisition treated with adjusted amount ₦${disbursed?.toLocaleString()}.`);
+          else toast.success('Requisition fully treated!');
+        }
       } else if (action === 'return') {
         result = await vettingActionRequisition(req.id, { action: 'return', comment, file: file || undefined, vetted: vetChecked });
         if (result !== null) toast.success(vetChecked ? `Returned (Vetted) to ${returnDestLabel}.` : `Returned to ${returnDestLabel}.`);
@@ -1537,13 +1573,113 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
       </div>
 
       {canTreat ? (
-        /* Account / Chairman — Treat is primary; Forward (with dept picker) + Return always available */
-        <div className="space-y-2 pt-1">
-          <button onClick={() => act('treated')} disabled={acting || !canAct}
+        /* Account / Chairman — Disbursement entry + Treat / Forward / Return */
+        <div className="space-y-3 pt-1">
+
+          {/* Partial payment banner if continuing a partial */}
+          {isPartialMode && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 font-semibold">
+              <AlertTriangle size={12} className="shrink-0 text-orange-500" />
+              Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid of ₦{reqAmount.toLocaleString()} requested.
+              Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
+            </div>
+          )}
+
+          {/* Amount disbursed input */}
+          {hasAmount && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest">
+                Amount to Disburse {isPartialMode ? `(Balance: ₦${balanceDue.toLocaleString()})` : `(Requested: ₦${reqAmount.toLocaleString()})`}
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-muted-foreground">₦</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={balanceDue}
+                  step="0.01"
+                  value={amountInput}
+                  onChange={e => {
+                    setAmountInput(e.target.value);
+                    setTreatChoice('');
+                    setTreatReason('');
+                    setTreatReasonCustom('');
+                  }}
+                  placeholder={balanceDue.toLocaleString()}
+                  className="w-full bg-white border border-blue-200 rounded-xl pl-7 pr-3 py-2.5 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              </div>
+              {amountInput && !inputIsValid && (
+                <p className="text-[10px] text-red-500 font-semibold">Amount cannot exceed the balance due (₦{balanceDue.toLocaleString()}).</p>
+              )}
+            </div>
+          )}
+
+          {/* Partial vs Adjusted choice — shown only when underpaying */}
+          {isUnderpaying && (
+            <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">
+                Amount is less than balance — choose payment type:
+              </p>
+              <label className="flex items-start gap-2 cursor-pointer group">
+                <input type="radio" name="treatChoice" value="partial" checked={treatChoice === 'partial'}
+                  onChange={() => { setTreatChoice('partial'); setTreatReason(''); setTreatReasonCustom(''); }}
+                  className="mt-0.5 accent-amber-600 shrink-0" />
+                <div>
+                  <span className="text-[11px] font-bold text-amber-900">Partial Payment</span>
+                  <p className="text-[10px] text-amber-700/80">Balance of ₦{(balanceDue - (parsedInput || 0)).toLocaleString()} will be completed later.</p>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer group">
+                <input type="radio" name="treatChoice" value="adjusted" checked={treatChoice === 'adjusted'}
+                  onChange={() => setTreatChoice('adjusted')}
+                  className="mt-0.5 accent-amber-600 shrink-0" />
+                <div>
+                  <span className="text-[11px] font-bold text-amber-900">Adjusted Final Payment</span>
+                  <p className="text-[10px] text-amber-700/80">This IS the full payment — no balance expected. Requires a reason.</p>
+                </div>
+              </label>
+
+              {treatChoice === 'adjusted' && (
+                <div className="space-y-1.5 pt-1">
+                  <select value={treatReason} onChange={e => setTreatReason(e.target.value)}
+                    className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300">
+                    <option value="">Select reason for adjustment…</option>
+                    <option value="Account decision (budget constraint)">Account decision — budget constraint</option>
+                    <option value="Per Audit instruction">Per Audit instruction</option>
+                    <option value="Per GM/CEO directive">Per GM / CEO directive</option>
+                    <option value="Per HR directive">Per HR directive</option>
+                    <option value="other">Other (specify below)</option>
+                  </select>
+                  {treatReason === 'other' && (
+                    <input
+                      type="text"
+                      value={treatReasonCustom}
+                      onChange={e => setTreatReasonCustom(e.target.value)}
+                      placeholder="Specify reason…"
+                      className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Treat button */}
+          <button
+            onClick={() => act('treated')}
+            disabled={acting || !canAct}
             className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
             {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            Mark Treated
+            {isUnderpaying && treatChoice === 'partial'
+              ? `Record Partial Payment (₦${parsedInput ? parsedInput.toLocaleString() : '…'})`
+              : isUnderpaying && treatChoice === 'adjusted'
+              ? `Treat — Adjusted to ₦${parsedInput ? parsedInput.toLocaleString() : '…'}`
+              : isPartialMode
+              ? `Complete Treatment${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`
+              : `Mark Fully Treated${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`}
           </button>
+
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <select
@@ -1837,9 +1973,16 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 <div className="w-1 h-1 bg-primary rounded-full animate-pulse" />
                 Neural Sync Active
               </div>
-              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border shadow-sm ${statusColors[req.status]}`}>
-                {req.status}
-              </span>
+              {(() => {
+                const fas = detail?.finalApprovalStatus;
+                const displayStatus = fas === 'partial' ? 'partial' : fas === 'treated' ? 'treated' : req.status;
+                const displayLabel  = fas === 'partial' ? 'Partial Payment' : fas === 'treated' ? 'Treated' : req.status;
+                return (
+                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border shadow-sm ${statusColors[displayStatus] || statusColors[req.status]}`}>
+                    {displayLabel}
+                  </span>
+                );
+              })()}
               {isIncoming && (
                 <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-blue-500 border border-blue-600 text-white shadow-lg shadow-blue-500/20">
                   Incoming Action
@@ -1940,7 +2083,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
 
               {!isTaggedObserver && !approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading &&
-               (!['treated', 'published', 'approved', 'vetting'].includes(detail?.finalApprovalStatus) || isVettingReturned) && (
+               (!['treated', 'published', 'approved', 'vetting', 'partial'].includes(detail?.finalApprovalStatus) || isVettingReturned) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                    <RespondPanel
                      req={req}
@@ -2284,10 +2427,34 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                        <ShieldCheck size={16} />
                        <span className="text-xs font-bold">Finally Approved – Pending Vetting</span>
                      </div>
+                   ) : detail?.finalApprovalStatus === 'partial' ? (
+                     <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 space-y-1.5">
+                       <div className="flex items-center gap-2 text-orange-700">
+                         <AlertTriangle size={16} />
+                         <span className="text-xs font-bold">Partial Payment — Balance Pending</span>
+                       </div>
+                       {detail.amount > 0 && (
+                         <div className="text-[10px] text-orange-700/80 font-semibold pl-6">
+                           Paid: ₦{Number(detail.amountDisbursed || 0).toLocaleString()} of ₦{Number(detail.amount).toLocaleString()} requested
+                           {' — '}Balance: ₦{(Number(detail.amount) - Number(detail.amountDisbursed || 0)).toLocaleString()}
+                         </div>
+                       )}
+                     </div>
                    ) : detail?.finalApprovalStatus === 'treated' ? (
-                     <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center gap-2 text-teal-700">
-                       <CheckCircle2 size={16} />
-                       <span className="text-xs font-bold">Treated</span>
+                     <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 space-y-1.5">
+                       <div className="flex items-center gap-2 text-teal-700">
+                         <CheckCircle2 size={16} />
+                         <span className="text-xs font-bold">
+                           {detail?.treatmentType === 'adjusted' ? 'Treated (Adjusted Amount)' : 'Fully Treated'}
+                         </span>
+                       </div>
+                       {detail.amount > 0 && detail.amountDisbursed != null && (
+                         <div className="text-[10px] text-teal-700/80 font-semibold pl-6">
+                           Total Disbursed: ₦{Number(detail.amountDisbursed).toLocaleString()}
+                           {detail.treatmentType === 'adjusted' && ` of ₦${Number(detail.amount).toLocaleString()} requested`}
+                           {detail.treatmentReason && ` — ${detail.treatmentReason}`}
+                         </div>
+                       )}
                      </div>
                    ) : detail?.finalApprovalStatus === 'published' ? (
                      <div className="p-3 rounded-xl bg-emerald-600/10 border border-emerald-600/20 flex items-center gap-2 text-emerald-800">
@@ -2460,10 +2627,31 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                         } else if (isTreated) {
                           fromLabel = ev.deptName;
                           toLabel = null;
-                          badgeText = 'Treated';
-                          badgeColor = 'bg-teal-100 text-teal-700';
-                          iconColor = 'bg-teal-500';
-                          description = `${fromLabel} completed final processing and marked this requisition as treated.${ev.comment && ev.comment !== 'Done' ? ` Note: "${ev.comment}"` : ''}`;
+                          const disbAmt = ev.amountDisbursed != null ? parseFloat(ev.amountDisbursed) : null;
+                          const reqAmt  = detail?.amount ? parseFloat(detail.amount) : null;
+                          if (ev.treatmentType === 'partial') {
+                            badgeText  = 'Partial Payment';
+                            badgeColor = 'bg-orange-100 text-orange-700';
+                            iconColor  = 'bg-orange-500';
+                          } else if (ev.treatmentType === 'adjusted') {
+                            badgeText  = 'Treated (Adjusted)';
+                            badgeColor = 'bg-teal-100 text-teal-700';
+                            iconColor  = 'bg-teal-500';
+                          } else {
+                            badgeText  = 'Fully Treated';
+                            badgeColor = 'bg-teal-100 text-teal-700';
+                            iconColor  = 'bg-teal-500';
+                          }
+                          const amtLine = disbAmt != null && reqAmt != null
+                            ? `Disbursed: ₦${disbAmt.toLocaleString()} of ₦${reqAmt.toLocaleString()} requested.`
+                            : null;
+                          const reasonLine = ev.treatmentReason ? `Reason: "${ev.treatmentReason}"` : null;
+                          description = [
+                            `${fromLabel} processed payment for this requisition.`,
+                            amtLine,
+                            reasonLine,
+                            ev.comment ? `Note: "${ev.comment}"` : null,
+                          ].filter(Boolean).join(' ');
                         } else {
                           fromLabel = ev.deptName;
                           toLabel = null;

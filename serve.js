@@ -2967,9 +2967,12 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       comment: z.string().optional(),
       nextDeptId: z.union([z.string(), z.number()]).transform(v => parseInt(String(v))).optional(),
       vetted: z.union([z.boolean(), z.string()]).transform(v => v === true || v === 'true').optional().default(false),
+      amountDisbursed: z.union([z.string(), z.number()]).transform(v => parseFloat(String(v))).optional(),
+      treatmentType: z.enum(['full', 'partial', 'adjusted']).optional(),
+      treatmentReason: z.string().optional(),
     }).safeParse(body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid vetting payload' });
-    const { action, comment, nextDeptId, vetted } = parsed.data;
+    const { action, comment, nextDeptId, vetted, treatmentType, treatmentReason } = parsed.data;
 
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
@@ -2994,7 +2997,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       || (requisition.currentVettingDeptId === userDeptId)
       || (requisition.finalApprovedByDeptId === userDeptId)
       || (isAccountDept && requisition.targetDepartmentId === userDeptId
-          && ['approved', 'vetting'].includes(requisition.finalApprovalStatus));
+          && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus));
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });
@@ -3028,6 +3031,22 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       actingDeptName = d?.name || '';
     }
 
+    // Resolve disbursed amount — only relevant for 'treated' action
+    const reqAmount = requisition.amount || 0;
+    const existingDisbursed = requisition.amountDisbursed || 0;
+    let disbursedThisAction = null;
+    let resolvedTreatmentType = treatmentType || null;
+    let resolvedTreatmentReason = treatmentReason || null;
+
+    if (action === 'treated' && reqAmount > 0) {
+      const rawInput = parsed.data.amountDisbursed;
+      const inputAmount = (rawInput != null && !isNaN(rawInput)) ? rawInput : reqAmount;
+      disbursedThisAction = Math.min(inputAmount, reqAmount - existingDisbursed); // cap at remaining balance
+      if (!resolvedTreatmentType) {
+        resolvedTreatmentType = disbursedThisAction >= (reqAmount - existingDisbursed) ? 'full' : 'partial';
+      }
+    }
+
     await prisma.vettingEvent.create({
       data: {
         requisitionId: reqId,
@@ -3038,7 +3057,10 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         comment: comment || null,
         attachmentKey,
         attachmentName,
-        actorName: req.user?.name || actingDeptName
+        actorName: req.user?.name || actingDeptName,
+        amountDisbursed: disbursedThisAction,
+        treatmentType: resolvedTreatmentType,
+        treatmentReason: resolvedTreatmentReason,
       }
     });
 
@@ -3118,26 +3140,50 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       }).catch(() => { });
 
     } else if (action === 'treated') {
+      const newTotalDisbursed = existingDisbursed + (disbursedThisAction || 0);
+      const isPartial = resolvedTreatmentType === 'partial';
+      const isAdjusted = resolvedTreatmentType === 'adjusted';
+      // Partial: keep request open for Account to complete later
+      // Adjusted / Full: fully close
+      const isFullyClosed = !isPartial;
+
       await prisma.requisition.update({
         where: { id: reqId },
         data: {
-          finalApprovalStatus: 'treated',
-          treatedByDeptId: userDeptId || null,
-          treatedAt: new Date(),
-          currentVettingDeptId: null
+          finalApprovalStatus: isPartial ? 'partial' : 'treated',
+          amountDisbursed: reqAmount > 0 ? newTotalDisbursed : null,
+          treatmentType: resolvedTreatmentType,
+          treatmentReason: resolvedTreatmentReason,
+          treatedByDeptId: isFullyClosed ? (userDeptId || null) : undefined,
+          treatedAt: isFullyClosed ? new Date() : undefined,
+          // Partial: keep Account as current vetter so they can complete later
+          currentVettingDeptId: isPartial ? (userDeptId || null) : null,
         }
       });
 
       // Notify the originating department — fire-and-forget
       if (requisition.departmentId) {
+        const disbursedLine = reqAmount > 0 && disbursedThisAction != null
+          ? `Amount Disbursed: ₦${newTotalDisbursed.toLocaleString()} of ₦${reqAmount.toLocaleString()} requested`
+          : null;
+        const notifSubject = isPartial
+          ? `⏳ Partial Payment Made — Req #${id}`
+          : isAdjusted
+            ? `✅ Requisition Treated (Adjusted Amount) — Req #${id}`
+            : `✅ Requisition Fully Treated — Req #${id}`;
+        const notifLines = [
+          isPartial
+            ? `A partial payment has been made by ${actingDeptName}. Balance is pending.`
+            : `Your requisition has been fully treated by ${actingDeptName}.`,
+          disbursedLine,
+          resolvedTreatmentReason ? `Reason: ${resolvedTreatmentReason}` : null,
+          comment || null,
+        ].filter(Boolean);
         notifyDepartmentHead({
           departmentId: requisition.departmentId,
           requisition: { id: reqId, title: requisition.title || `Requisition #${id}` },
-          subject: `✅ Requisition Treated: #${id}`,
-          lines: [
-            `Your requisition has been fully treated by ${actingDeptName}.`,
-            `All vetting stages are complete.`
-          ]
+          subject: notifSubject,
+          lines: notifLines,
         }).catch(() => { });
       }
 
