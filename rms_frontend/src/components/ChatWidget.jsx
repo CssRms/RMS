@@ -1019,14 +1019,17 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef({ on: false, sx: 0, sy: 0, bx: 0, by: 0, moved: false });
 
-  const initPos = () => ({ x: window.innerWidth - BTN - 24, y: window.innerHeight - BTN - 24 });
+  // On mobile (< lg = 1024px) the floating nav bar sits at bottom-6 and is ~56px tall,
+  // so we need at least 96px clearance to stay above it. Desktop has no bottom nav.
+  const bottomClear = () => window.innerWidth < 1024 ? 96 : 24;
+  const initPos = () => ({ x: window.innerWidth - BTN - 24, y: window.innerHeight - BTN - bottomClear() });
 
   // Set initial position and keep it in bounds on resize
   useEffect(() => {
     setPos(initPos());
     const onResize = () => setPos(p => ({
       x: clampN(p ? p.x : window.innerWidth - BTN - 24, EDGE, window.innerWidth  - BTN - EDGE),
-      y: clampN(p ? p.y : window.innerHeight - BTN - 24, EDGE, window.innerHeight - BTN - EDGE),
+      y: clampN(p ? p.y : window.innerHeight - BTN - bottomClear(), EDGE, window.innerHeight - BTN - EDGE),
     }));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -1162,7 +1165,7 @@ export default function ChatWidget({ initialDeepLink, onDeepLinkConsumed }) {
 
   if (!isActive) return null;
 
-  const btnStyle = pos ? { left: `${pos.x}px`, top: `${pos.y}px` } : { bottom: '24px', right: '24px' };
+  const btnStyle = pos ? { left: `${pos.x}px`, top: `${pos.y}px` } : { bottom: `${bottomClear()}px`, right: '24px' };
 
   return (
     <>
