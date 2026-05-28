@@ -1236,6 +1236,18 @@ const DepartmentManager = ({ onViewChange }) => {
               </button>
             ))}
           </div>
+
+          {/* Inline action buttons — always visible directly below the fields */}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={() => setIsAddModalOpen(false)}
+              className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">
+              Cancel
+            </button>
+            <button type="button" onClick={handleAddSubmit} disabled={isProcessing}
+              className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
+            </button>
+          </div>
         </div>
       </Modal>
 
