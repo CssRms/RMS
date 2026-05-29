@@ -3279,7 +3279,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
 
   const filtered = requisitions.filter(r => {
     if (isMemoRecord(r)) return false;
-    if (filterView === 'active' && !isAdmin) {
+    if (filterView === 'active' && user?.role !== 'global_admin') {
       if (!isActiveForMe(r)) return false;
     }
     const matchSearch  = r.title?.toLowerCase().includes(search.toLowerCase()) || String(r.id).includes(search);
