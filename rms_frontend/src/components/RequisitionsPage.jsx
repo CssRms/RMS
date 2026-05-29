@@ -1840,15 +1840,31 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
     && parseInt(detail.targetDepartmentId) === parseInt(user?.deptId);
   const isTaggedObserver = !!(detail?.isTagged) && !wasTaggedNowActive;
 
-  // Determine HOW it arrived at this dept (forward vs return) for the explanatory banner
-  const taggedNowActiveRoute = (() => {
+  // Determine the sequence of events for the explanatory banner.
+  // We need to know: (a) how the request arrived at this dept and
+  // (b) whether the tag was applied before or after that arrival.
+  const taggedNowActiveInfo = (() => {
     if (!wasTaggedNowActive) return null;
-    const events = detail?.forwardEvents || [];
     const myDeptId = parseInt(user?.deptId);
-    // Find the last ForwardEvent that delivered to this dept
-    const last = [...events].reverse().find(e => parseInt(e.toDeptId) === myDeptId);
-    if (!last) return 'forwarded';
-    return last.action === 'returned' ? 'returned' : 'forwarded';
+    const events   = detail?.forwardEvents || [];
+    const tags     = detail?.tags || [];
+
+    // Last ForwardEvent that put this request at this dept's desk
+    const lastArrival = [...events].reverse().find(e => parseInt(e.toDeptId) === myDeptId);
+    const route = lastArrival?.action === 'returned' ? 'returned' : 'forwarded';
+
+    // When was this dept tagged?
+    const tagRecord  = tags.find(t => parseInt(t.deptId) === myDeptId);
+    const taggedAt   = tagRecord?.taggedAt ? new Date(tagRecord.taggedAt) : null;
+    const arrivedAt  = lastArrival?.createdAt ? new Date(lastArrival.createdAt) : null;
+
+    // Order: 'tagged_first' = CC'd then forwarded/returned (original intent)
+    //        'arrived_first' = forwarded/returned then CC'd afterwards
+    const order = (!taggedAt || !arrivedAt)
+      ? 'tagged_first'
+      : taggedAt <= arrivedAt ? 'tagged_first' : 'arrived_first';
+
+    return { route, order };
   })();
   // Can current user tag other departments? (must be in chain and not tagged observer)
   const canTag = !isTaggedObserver && user?.role === 'department' && detail;
@@ -2050,16 +2066,29 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                   <Paperclip size={9} /> Copied (Read Only)
                 </span>
               )}
-              {wasTaggedNowActive && (
-                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 shadow-lg
-                  ${taggedNowActiveRoute === 'returned'
-                    ? 'bg-orange-500 border border-orange-600 text-white shadow-orange-500/20'
-                    : 'bg-blue-600 border border-blue-700 text-white shadow-blue-500/20'}`}>
-                  {taggedNowActiveRoute === 'returned'
-                    ? <><RotateCcw size={9} /> Copied → Returned to You</>
-                    : <><ArrowRight size={9} /> Copied → Forwarded to You</>}
-                </span>
-              )}
+              {wasTaggedNowActive && taggedNowActiveInfo && (() => {
+                const { route, order } = taggedNowActiveInfo;
+                if (order === 'arrived_first') {
+                  // Request was at their desk first — they were tagged after the fact
+                  return (
+                    <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 shadow-lg bg-teal-600 border border-teal-700 text-white shadow-teal-500/20">
+                      <Paperclip size={9} />
+                      {route === 'returned' ? 'Returned to You — Also CC\'d' : 'Forwarded to You — Also CC\'d'}
+                    </span>
+                  );
+                }
+                // Tagged first, then forwarded/returned to them
+                return (
+                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 shadow-lg
+                    ${route === 'returned'
+                      ? 'bg-orange-500 border border-orange-600 text-white shadow-orange-500/20'
+                      : 'bg-blue-600 border border-blue-700 text-white shadow-blue-500/20'}`}>
+                    {route === 'returned'
+                      ? <><RotateCcw size={9} /> Copied → Returned to You</>
+                      : <><ArrowRight size={9} /> Copied → Forwarded to You</>}
+                  </span>
+                );
+              })()}
               {detail?.finalApprovalStatus === 'approved' && (
                 <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-emerald-500 border border-emerald-600 text-white shadow-lg shadow-emerald-500/20 flex items-center gap-1">
                   <CheckCircle2 size={10} /> Finally Approved
@@ -2139,30 +2168,47 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Was tagged/copied, but request was then forwarded or returned to this dept */}
-              {wasTaggedNowActive && (
-                <div className={`animate-in fade-in slide-in-from-bottom-5 duration-500 rounded-2xl p-5 shadow-sm relative overflow-hidden
-                  ${taggedNowActiveRoute === 'returned'
-                    ? 'border border-orange-200 bg-orange-50/60'
-                    : 'border border-blue-200 bg-blue-50/60'}`}>
-                  <div className={`absolute top-0 left-0 w-1 h-full ${taggedNowActiveRoute === 'returned' ? 'bg-orange-500' : 'bg-blue-500'}`} />
-                  <div className="flex items-center gap-2 pl-1 mb-2">
-                    {taggedNowActiveRoute === 'returned'
-                      ? <RotateCcw size={14} className="text-orange-700" />
-                      : <ArrowRight size={14} className="text-blue-700" />}
-                    <p className={`text-[10px] font-black uppercase tracking-widest ${taggedNowActiveRoute === 'returned' ? 'text-orange-800' : 'text-blue-800'}`}>
-                      {taggedNowActiveRoute === 'returned'
-                        ? 'Previously Copied — Returned to You'
-                        : 'Previously Copied — Forwarded to You'}
-                    </p>
+              {/* Was tagged/copied AND is now the active target — show order-aware context banner */}
+              {wasTaggedNowActive && taggedNowActiveInfo && (() => {
+                const { route, order } = taggedNowActiveInfo;
+                const arrivedFirst = order === 'arrived_first';
+                const isReturn     = route === 'returned';
+
+                // Colours: teal for arrived-first, orange for tagged-first-returned, blue for tagged-first-forwarded
+                const borderCls = arrivedFirst ? 'border-teal-200'  : isReturn ? 'border-orange-200'  : 'border-blue-200';
+                const bgCls     = arrivedFirst ? 'bg-teal-50/60'    : isReturn ? 'bg-orange-50/60'    : 'bg-blue-50/60';
+                const barCls    = arrivedFirst ? 'bg-teal-500'      : isReturn ? 'bg-orange-500'      : 'bg-blue-500';
+                const iconCls   = arrivedFirst ? 'text-teal-700'    : isReturn ? 'text-orange-700'    : 'text-blue-700';
+                const labelCls  = arrivedFirst ? 'text-teal-800'    : isReturn ? 'text-orange-800'    : 'text-blue-800';
+                const textCls   = arrivedFirst ? 'text-teal-700'    : isReturn ? 'text-orange-700'    : 'text-blue-700';
+
+                const icon  = arrivedFirst ? <Paperclip size={14} className={iconCls} />
+                            : isReturn     ? <RotateCcw size={14} className={iconCls} />
+                            :                <ArrowRight size={14} className={iconCls} />;
+
+                const title = arrivedFirst
+                  ? (isReturn ? 'Returned to You — Also CC\'d' : 'Forwarded to You — Also CC\'d')
+                  : (isReturn ? 'Previously Copied — Returned to You' : 'Previously Copied — Forwarded to You');
+
+                const body = arrivedFirst
+                  ? (isReturn
+                      ? 'This request was returned to your department first. You were subsequently added as a CC recipient for ongoing visibility. You are the active holder and can take all necessary actions.'
+                      : 'This request was forwarded to your department first. You were subsequently added as a CC recipient for ongoing visibility. You are the active holder and can take all necessary actions.')
+                  : (isReturn
+                      ? 'Your department was originally CC\'d on this request for visibility. It has since been returned to you and is now awaiting your action. You have full access to review and respond.'
+                      : 'Your department was originally CC\'d on this request for visibility. It has since been forwarded to you and is now awaiting your action. You have full access to review and respond.');
+
+                return (
+                  <div className={`animate-in fade-in slide-in-from-bottom-5 duration-500 rounded-2xl p-5 shadow-sm relative overflow-hidden border ${borderCls} ${bgCls}`}>
+                    <div className={`absolute top-0 left-0 w-1 h-full ${barCls}`} />
+                    <div className="flex items-center gap-2 pl-1 mb-2">
+                      {icon}
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${labelCls}`}>{title}</p>
+                    </div>
+                    <p className={`text-xs leading-relaxed ${textCls}`}>{body}</p>
                   </div>
-                  <p className={`text-xs leading-relaxed ${taggedNowActiveRoute === 'returned' ? 'text-orange-700' : 'text-blue-700'}`}>
-                    {taggedNowActiveRoute === 'returned'
-                      ? 'Your department was originally CC\'d on this request. It has since been returned to you and is now awaiting your action. You have full access to review and respond.'
-                      : 'Your department was originally CC\'d on this request. It has since been forwarded to you and is now awaiting your action. You have full access to review and respond.'}
-                  </p>
-                </div>
-              )}
+                );
+              })()}
 
               {!isTaggedObserver && isReturnedToCreator && req.status === 'pending' && !loading && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
