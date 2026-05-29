@@ -1516,7 +1516,12 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
 
 async function notifyDepartmentHead({ departmentId, requisition, subject, lines }) {
   try {
-    const dept = requisition?.department || await prisma.department.findUnique({ where: { id: departmentId } });
+    // Always fetch by departmentId when provided — do NOT use requisition.department
+    // as a shortcut, because that object is the CREATOR's department and would cause
+    // every notification to go to the wrong recipient.
+    const dept = departmentId
+      ? await prisma.department.findUnique({ where: { id: departmentId } })
+      : requisition?.department;
     const isMemoNotice = /memo/i.test(requisition?.type || '') || /memorandum/i.test(requisition?.type || '');
     const recordPath = requisition?.id ? (isMemoNotice ? `/memos/${requisition.id}` : `/requisitions/${requisition.id}`) : null;
 

@@ -22,7 +22,7 @@ const DepartmentHeadModal = ({ isOpen, department, onSave }) => {
       <div className="absolute inset-0 bg-background/90 backdrop-blur-md" />
       <div className="glass bg-white/95 w-full max-w-lg rounded-3xl border border-border/50 shadow-2xl relative overflow-hidden flex flex-col">
         <div className="p-6 border-b border-border/50">
-          <h2 className="text-xl font-bold text-foreground">Set Department Head</h2>
+          <h2 className="text-xl font-bold text-foreground">Set Department Details</h2>
           <p className="text-xs text-muted-foreground mt-1">
             Department head details are required for notifications and official memo headers.
           </p>

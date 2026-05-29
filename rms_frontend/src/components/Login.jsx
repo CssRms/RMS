@@ -124,7 +124,7 @@ const Login = () => {
           <div className="flex items-center space-x-4 text-[9px] text-white/40 uppercase tracking-widest">
             <span>RMS</span>
             <div className="w-1 h-1 rounded-full bg-white/30"></div>
-            <span>ISO 27001</span>
+            <span>ISO ----</span>
           </div>
         </div>
       </div>
