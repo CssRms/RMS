@@ -1835,8 +1835,21 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   // Is current user a tagged read-only observer?
   // A department that is ALSO the active forward target must never be blocked —
   // they received the request after being tagged and now have to act on it.
-  const isTaggedObserver = !!(detail?.isTagged)
-    && !(detail?.targetDepartmentId && parseInt(detail.targetDepartmentId) === parseInt(user?.deptId));
+  const wasTaggedNowActive = !!(detail?.isTagged)
+    && !!(detail?.targetDepartmentId)
+    && parseInt(detail.targetDepartmentId) === parseInt(user?.deptId);
+  const isTaggedObserver = !!(detail?.isTagged) && !wasTaggedNowActive;
+
+  // Determine HOW it arrived at this dept (forward vs return) for the explanatory banner
+  const taggedNowActiveRoute = (() => {
+    if (!wasTaggedNowActive) return null;
+    const events = detail?.forwardEvents || [];
+    const myDeptId = parseInt(user?.deptId);
+    // Find the last ForwardEvent that delivered to this dept
+    const last = [...events].reverse().find(e => parseInt(e.toDeptId) === myDeptId);
+    if (!last) return 'forwarded';
+    return last.action === 'returned' ? 'returned' : 'forwarded';
+  })();
   // Can current user tag other departments? (must be in chain and not tagged observer)
   const canTag = !isTaggedObserver && user?.role === 'department' && detail;
   // Is this a direct inter-department request (no admin workflow)?
@@ -2034,7 +2047,17 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
               {isTaggedObserver && (
                 <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-amber-500 border border-amber-600 text-white shadow-lg shadow-amber-500/20 flex items-center gap-1">
-                  <Paperclip size={9} /> Tagged Observer
+                  <Paperclip size={9} /> Copied (Read Only)
+                </span>
+              )}
+              {wasTaggedNowActive && (
+                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 shadow-lg
+                  ${taggedNowActiveRoute === 'returned'
+                    ? 'bg-orange-500 border border-orange-600 text-white shadow-orange-500/20'
+                    : 'bg-blue-600 border border-blue-700 text-white shadow-blue-500/20'}`}>
+                  {taggedNowActiveRoute === 'returned'
+                    ? <><RotateCcw size={9} /> Copied → Returned to You</>
+                    : <><ArrowRight size={9} /> Copied → Forwarded to You</>}
                 </span>
               )}
               {detail?.finalApprovalStatus === 'approved' && (
@@ -2102,16 +2125,41 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               <div className="hidden lg:block space-y-6">{briefBlock}{itemsBlock}</div>
 
               {/* Action Panels */}
-              {/* Tagged Observer notice — replaces all action panels */}
+              {/* Tagged Observer — pure read-only CC */}
               {isTaggedObserver && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 border border-amber-200 rounded-2xl p-5 bg-amber-50/60 shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-amber-400" />
                   <div className="flex items-center gap-2 pl-1 mb-2">
                     <Paperclip size={14} className="text-amber-700" />
-                    <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Tagged Observer — Read Only</p>
+                    <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Copied (CC) — Read Only</p>
                   </div>
                   <p className="text-xs text-amber-700 leading-relaxed">
-                    Your department has been CC'd on this requisition. You can view all details, attachments, and history, and print the record — but you cannot take any action.
+                    Your department has been CC'd on this requisition for visibility only. You can view all details, attachments, and history, and print the record — but you cannot take any action.
+                  </p>
+                </div>
+              )}
+
+              {/* Was tagged/copied, but request was then forwarded or returned to this dept */}
+              {wasTaggedNowActive && (
+                <div className={`animate-in fade-in slide-in-from-bottom-5 duration-500 rounded-2xl p-5 shadow-sm relative overflow-hidden
+                  ${taggedNowActiveRoute === 'returned'
+                    ? 'border border-orange-200 bg-orange-50/60'
+                    : 'border border-blue-200 bg-blue-50/60'}`}>
+                  <div className={`absolute top-0 left-0 w-1 h-full ${taggedNowActiveRoute === 'returned' ? 'bg-orange-500' : 'bg-blue-500'}`} />
+                  <div className="flex items-center gap-2 pl-1 mb-2">
+                    {taggedNowActiveRoute === 'returned'
+                      ? <RotateCcw size={14} className="text-orange-700" />
+                      : <ArrowRight size={14} className="text-blue-700" />}
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${taggedNowActiveRoute === 'returned' ? 'text-orange-800' : 'text-blue-800'}`}>
+                      {taggedNowActiveRoute === 'returned'
+                        ? 'Previously Copied — Returned to You'
+                        : 'Previously Copied — Forwarded to You'}
+                    </p>
+                  </div>
+                  <p className={`text-xs leading-relaxed ${taggedNowActiveRoute === 'returned' ? 'text-orange-700' : 'text-blue-700'}`}>
+                    {taggedNowActiveRoute === 'returned'
+                      ? 'Your department was originally CC\'d on this request. It has since been returned to you and is now awaiting your action. You have full access to review and respond.'
+                      : 'Your department was originally CC\'d on this request. It has since been forwarded to you and is now awaiting your action. You have full access to review and respond.'}
                   </p>
                 </div>
               )}
