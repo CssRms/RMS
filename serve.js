@@ -3013,13 +3013,16 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
     const isAccountDept = actingDeptRecord && /\baccount\b/i.test(actingDeptRecord.name);
 
     // Allow: current vetting dept, final approving dept (Chairman), admin,
-    // OR Account dept whenever they hold the request on an approved/vetting requisition
-    // — Account must always be able to treat regardless of routing path.
+    // OR Account dept whenever they hold the request on an approved/vetting requisition,
+    // OR Account dept holding a Material request — Material requests can arrive via direct
+    // forwarding without going through the vetting/final-approve chain.
+    const isMaterialReq = /^material/i.test(requisition.type || '');
     const canAct = isAdmin
       || (requisition.currentVettingDeptId === userDeptId)
       || (requisition.finalApprovedByDeptId === userDeptId)
       || (isAccountDept && requisition.targetDepartmentId === userDeptId
-          && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus));
+          && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus))
+      || (isAccountDept && isMaterialReq && requisition.targetDepartmentId === userDeptId);
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });

@@ -1409,10 +1409,17 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const finalApprovedByDeptId  = detail?.finalApprovedByDeptId  ? parseInt(detail.finalApprovedByDeptId)  : null;
   const _isAccountDept = /\baccount\b/i.test(user?.name || '');
   const _fas = detail?.finalApprovalStatus;
+  const _isMaterialReq = /^material/i.test(req?.type || '');
+  // Account holds the request and it is a Material request — they can treat even when
+  // finalApprovalStatus is 'none' (request arrived via direct forwarding, not vetting chain)
+  const _accountHoldsMaterial = _isAccountDept && _isMaterialReq
+    && detail?.targetDepartmentId === user.deptId;
+
   const isCurrentVetter = user?.deptId && (
     currentVettingDeptId === user.deptId ||
     (_isAccountDept && detail?.targetDepartmentId === user.deptId &&
-      (_fas === 'approved' || _fas === 'vetting' || _fas === 'partial'))
+      (_fas === 'approved' || _fas === 'vetting' || _fas === 'partial')) ||
+    _accountHoldsMaterial
   );
   const finalApprovalStatus    = detail?.finalApprovalStatus;
 
@@ -1423,7 +1430,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
 
   // Only the active vetting dept sees this panel
   if (!isCurrentVetter) return null;
-  if (!finalApprovalStatus || finalApprovalStatus === 'none') return null;
+  // Allow Material requests at Account through even when finalApprovalStatus is 'none'
+  if (!_accountHoldsMaterial && (!finalApprovalStatus || finalApprovalStatus === 'none')) return null;
   if (finalApprovalStatus === 'treated') return null;
 
   // Account and Chairman always treat — they also have Forward + Return options
@@ -1447,8 +1455,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
 
   // Role-specific labels
   const roleLabel      = isICC ? 'ICC Vetting' : isAudit ? 'Audit Vetting' : isAccount ? 'Account Vetting' : isChairman ? 'Chairman / CEO Vetting' : 'Vetting Review';
-  const primaryLabel   = isICC ? 'Submit to Audit' : isAudit ? 'Forward to Account' : 'Mark Treated';
-  const primaryDisabled = (isICC && !auditDept) || (isAudit && !accountDept);
+  const primaryLabel    = isICC ? 'Submit to Audit' : 'Mark Treated';
+  // ICC needs Audit dept to exist; Audit needs a dept selected in the free-choice dropdown
+  const primaryDisabled = (isICC && !auditDept) || (isAudit && !forwardDeptId);
 
   // Compute where Return sends the request (mirrors backend logic) for UI hint
   const iccDeptInList = departments.find(d => /\bicc\b|integrity|compliance/i.test(d.name));
@@ -1475,10 +1484,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
       let result = null;
       if (action === 'forward') {
         let nextDeptId;
-        if (isICC)        nextDeptId = auditDept?.id;
-        else if (isAudit) nextDeptId = accountDept?.id;
-        else              nextDeptId = forwardDeptId ? parseInt(forwardDeptId) : null;
-        if (!nextDeptId) { toast.error(canTreat ? 'Please select a department to forward to.' : 'Next department not found.'); setActing(false); return; }
+        if (isICC)   nextDeptId = auditDept?.id;
+        else         nextDeptId = forwardDeptId ? parseInt(forwardDeptId) : null;
+        if (!nextDeptId) { toast.error('Please select a department to forward to.'); setActing(false); return; }
         result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined, vetted: vetChecked });
         if (result !== null) toast.success(vetChecked ? (isICC ? 'Vetted & submitted to Audit.' : isAudit ? 'Vetted & forwarded to Account.' : 'Vetted & forwarded.') : (isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded.'));
       } else if (action === 'treated') {
@@ -1709,8 +1717,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             </div>
           </div>
         </div>
-      ) : (
-        /* ICC / Audit — forward to next in chain + Return */
+      ) : isICC ? (
+        /* ICC — hardcoded forward to Audit */
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button onClick={() => act('forward')} disabled={acting || primaryDisabled || !canAct}
             className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
@@ -1726,6 +1734,39 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
               {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
               {vetChecked ? 'Return (Vetted)' : 'Return'}
             </button>
+          </div>
+        </div>
+      ) : (
+        /* Audit (and any other vetter) — free-choice forward to any dept including GM/CEO */
+        <div className="space-y-2 pt-1">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest">Forward to</label>
+            <select
+              value={forwardDeptId}
+              onChange={e => setForwardDeptId(e.target.value)}
+              className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300">
+              <option value="">— Select department —</option>
+              {departments.filter(d => d.id !== user?.deptId).map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => act('forward')} disabled={acting || !forwardDeptId || !canAct}
+              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+              {acting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              {vetChecked ? 'Vetted & Forward' : 'Forward (Unvetted)'}
+            </button>
+            <div className="space-y-1">
+              <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">
+                Returns to: {returnDestLabel}
+              </p>
+              <button onClick={() => act('return')} disabled={acting || !canAct}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                {vetChecked ? 'Return (Vetted)' : 'Return'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1792,7 +1833,10 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   // Is this an incoming (target dept) requisition for the current user?
   const isIncoming = user?.deptId && detail?.targetDepartmentId === user.deptId;
   // Is current user a tagged read-only observer?
-  const isTaggedObserver = !!(detail?.isTagged);
+  // A department that is ALSO the active forward target must never be blocked —
+  // they received the request after being tagged and now have to act on it.
+  const isTaggedObserver = !!(detail?.isTagged)
+    && !(detail?.targetDepartmentId && parseInt(detail.targetDepartmentId) === parseInt(user?.deptId));
   // Can current user tag other departments? (must be in chain and not tagged observer)
   const canTag = !isTaggedObserver && user?.role === 'department' && detail;
   // Is this a direct inter-department request (no admin workflow)?
@@ -2110,10 +2154,12 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Vetting Panel — for ICC, Audit, Account and Chairman */}
+              {/* Vetting Panel — for ICC, Audit, Account and Chairman.
+                  Also shown when Account holds a Material request regardless of finalApprovalStatus
+                  (Material requests can arrive via direct forward without going through vetting chain) */}
               {!isTaggedObserver && user?.role === 'department' && detail && !loading &&
-               detail.finalApprovalStatus && detail.finalApprovalStatus !== 'none' &&
-               detail.finalApprovalStatus !== 'treated' && (
+               ((detail.finalApprovalStatus && detail.finalApprovalStatus !== 'none' && detail.finalApprovalStatus !== 'treated')
+                || (/\baccount\b/i.test(user?.name || '') && /^material/i.test(req?.type || '') && detail.targetDepartmentId === user?.deptId)) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <VettingPanel
                     req={req}
@@ -3154,7 +3200,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                 onClick={() => setIsFormOpen('Material')}
                 className="bg-foreground hover:bg-foreground/90 text-background font-black py-3 px-5 rounded-2xl transition-all shadow-lg flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
               >
-                <Plus size={16} /> Procurement
+                <Plus size={16} /> Material Request
               </button>
             </div>
           </div>
