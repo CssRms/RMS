@@ -1403,6 +1403,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const [treatChoice, setTreatChoice]     = useState(''); // 'partial' | 'adjusted'
   const [treatReason, setTreatReason]     = useState('');
   const [treatReasonCustom, setTreatReasonCustom] = useState('');
+  // Account-specific treatment toggle
+  const [treatInitiated, setTreatInitiated] = useState(false);
+  const [paymentType, setPaymentType]       = useState(''); // 'full' | 'partial'
 
   const deptName = user?.name || '';
   const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
@@ -1473,10 +1476,14 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     : isAccount ? (auditWasPresent ? (auditDeptInList?.name || 'Audit') : finalApproverDeptName)
     : finalApproverDeptName;
 
-  const canAct = comment.trim().length > 0
-    && (!canTreat || !hasAmount || inputIsValid)  // treat: amount must be valid
-    && !needsTreatChoice                           // treat: must pick partial vs adjusted when underpaying
-    && !needsTreatReason;                          // treat: adjusted requires a reason
+  // For Account: treatment gated by treatInitiated + paymentType; comment not required
+  const accountTreatCanAct = isAccount && treatInitiated && !!paymentType && (!hasAmount || inputIsValid);
+  const canAct = isAccount
+    ? accountTreatCanAct
+    : (comment.trim().length > 0
+        && (!canTreat || !hasAmount || inputIsValid)
+        && !needsTreatChoice
+        && !needsTreatReason);
 
   const act = async (action) => {
     setActing(true);
@@ -1491,8 +1498,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         if (result !== null) toast.success(vetChecked ? (isICC ? 'Vetted & submitted to Audit.' : isAudit ? 'Vetted & forwarded to Account.' : 'Vetted & forwarded.') : (isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded.'));
       } else if (action === 'treated') {
         const disbursed = hasAmount && !isNaN(parsedInput) ? parsedInput : undefined;
-        const type = !isUnderpaying ? 'full' : treatChoice;
-        const reason = treatChoice === 'adjusted'
+        // Account uses simple full/partial; others use existing treatChoice logic
+        const type = isAccount ? paymentType : (!isUnderpaying ? 'full' : treatChoice);
+        const reason = (!isAccount && treatChoice === 'adjusted')
           ? (treatReason === 'other' ? treatReasonCustom : treatReason) || undefined
           : undefined;
         result = await vettingActionRequisition(req.id, {
@@ -1529,195 +1537,292 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         <span className="ml-auto px-2 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-[9px] font-black text-blue-700 uppercase">In Vetting</span>
       </div>
 
-      <textarea
-        value={comment}
-        onChange={e => setComment(e.target.value)}
-        placeholder="Write your vetting remarks or return reason (required)..."
-        className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-300 min-h-[72px] resize-none shadow-inner"
-      />
+      {isAccount ? (
+        /* ── Account: checkbox-gated treatment form ─────────────────── */
+        <div className="space-y-3">
 
-      {/* Vetted checkbox — optional; marks whether this dept actually performed vetting */}
-      <label className="flex items-start gap-2.5 cursor-pointer select-none group">
-        <input
-          type="checkbox"
-          checked={vetChecked}
-          onChange={e => setVetChecked(e.target.checked)}
-          className="mt-0.5 w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0"
-        />
-        <span className="text-[11px] text-blue-800 font-semibold leading-snug">
-          I have vetted this document
-          {vetChecked
-            ? <span className="ml-1 text-emerald-600 font-black">(Vetted ✓)</span>
-            : <span className="ml-1 text-muted-foreground font-normal italic">(optional — leave unchecked to act without vetting)</span>}
-        </span>
-      </label>
-
-      {!canAct && (
-        <p className="text-[10px] text-blue-500/70 italic">Write a remark to unlock actions.</p>
-      )}
-
-      <div>
-        <input type="file" ref={fileRef} className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
-        {file ? (
-          <div className="flex items-center gap-2 px-3 py-2 bg-blue-100 rounded-xl border border-blue-200">
-            <FileText size={13} className="text-blue-600 shrink-0" />
-            <span className="flex-1 truncate text-[11px] font-bold text-foreground">{file.name}</span>
-            <button
-              onClick={() => {
-                const url = URL.createObjectURL(file);
-                setLocalPreview({ filename: file.name, blobUrl: url });
-              }}
-              title="Preview"
-              className="p-0.5 text-blue-600 hover:text-blue-900 transition-all rounded shrink-0"
-            ><Eye size={12} /></button>
-            <button onClick={() => setFile(null)} className="p-0.5 text-muted-foreground hover:text-destructive rounded shrink-0"><X size={12} /></button>
-          </div>
-        ) : (
-          <button onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-2 text-[11px] font-bold text-blue-700 hover:text-blue-900 transition-colors px-2 py-1 rounded-lg hover:bg-blue-100">
-            <Paperclip size={13} /> Attach supporting document
-          </button>
-        )}
-      </div>
-
-      {canTreat ? (
-        /* Account / Chairman — Disbursement entry + Treat / Forward / Return */
-        <div className="space-y-3 pt-1">
-
-          {/* Partial payment banner if continuing a partial */}
-          {isPartialMode && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 font-semibold">
-              <AlertTriangle size={12} className="shrink-0 text-orange-500" />
-              Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid of ₦{reqAmount.toLocaleString()} requested.
-              Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
-            </div>
-          )}
-
-          {/* Amount disbursed input */}
-          {hasAmount && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest">
-                Amount to Disburse {isPartialMode ? `(Balance: ₦${balanceDue.toLocaleString()})` : `(Requested: ₦${reqAmount.toLocaleString()})`}
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-muted-foreground">₦</span>
-                <input
-                  type="number"
-                  min="1"
-                  max={balanceDue}
-                  step="0.01"
-                  value={amountInput}
-                  onChange={e => {
-                    setAmountInput(e.target.value);
-                    setTreatChoice('');
-                    setTreatReason('');
-                    setTreatReasonCustom('');
-                  }}
-                  placeholder={balanceDue.toLocaleString()}
-                  className="w-full bg-white border border-blue-200 rounded-xl pl-7 pr-3 py-2.5 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300"
-                />
-              </div>
-              {amountInput && !inputIsValid && (
-                <p className="text-[10px] text-red-500 font-semibold">Amount cannot exceed the balance due (₦{balanceDue.toLocaleString()}).</p>
+          {/* Treatment toggle */}
+          <label className="flex items-center gap-3 cursor-pointer select-none group p-3 rounded-xl border border-blue-200 bg-white hover:bg-blue-50 transition-colors">
+            <input
+              type="checkbox"
+              checked={treatInitiated}
+              onChange={e => { setTreatInitiated(e.target.checked); setPaymentType(''); setAmountInput(''); }}
+              className="w-4 h-4 rounded accent-emerald-600 cursor-pointer shrink-0"
+            />
+            <div>
+              <span className="text-[12px] font-black text-foreground">
+                {treatInitiated ? '✓ Treatment Initiated' : 'Initiate Treatment'}
+              </span>
+              {!treatInitiated && (
+                <p className="text-[10px] text-muted-foreground mt-0.5">Check to open the treatment form for this requisition.</p>
               )}
             </div>
-          )}
+          </label>
 
-          {/* Partial vs Adjusted choice — shown only when underpaying */}
-          {isUnderpaying && (
-            <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-              <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">
-                Amount is less than balance — choose payment type:
-              </p>
-              <label className="flex items-start gap-2 cursor-pointer group">
-                <input type="radio" name="treatChoice" value="partial" checked={treatChoice === 'partial'}
-                  onChange={() => { setTreatChoice('partial'); setTreatReason(''); setTreatReasonCustom(''); }}
-                  className="mt-0.5 accent-amber-600 shrink-0" />
-                <div>
-                  <span className="text-[11px] font-bold text-amber-900">Partial Payment</span>
-                  <p className="text-[10px] text-amber-700/80">Balance of ₦{(balanceDue - (parsedInput || 0)).toLocaleString()} will be completed later.</p>
-                </div>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer group">
-                <input type="radio" name="treatChoice" value="adjusted" checked={treatChoice === 'adjusted'}
-                  onChange={() => setTreatChoice('adjusted')}
-                  className="mt-0.5 accent-amber-600 shrink-0" />
-                <div>
-                  <span className="text-[11px] font-bold text-amber-900">Adjusted Final Payment</span>
-                  <p className="text-[10px] text-amber-700/80">This IS the full payment — no balance expected. Requires a reason.</p>
-                </div>
-              </label>
+          {/* Treatment form — revealed only when checkbox is checked */}
+          {treatInitiated && (
+            <div className="space-y-3 p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl">
 
-              {treatChoice === 'adjusted' && (
-                <div className="space-y-1.5 pt-1">
-                  <select value={treatReason} onChange={e => setTreatReason(e.target.value)}
-                    className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300">
-                    <option value="">Select reason for adjustment…</option>
-                    <option value="Account decision (budget constraint)">Account decision — budget constraint</option>
-                    <option value="Per Audit instruction">Per Audit instruction</option>
-                    <option value="Per GM/CEO directive">Per GM / CEO directive</option>
-                    <option value="Per HR directive">Per HR directive</option>
-                    <option value="other">Other (specify below)</option>
-                  </select>
-                  {treatReason === 'other' && (
+              {/* Partial payment continuation banner */}
+              {isPartialMode && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 font-semibold">
+                  <AlertTriangle size={12} className="shrink-0 text-orange-500" />
+                  Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid of ₦{reqAmount.toLocaleString()} requested.
+                  Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
+                </div>
+              )}
+
+              {/* Payment type selection */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Payment Type</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className={`flex items-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${paymentType === 'full' ? 'border-emerald-500 bg-emerald-50' : 'border-border/50 bg-white hover:border-emerald-300'}`}>
+                    <input type="radio" name="accountPayType" value="full" checked={paymentType === 'full'}
+                      onChange={() => setPaymentType('full')} className="accent-emerald-600 shrink-0" />
+                    <div>
+                      <span className="text-[11px] font-black text-foreground block">Full Payment</span>
+                      <span className="text-[9px] text-muted-foreground">Closes the request</span>
+                    </div>
+                  </label>
+                  <label className={`flex items-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${paymentType === 'partial' ? 'border-amber-500 bg-amber-50' : 'border-border/50 bg-white hover:border-amber-300'}`}>
+                    <input type="radio" name="accountPayType" value="partial" checked={paymentType === 'partial'}
+                      onChange={() => setPaymentType('partial')} className="accent-amber-600 shrink-0" />
+                    <div>
+                      <span className="text-[11px] font-black text-foreground block">Partial Payment</span>
+                      <span className="text-[9px] text-muted-foreground">Can revisit later</span>
+                    </div>
+                  </label>
+                </div>
+                {paymentType === 'partial' && (
+                  <p className="text-[10px] text-amber-700 font-semibold px-1">
+                    Status will show as <span className="font-black">Inconclusive / Partial</span> — Account can revisit to complete.
+                  </p>
+                )}
+              </div>
+
+              {/* Amount input */}
+              {hasAmount && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">
+                    Amount to Disburse {isPartialMode ? `(Balance: ₦${balanceDue.toLocaleString()})` : `(Requested: ₦${reqAmount.toLocaleString()})`}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-muted-foreground">₦</span>
                     <input
-                      type="text"
-                      value={treatReasonCustom}
-                      onChange={e => setTreatReasonCustom(e.target.value)}
-                      placeholder="Specify reason…"
-                      className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      type="number" min="1" max={balanceDue} step="0.01"
+                      value={amountInput}
+                      onChange={e => setAmountInput(e.target.value)}
+                      placeholder={balanceDue.toLocaleString()}
+                      className="w-full bg-white border border-emerald-200 rounded-xl pl-7 pr-3 py-2.5 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300"
                     />
+                  </div>
+                  {amountInput && !inputIsValid && (
+                    <p className="text-[10px] text-red-500 font-semibold">Amount cannot exceed the balance due (₦{balanceDue.toLocaleString()}).</p>
                   )}
                 </div>
               )}
+
+              {/* Optional note */}
+              <textarea
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Treatment note (optional)…"
+                className="w-full bg-white border border-emerald-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 min-h-[56px] resize-none shadow-inner"
+              />
+
+              {/* Attach document */}
+              <div>
+                <input type="file" ref={fileRef} className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
+                {file ? (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-emerald-100 rounded-xl border border-emerald-200">
+                    <FileText size={13} className="text-emerald-600 shrink-0" />
+                    <span className="flex-1 truncate text-[11px] font-bold text-foreground">{file.name}</span>
+                    <button onClick={() => { const url = URL.createObjectURL(file); setLocalPreview({ filename: file.name, blobUrl: url }); }} className="p-0.5 text-emerald-600 hover:text-emerald-900 rounded shrink-0"><Eye size={12} /></button>
+                    <button onClick={() => setFile(null)} className="p-0.5 text-muted-foreground hover:text-destructive rounded shrink-0"><X size={12} /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 transition-colors px-2 py-1 rounded-lg hover:bg-emerald-100">
+                    <Paperclip size={13} /> Attach supporting document
+                  </button>
+                )}
+              </div>
+
+              {/* Confirm Treatment button */}
+              <button
+                onClick={() => act('treated')}
+                disabled={acting || !accountTreatCanAct}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {paymentType === 'partial'
+                  ? `Record Partial Payment${hasAmount && parsedInput ? ` — ₦${parsedInput.toLocaleString()}` : ''}`
+                  : isPartialMode
+                  ? `Complete Treatment${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`
+                  : `Confirm Full Payment${hasAmount && parsedInput ? ` — ₦${parsedInput.toLocaleString()}` : ''}`}
+              </button>
             </div>
           )}
 
-          {/* Treat button */}
-          <button
-            onClick={() => act('treated')}
-            disabled={acting || !canAct}
-            className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
-            {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            {isUnderpaying && treatChoice === 'partial'
-              ? `Record Partial Payment (₦${parsedInput ? parsedInput.toLocaleString() : '…'})`
-              : isUnderpaying && treatChoice === 'adjusted'
-              ? `Treat — Adjusted to ₦${parsedInput ? parsedInput.toLocaleString() : '…'}`
-              : isPartialMode
-              ? `Complete Treatment${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`
-              : `Mark Fully Treated${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`}
-          </button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <select
-                value={forwardDeptId}
-                onChange={e => setForwardDeptId(e.target.value)}
-                className="w-full bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300">
-                <option value="">Forward to dept…</option>
-                {departments.filter(d => d.id !== user?.deptId).map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-              <button onClick={() => act('forward')} disabled={acting || !forwardDeptId || !canAct}
-                className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
-                {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                {vetChecked ? 'Vetted & Forward' : 'Forward (Unvetted)'}
-              </button>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">
-                Returns to: {returnDestLabel}
-              </p>
-              <button onClick={() => act('return')} disabled={acting || !canAct}
-                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
-                {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-                {vetChecked ? 'Return (Vetted)' : 'Return'}
-              </button>
+          {/* Forward / Return — always available for Account */}
+          <div className="pt-1 space-y-2 border-t border-blue-200">
+            <p className="text-[9px] font-black text-blue-700/60 uppercase tracking-widest">Or Route to Another Department</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <select value={forwardDeptId} onChange={e => setForwardDeptId(e.target.value)}
+                  className="w-full bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300">
+                  <option value="">Forward to dept…</option>
+                  {departments.filter(d => d.id !== user?.deptId).map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                <button onClick={() => act('forward')} disabled={acting || !forwardDeptId}
+                  className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
+                  {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                  Forward
+                </button>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">Returns to: {returnDestLabel}</p>
+                <button onClick={() => act('return')} disabled={acting}
+                  className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                  {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                  Return
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      ) : isICC ? (
+      ) : (
+        /* ── Non-Account: existing vetting form ─────────────────────── */
+        <>
+          <textarea
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            placeholder="Write your vetting remarks or return reason (required)..."
+            className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-300 min-h-[72px] resize-none shadow-inner"
+          />
+
+          {/* Vetted checkbox */}
+          <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+            <input type="checkbox" checked={vetChecked} onChange={e => setVetChecked(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0" />
+            <span className="text-[11px] text-blue-800 font-semibold leading-snug">
+              I have vetted this document
+              {vetChecked
+                ? <span className="ml-1 text-emerald-600 font-black">(Vetted ✓)</span>
+                : <span className="ml-1 text-muted-foreground font-normal italic">(optional)</span>}
+            </span>
+          </label>
+
+          {!canAct && <p className="text-[10px] text-blue-500/70 italic">Write a remark to unlock actions.</p>}
+
+          <div>
+            <input type="file" ref={fileRef} className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
+            {file ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-100 rounded-xl border border-blue-200">
+                <FileText size={13} className="text-blue-600 shrink-0" />
+                <span className="flex-1 truncate text-[11px] font-bold text-foreground">{file.name}</span>
+                <button onClick={() => { const url = URL.createObjectURL(file); setLocalPreview({ filename: file.name, blobUrl: url }); }} className="p-0.5 text-blue-600 hover:text-blue-900 rounded shrink-0"><Eye size={12} /></button>
+                <button onClick={() => setFile(null)} className="p-0.5 text-muted-foreground hover:text-destructive rounded shrink-0"><X size={12} /></button>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 text-[11px] font-bold text-blue-700 hover:text-blue-900 transition-colors px-2 py-1 rounded-lg hover:bg-blue-100">
+                <Paperclip size={13} /> Attach supporting document
+              </button>
+            )}
+          </div>
+
+          {isChairman ? (
+            /* Chairman — same treatment+forward+return layout */
+            <div className="space-y-3 pt-1">
+              {isPartialMode && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 font-semibold">
+                  <AlertTriangle size={12} className="shrink-0 text-orange-500" />
+                  Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid of ₦{reqAmount.toLocaleString()} requested.
+                  Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
+                </div>
+              )}
+              {hasAmount && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest">
+                    Amount to Disburse {isPartialMode ? `(Balance: ₦${balanceDue.toLocaleString()})` : `(Requested: ₦${reqAmount.toLocaleString()})`}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-muted-foreground">₦</span>
+                    <input type="number" min="1" max={balanceDue} step="0.01" value={amountInput}
+                      onChange={e => { setAmountInput(e.target.value); setTreatChoice(''); setTreatReason(''); setTreatReasonCustom(''); }}
+                      placeholder={balanceDue.toLocaleString()}
+                      className="w-full bg-white border border-blue-200 rounded-xl pl-7 pr-3 py-2.5 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                  </div>
+                  {amountInput && !inputIsValid && <p className="text-[10px] text-red-500 font-semibold">Amount cannot exceed the balance due (₦{balanceDue.toLocaleString()}).</p>}
+                </div>
+              )}
+              {isUnderpaying && (
+                <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Amount is less than balance — choose payment type:</p>
+                  <label className="flex items-start gap-2 cursor-pointer group">
+                    <input type="radio" name="treatChoice" value="partial" checked={treatChoice === 'partial'}
+                      onChange={() => { setTreatChoice('partial'); setTreatReason(''); setTreatReasonCustom(''); }} className="mt-0.5 accent-amber-600 shrink-0" />
+                    <div>
+                      <span className="text-[11px] font-bold text-amber-900">Partial Payment</span>
+                      <p className="text-[10px] text-amber-700/80">Balance of ₦{(balanceDue - (parsedInput || 0)).toLocaleString()} will be completed later.</p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer group">
+                    <input type="radio" name="treatChoice" value="adjusted" checked={treatChoice === 'adjusted'}
+                      onChange={() => setTreatChoice('adjusted')} className="mt-0.5 accent-amber-600 shrink-0" />
+                    <div>
+                      <span className="text-[11px] font-bold text-amber-900">Adjusted Final Payment</span>
+                      <p className="text-[10px] text-amber-700/80">This IS the full payment — no balance expected. Requires a reason.</p>
+                    </div>
+                  </label>
+                  {treatChoice === 'adjusted' && (
+                    <div className="space-y-1.5 pt-1">
+                      <select value={treatReason} onChange={e => setTreatReason(e.target.value)}
+                        className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300">
+                        <option value="">Select reason for adjustment…</option>
+                        <option value="Account decision (budget constraint)">Account decision — budget constraint</option>
+                        <option value="Per Audit instruction">Per Audit instruction</option>
+                        <option value="Per GM/CEO directive">Per GM / CEO directive</option>
+                        <option value="Per HR directive">Per HR directive</option>
+                        <option value="other">Other (specify below)</option>
+                      </select>
+                      {treatReason === 'other' && (
+                        <input type="text" value={treatReasonCustom} onChange={e => setTreatReasonCustom(e.target.value)} placeholder="Specify reason…"
+                          className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <button onClick={() => act('treated')} disabled={acting || !canAct}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {isUnderpaying && treatChoice === 'partial' ? `Record Partial Payment (₦${parsedInput ? parsedInput.toLocaleString() : '…'})` : isUnderpaying && treatChoice === 'adjusted' ? `Treat — Adjusted to ₦${parsedInput ? parsedInput.toLocaleString() : '…'}` : isPartialMode ? `Complete Treatment${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}` : `Mark Fully Treated${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`}
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <select value={forwardDeptId} onChange={e => setForwardDeptId(e.target.value)}
+                    className="w-full bg-white border border-blue-200 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300">
+                    <option value="">Forward to dept…</option>
+                    {departments.filter(d => d.id !== user?.deptId).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  <button onClick={() => act('forward')} disabled={acting || !forwardDeptId || !canAct}
+                    className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
+                    {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                    {vetChecked ? 'Vetted & Forward' : 'Forward (Unvetted)'}
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">Returns to: {returnDestLabel}</p>
+                  <button onClick={() => act('return')} disabled={acting || !canAct}
+                    className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                    {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                    {vetChecked ? 'Return (Vetted)' : 'Return'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : isICC ? (
         /* ICC — hardcoded forward to Audit */
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button onClick={() => act('forward')} disabled={acting || primaryDisabled || !canAct}
@@ -1770,6 +1875,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
           </div>
         </div>
       )}
+    </>
+  )}
     </div>
     {localPreview && (
       <FilePreviewModal
@@ -2972,6 +3079,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [syncStale, setSyncStale]       = useState(false);
   const [flashedIds, setFlashedIds]     = useState(new Set());
+  const [filterView, setFilterView]     = useState(user?.role === 'global_admin' ? 'all' : 'active');
   const selectedReqRef = React.useRef(null);
 
   // Normalize a requisition so department/creator are always strings, not nested objects.
@@ -3160,8 +3268,20 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     return () => window.removeEventListener('rms:openNewRequest', handleOpenNewRequest);
   }, []);
 
+  const isActiveForMe = (r) => {
+    if (!user?.deptId) return true;
+    const deptId = Number(user.deptId);
+    if (Number(r.departmentId) === deptId) return true;           // creator
+    if (Number(r.targetDepartmentId) === deptId) return true;     // currently at my desk
+    if (r.currentVettingDeptId && Number(r.currentVettingDeptId) === deptId) return true; // vetting
+    return false;
+  };
+
   const filtered = requisitions.filter(r => {
     if (isMemoRecord(r)) return false;
+    if (filterView === 'active' && !isAdmin) {
+      if (!isActiveForMe(r)) return false;
+    }
     const matchSearch  = r.title?.toLowerCase().includes(search.toLowerCase()) || String(r.id).includes(search);
     const matchStatus  = filterStatus === 'all' || r.status === filterStatus;
     return matchSearch && matchStatus;
@@ -3323,6 +3443,24 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                 />
               </div>
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 xl:pb-0 custom-scrollbar whitespace-nowrap">
+                {/* View toggle — Active (at-desk) vs All Records (history) */}
+                {!isAdmin && (
+                  <div className="flex items-center rounded-lg border border-border/50 overflow-hidden mr-1 shrink-0">
+                    {[
+                      { key: 'active', label: 'Active' },
+                      { key: 'all',    label: 'All Records' },
+                    ].map(({ key, label }) => (
+                      <button key={key} onClick={() => setFilterView(key)}
+                        className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                          filterView === key
+                            ? 'bg-primary text-white'
+                            : 'bg-white text-muted-foreground hover:bg-muted'
+                        }`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {['all', 'pending', 'approved', 'rejected', 'draft'].map(s => (
                   <button
                     key={s}
