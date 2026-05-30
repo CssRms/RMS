@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Building2, Briefcase, Search, ChevronDown, ChevronRight,
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
   CheckCircle2, RotateCcw, Info, User, Mail, Phone, MapPin, BadgeCheck, Download,
-  Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles, Upload, PenTool
+  Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles, Upload, PenTool, Award
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
 import { deptAPI, settingsAPI, adminAPI, reqAPI } from '../lib/api';
@@ -656,6 +656,11 @@ const DepartmentManager = ({ onViewChange }) => {
   const [aiToggle, setAiToggle] = useState(true);
   const [savingAI, setSavingAI] = useState(false);
 
+  // Print Settings
+  const [canPrintIds, setCanPrintIds] = useState(null); // null = not yet loaded
+  const [showStampOnPdf, setShowStampOnPdf] = useState(true);
+  const [savingPrint, setSavingPrint] = useState(false);
+
   // Deleted Records Bin (hidden from departments — super admin only)
   const [deletedRecords, setDeletedRecords] = useState([]);
   const [loadingBin, setLoadingBin] = useState(false);
@@ -750,13 +755,36 @@ const DepartmentManager = ({ onViewChange }) => {
     } finally { setSavingChairman(false); }
   };
 
+  const loadPrintSettings = async () => {
+    try {
+      const data = await adminAPI.getPrintSettings();
+      setCanPrintIds((data?.departments || []).filter(d => d.canPrint).map(d => d.id));
+      setShowStampOnPdf(data?.showStamp !== false);
+    } catch { setCanPrintIds([]); }
+  };
+
+  const savePrintSettings = async () => {
+    if (canPrintIds === null) return;
+    setSavingPrint(true);
+    try {
+      await adminAPI.savePrintSettings(canPrintIds, showStampOnPdf);
+      toast.success('Print settings saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save print settings.');
+    } finally { setSavingPrint(false); }
+  };
+
+  const toggleCanPrintDept = (deptId) => {
+    setCanPrintIds(prev => (prev || []).includes(deptId) ? prev.filter(id => id !== deptId) : [...(prev || []), deptId]);
+  };
+
   const toggleChairmanDept = (deptId) => {
     setChairmanAllowedIds(prev =>
       prev.includes(deptId) ? prev.filter(id => id !== deptId) : [...prev, deptId]
     );
   };
 
-  useEffect(() => { loadDepts(); loadChairmanSetting(); loadAISetting(); loadDeletedRecords(); }, []);
+  useEffect(() => { loadDepts(); loadChairmanSetting(); loadAISetting(); loadDeletedRecords(); loadPrintSettings(); }, []);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
@@ -1075,6 +1103,105 @@ const DepartmentManager = ({ onViewChange }) => {
               </div>
             </div>
           </div>
+
+          {/* ── Print Record Access ── */}
+          <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center shrink-0">
+                  <Printer size={18} className="text-sky-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Print Record Access</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Choose which departments can see the Print Record button.</p>
+                </div>
+              </div>
+              <button
+                onClick={savePrintSettings}
+                disabled={savingPrint || canPrintIds === null}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-sky-200 active:scale-[0.98]"
+              >
+                {savingPrint ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                Save
+              </button>
+            </div>
+            {canPrintIds === null ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 size={18} className="animate-spin text-muted-foreground/40" />
+              </div>
+            ) : (
+              <div className="flex-1 max-h-[300px] overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {departments.map(dept => {
+                  const allowed = canPrintIds.includes(dept.id);
+                  return (
+                    <button
+                      key={dept.id}
+                      onClick={() => toggleCanPrintDept(dept.id)}
+                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${allowed
+                        ? 'bg-sky-50 border-sky-300 text-sky-800'
+                        : 'bg-white border-border/40 text-muted-foreground hover:border-sky-200'
+                        }`}
+                    >
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${allowed ? 'bg-sky-500 border-sky-500' : 'border-border'}`}>
+                        {allowed && <CheckCircle2 size={10} className="text-white" />}
+                      </div>
+                      <span className="text-[11px] font-bold truncate">{dept.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Seal Stamp on PDF ── */}
+          <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center shrink-0">
+                  <Award size={18} className="text-teal-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Seal Stamp on PDF</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Show or hide the CSS Farms circular seal on all print records.</p>
+                </div>
+              </div>
+              <button
+                onClick={savePrintSettings}
+                disabled={savingPrint || canPrintIds === null}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-teal-200 active:scale-[0.98]"
+              >
+                {savingPrint ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                Save
+              </button>
+            </div>
+            <div className="flex-1 flex flex-col justify-center space-y-6">
+              <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
+                <div className="space-y-1">
+                  <p className="text-xs font-black text-foreground uppercase tracking-tight">
+                    {showStampOnPdf ? 'Seal Stamp Visible' : 'Seal Stamp Hidden'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    {showStampOnPdf
+                      ? 'The CSS Farms circular seal appears on all generated print record PDFs.'
+                      : 'The CSS Farms seal is hidden from all print record PDFs organisation-wide.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowStampOnPdf(v => !v)}
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${showStampOnPdf ? 'bg-teal-500' : 'bg-muted-foreground/30'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${showStampOnPdf ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div className="p-4 bg-muted/20 rounded-xl border border-border/10 flex items-start gap-3">
+                <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                <p className="text-[10px] text-muted-foreground/80 font-medium italic">
+                  This setting takes effect on all print records generated after saving. Existing saved PDFs are not affected.
+                </p>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 

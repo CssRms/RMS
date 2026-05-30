@@ -2646,6 +2646,64 @@ app.put('/api/system-settings/:key', authenticateToken, async (req, res) => {
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── Print Access Settings ─────────────────────────────────────────────────────
+// GET  /api/admin/print-settings  — returns all depts with canPrint + global showStamp
+app.get('/api/admin/print-settings', authenticateToken, async (req, res) => {
+  if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const [depts, stampRows] = await Promise.all([
+      prisma.department.findMany({
+        select: { id: true, name: true, canPrint: true },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`.catch(() => [])
+    ]);
+    const showStamp = (stampRows?.[0]?.value ?? 'true') !== 'false';
+    res.json({ departments: depts, showStamp });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// POST /api/admin/print-settings  — bulk-save canPrint list + showStamp flag
+app.post('/api/admin/print-settings', authenticateToken, async (req, res) => {
+  if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const { canPrintIds, showStamp } = req.body || {};
+    if (!Array.isArray(canPrintIds)) return res.status(400).json({ error: 'canPrintIds must be an array' });
+    // Update all departments: enable canPrint for those in the list, disable for the rest
+    const allDepts = await prisma.department.findMany({ select: { id: true } });
+    await prisma.$transaction(
+      allDepts.map(d => prisma.department.update({
+        where: { id: d.id },
+        data: { canPrint: canPrintIds.includes(d.id) }
+      }))
+    );
+    // Update global stamp flag
+    if (typeof showStamp === 'boolean') {
+      await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "SystemSetting" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL DEFAULT '')`;
+      await prisma.$executeRaw`
+        INSERT INTO "SystemSetting" ("key", "value") VALUES ('show_stamp_on_pdf', ${showStamp ? 'true' : 'false'})
+        ON CONFLICT ("key") DO UPDATE SET "value" = EXCLUDED."value"
+      `;
+    }
+    res.json({ ok: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// GET /api/settings/print-access  — returns current dept's canPrint + global showStamp (any dept user)
+app.get('/api/settings/print-access', authenticateToken, async (req, res) => {
+  try {
+    const deptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
+    let canPrint = true;
+    if (deptId) {
+      const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { canPrint: true } });
+      canPrint = dept?.canPrint ?? true;
+    }
+    const stampRows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`.catch(() => []);
+    const showStamp = (stampRows?.[0]?.value ?? 'true') !== 'false';
+    res.json({ canPrint, showStamp });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 app.get('/api/departments/:id/activation', authenticateToken, async (req, res) => {
   try {
     const dept = await prisma.department.findUnique({
@@ -3859,6 +3917,13 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     let sealBgImg = null;
     if (sealBgBytes) sealBgImg = await embedSafe(sealBgBytes);
 
+    // ── Global show-stamp setting ────────────────────────────
+    let showStampOnPdf = true;
+    try {
+      const stampRows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`;
+      showStampOnPdf = (stampRows?.[0]?.value ?? 'true') !== 'false';
+    } catch { /* default true */ }
+
     // ── Load dept head signatures for processing + vetting chains ───
     // Collect unique dept IDs from forward events AND vetting events
     const evtDeptIds = new Set([
@@ -4325,10 +4390,10 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
         // Auto-generated seal — centred at sealCX, 38pts below row top
         const sealCY = rowTopY - 38;
-        await drawSeal(page, sealCX, sealCY, evt.fromDepartment?.name || '', sealDate);
+        if (showStampOnPdf) await drawSeal(page, sealCX, sealCY, evt.fromDepartment?.name || '', sealDate);
 
         // Advance y past both columns + breathing room
-        y = Math.min(textY, sealCY - 38) - 12;
+        y = Math.min(textY, showStampOnPdf ? sealCY - 38 : textY - 8) - 12;
       }
     }
 
@@ -4430,9 +4495,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         }
 
         const vSealCY = rowTopY - 38;
-        await drawSeal(page, vSealCX, vSealCY, evt.deptName || '', sealDate);
+        if (showStampOnPdf) await drawSeal(page, vSealCX, vSealCY, evt.deptName || '', sealDate);
 
-        y = Math.min(textY, vSealCY - 38) - 12;
+        y = Math.min(textY, showStampOnPdf ? vSealCY - 38 : textY - 8) - 12;
       }
     }
 

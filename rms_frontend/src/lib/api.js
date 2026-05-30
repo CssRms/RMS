@@ -299,6 +299,12 @@ export const vettingAPI = {
 export const adminAPI = {
   getDeletedRecords: () => api.get('/admin/deleted-records'),
   purgeDeletedRecord: (id) => api.delete(`/admin/deleted-records/${id}`),
+  getPrintSettings: () => api.get('/admin/print-settings'),
+  savePrintSettings: (canPrintIds, showStamp) => api.post('/admin/print-settings', { canPrintIds, showStamp }),
+};
+
+export const printSettingsAPI = {
+  getAccess: () => api.get('/settings/print-access'),
 };
 
 export const memoAPI = {

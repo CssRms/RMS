@@ -6,7 +6,7 @@ import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
 import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord } from '../lib/store';
-import { aiAPI, settingsAPI } from '../lib/api';
+import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import {
@@ -2133,14 +2133,16 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
           </button>
         )}
 
-        <button
-          onClick={() => setPrintModal(true)}
-          title="Print Stage Report"
-          className="px-4 py-2 bg-primary text-white hover:bg-primary/90 rounded-xl transition-all shadow-md shadow-primary/20 flex items-center gap-2 font-bold text-xs uppercase tracking-wider"
-        >
-          <Printer size={16} />
-          Print Record
-        </button>
+        {canPrint && (
+          <button
+            onClick={() => setPrintModal(true)}
+            title="Print Stage Report"
+            className="px-4 py-2 bg-primary text-white hover:bg-primary/90 rounded-xl transition-all shadow-md shadow-primary/20 flex items-center gap-2 font-bold text-xs uppercase tracking-wider"
+          >
+            <Printer size={16} />
+            Print Record
+          </button>
+        )}
       </div>
 
       <div className="glass bg-white/95 w-full rounded-[2rem] border border-border/40 shadow-[0_4px_40px_rgba(0,0,0,0.03)] relative flex flex-col overflow-hidden min-h-[85vh]">
@@ -3080,6 +3082,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const [syncStale, setSyncStale]       = useState(false);
   const [flashedIds, setFlashedIds]     = useState(new Set());
   const [filterView, setFilterView]     = useState(user?.role === 'global_admin' ? 'all' : 'active');
+  const [canPrint, setCanPrint]         = useState(true);
   const selectedReqRef = React.useRef(null);
 
   // Normalize a requisition so department/creator are always strings, not nested objects.
@@ -3113,9 +3116,14 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [data, depts] = await Promise.all([getOperationalRequisitions(), getDepartments()]);
+      const [data, depts, printAccess] = await Promise.all([
+        getOperationalRequisitions(),
+        getDepartments(),
+        printSettingsAPI.getAccess().catch(() => ({ canPrint: true })),
+      ]);
       setRequisitions(data);
       setDepartments(depts);
+      setCanPrint(printAccess?.canPrint !== false);
       setLastSyncedAt(new Date());
       setSyncStale(false);
       if (!silent) setLoading(false);

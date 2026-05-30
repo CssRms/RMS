@@ -62,6 +62,7 @@ model Department {
   forwardEventsFrom    ForwardEvent[]   @relation("ForwardFrom")
   forwardEventsTo      ForwardEvent[]   @relation("ForwardTo")
   finalApprovedRequisitions Requisition[] @relation("FinalApprover")
+  canPrint             Boolean          @default(true)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 }
