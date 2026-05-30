@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord } from '../lib/store';
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition } from '../lib/store';
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -15,7 +15,7 @@ import {
   ArrowRightCircle, CornerDownLeft, Loader2, Send, Trash2, Printer,
   Building2, ArrowRight, ArrowLeft, History, Download, AlertTriangle,
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
-  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash
+  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
 
@@ -29,6 +29,7 @@ const statusColors = {
   treated:    'bg-indigo-50 border-indigo-200 text-indigo-700',
   partial:    'bg-orange-50 border-orange-200 text-orange-700',
   published:  'bg-emerald-50 border-emerald-200 text-emerald-700',
+  kiv:        'bg-violet-50 border-violet-200 text-violet-700',
 };
 
 const urgencyColors = {
@@ -834,6 +835,7 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
   const [note, setNote]         = useState('');
   const [acting, setActing]     = useState(false);
   const [refining, setRefining] = useState(false);
+  const [kivActing, setKivActing] = useState(false);
 
   const { user: currentUser } = useAuth();
   const { aiEnabled } = useAIFeatures();
@@ -905,6 +907,28 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
     } catch (err) {
       toast.error(err?.response?.data?.error || 'This action could not be completed. Please try again.');
     } finally { setActing(false); }
+  };
+
+  const handleKiv = async () => {
+    setKivActing(true);
+    try {
+      await kivRequisition(req.id, note || null);
+      toast.success('Request placed on hold (KIV).');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not place on hold.');
+    } finally { setKivActing(false); }
+  };
+
+  const handleUnKiv = async () => {
+    setKivActing(true);
+    try {
+      await unKivRequisition(req.id);
+      toast.success('Hold removed — request is active again.');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not remove hold.');
+    } finally { setKivActing(false); }
   };
 
   return (
@@ -1034,6 +1058,25 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
           )}
         </div>
       )}
+      {(detail?.isKIV ?? req.isKIV) ? (
+        <div className="flex items-center gap-2 mt-1 px-3 py-2 rounded-xl bg-violet-50 border border-violet-200">
+          <BookMarked size={13} className="text-violet-600 shrink-0" />
+          <span className="flex-1 text-[11px] font-bold text-violet-700">
+            On Hold (KIV){(detail?.kivNote || req.kivNote) ? ` — ${detail?.kivNote || req.kivNote}` : ''}
+          </span>
+          <button onClick={handleUnKiv} disabled={kivActing}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black transition-all disabled:opacity-50">
+            {kivActing ? <Loader2 size={10} className="animate-spin" /> : <BookMarked size={10} />}
+            Resume
+          </button>
+        </div>
+      ) : (
+        <button onClick={handleKiv} disabled={kivActing}
+          className="w-full flex items-center justify-center gap-1.5 mt-1 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-black transition-all disabled:opacity-50">
+          {kivActing ? <Loader2 size={12} className="animate-spin" /> : <BookMarked size={12} />}
+          Hold (KIV)
+        </button>
+      )}
     </div>
   );
 };
@@ -1050,6 +1093,7 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
   const [approveChecked, setApproveChecked] = useState(false);
   const [approveFile, setApproveFile] = useState(null);
   const [vetDeptId, setVetDeptId]     = useState('');
+  const [kivActing, setKivActing]     = useState(false);
   const fileRef = React.useRef(null);
 
   useEffect(() => {
@@ -1094,6 +1138,28 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
   if (!authorityLabel) return null;
 
   const finalStatus = detail?.finalApprovalStatus;
+
+  const handleKiv = async () => {
+    setKivActing(true);
+    try {
+      await kivRequisition(req.id, note || null);
+      toast.success('Request placed on hold (KIV).');
+      onApproved();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not place on hold.');
+    } finally { setKivActing(false); }
+  };
+
+  const handleUnKiv = async () => {
+    setKivActing(true);
+    try {
+      await unKivRequisition(req.id);
+      toast.success('Hold removed — request is active again.');
+      onApproved();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not remove hold.');
+    } finally { setKivActing(false); }
+  };
 
   const handleSelfTreat = async () => {
     setTreating(true);
@@ -1213,6 +1279,25 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
           <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
           <span>Approval is locked until Audit returns this document. You can still forward or return it using the routing panel.</span>
         </div>
+        {(detail?.isKIV ?? req.isKIV) ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-50 border border-violet-200">
+            <BookMarked size={13} className="text-violet-600 shrink-0" />
+            <span className="flex-1 text-[11px] font-bold text-violet-700">
+              On Hold (KIV){(detail?.kivNote || req.kivNote) ? ` — ${detail?.kivNote || req.kivNote}` : ''}
+            </span>
+            <button onClick={handleUnKiv} disabled={kivActing}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black transition-all disabled:opacity-50">
+              {kivActing ? <Loader2 size={10} className="animate-spin" /> : <BookMarked size={10} />}
+              Resume
+            </button>
+          </div>
+        ) : (
+          <button onClick={handleKiv} disabled={kivActing}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-black transition-all disabled:opacity-50">
+            {kivActing ? <Loader2 size={12} className="animate-spin" /> : <BookMarked size={12} />}
+            Hold (KIV)
+          </button>
+        )}
       </div>
     );
   }
@@ -1312,6 +1397,25 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
             {acting ? 'Processing…' : 'Final Approve & Send to Account'}
           </button>
         </div>
+      )}
+      {(detail?.isKIV ?? req.isKIV) ? (
+        <div className="flex items-center gap-2 mt-1 px-3 py-2 rounded-xl bg-violet-50 border border-violet-200">
+          <BookMarked size={13} className="text-violet-600 shrink-0" />
+          <span className="flex-1 text-[11px] font-bold text-violet-700">
+            On Hold (KIV){(detail?.kivNote || req.kivNote) ? ` — ${detail?.kivNote || req.kivNote}` : ''}
+          </span>
+          <button onClick={handleUnKiv} disabled={kivActing}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black transition-all disabled:opacity-50">
+            {kivActing ? <Loader2 size={10} className="animate-spin" /> : <BookMarked size={10} />}
+            Resume
+          </button>
+        </div>
+      ) : (
+        <button onClick={handleKiv} disabled={kivActing}
+          className="w-full flex items-center justify-center gap-1.5 mt-1 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-black transition-all disabled:opacity-50">
+          {kivActing ? <Loader2 size={12} className="animate-spin" /> : <BookMarked size={12} />}
+          Hold (KIV)
+        </button>
       )}
     </div>
   );
@@ -1423,6 +1527,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   // Account-specific treatment toggle
   const [treatInitiated, setTreatInitiated] = useState(false);
   const [paymentType, setPaymentType]       = useState(''); // 'full' | 'partial'
+  const [kivActing, setKivActing]           = useState(false);
 
   const deptName = user?.name || '';
   const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
@@ -1472,6 +1577,28 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   // Auto-resolve next/return dept from departments list (no dropdown needed)
   const auditDept   = departments.find(d => /\baudit\b/i.test(d.name));
   const accountDept = departments.find(d => /\baccount\b/i.test(d.name));
+
+  const handleKiv = async () => {
+    setKivActing(true);
+    try {
+      await kivRequisition(req.id, comment || null);
+      toast.success('Request placed on hold (KIV).');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not place on hold.');
+    } finally { setKivActing(false); }
+  };
+
+  const handleUnKiv = async () => {
+    setKivActing(true);
+    try {
+      await unKivRequisition(req.id);
+      toast.success('Hold removed — request is active again.');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not remove hold.');
+    } finally { setKivActing(false); }
+  };
 
   // Account is the only post-approval vetter
   const roleLabel      = isAccount ? 'Account Treatment' : isChairman ? 'Chairman / CEO Treatment' : 'Payment Treatment';
@@ -1695,6 +1822,25 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
                 </button>
               </div>
             </div>
+            {(detail?.isKIV ?? req.isKIV) ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-50 border border-violet-200">
+                <BookMarked size={13} className="text-violet-600 shrink-0" />
+                <span className="flex-1 text-[11px] font-bold text-violet-700">
+                  On Hold (KIV){(detail?.kivNote || req.kivNote) ? ` — ${detail?.kivNote || req.kivNote}` : ''}
+                </span>
+                <button onClick={handleUnKiv} disabled={kivActing}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black transition-all disabled:opacity-50">
+                  {kivActing ? <Loader2 size={10} className="animate-spin" /> : <BookMarked size={10} />}
+                  Resume
+                </button>
+              </div>
+            ) : (
+              <button onClick={handleKiv} disabled={kivActing}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-black transition-all disabled:opacity-50">
+                {kivActing ? <Loader2 size={12} className="animate-spin" /> : <BookMarked size={12} />}
+                Hold (KIV)
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -2174,6 +2320,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               {isIncoming && (
                 <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase bg-blue-500 border border-blue-600 text-white shadow-lg shadow-blue-500/20">
                   Incoming Action
+                </span>
+              )}
+              {(detail?.isKIV ?? req.isKIV) && (
+                <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border shadow-sm bg-violet-50 border-violet-200 text-violet-700 flex items-center gap-1">
+                  <BookMarked size={9} /> On Hold (KIV)
                 </span>
               )}
               {isTaggedObserver && (
@@ -3631,6 +3782,11 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                                   {details.sub && (
                                     <span className="text-[8px] font-bold text-muted-foreground/60 uppercase tracking-tighter truncate max-w-[100px]">
                                       {details.sub}
+                                    </span>
+                                  )}
+                                  {r.isKIV && (
+                                    <span className="w-fit flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-black uppercase border tracking-widest bg-violet-50 border-violet-200 text-violet-700">
+                                      <BookMarked size={7} /> KIV
                                     </span>
                                   )}
                                 </>

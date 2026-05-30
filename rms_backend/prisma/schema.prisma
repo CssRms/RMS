@@ -115,6 +115,12 @@ model Requisition {
   publishStartAt     DateTime?
   publishEndAt       DateTime?
 
+  // KIV (Keep In View) — holder puts request on hold without forwarding or rejecting
+  isKIV      Boolean   @default(false)
+  kivNote    String?   @db.Text
+  kivAt      DateTime?
+  kivByName  String?
+
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 }

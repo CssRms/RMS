@@ -1,7 +1,7 @@
 import localforage from 'localforage';
 import { toast } from 'react-hot-toast';
 import React from 'react';
-import api, { deptAPI, reqAPI, auditAPI, userAPI, forwardAPI, vettingAPI, hrAPI } from './api';
+import api, { deptAPI, reqAPI, auditAPI, userAPI, forwardAPI, vettingAPI, hrAPI, kivAPI } from './api';
 
 // ── Configure storage namespaces ──
 const requisitionStore = localforage.createInstance({ name: 'CSS_RMS', storeName: 'requisitions' });
@@ -751,6 +751,9 @@ export async function vettingActionRequisition(reqId, { action, comment, nextDep
     return null;
   }
 }
+
+export const kivRequisition = (id, note) => kivAPI.kiv(id, note);
+export const unKivRequisition = (id) => kivAPI.unKiv(id);
 
 // ── HR offline-safe read functions ────────────────────────────────────────────
 // Each follows NetworkFirst: try the server, fall back to the local cache.

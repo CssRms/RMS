@@ -2759,6 +2759,52 @@ app.post('/api/requisitions/:id/creator-comment', authenticateToken, async (req,
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── KIV (Keep In View) — holder puts request on hold ──────────────────────────
+app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const { note } = req.body || {};
+    const userDeptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
+    const isHolder = userDeptId && (
+      requisition.targetDepartmentId === userDeptId ||
+      requisition.currentVettingDeptId === userDeptId ||
+      requisition.finalApprovedByDeptId === userDeptId
+    );
+    if (!isAdmin && !isHolder) return res.status(403).json({ error: 'Only the current holder may KIV this request.' });
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: { isKIV: true, kivNote: note || null, kivAt: new Date(), kivByName: req.user?.name || null }
+    });
+    broadcastUpdate(reqId, { action: 'kiv', fromDept: req.user?.name || '' });
+    res.json({ ok: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+app.post('/api/requisitions/:id/un-kiv', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
+    const isHolder = userDeptId && (
+      requisition.targetDepartmentId === userDeptId ||
+      requisition.currentVettingDeptId === userDeptId ||
+      requisition.finalApprovedByDeptId === userDeptId
+    );
+    if (!isAdmin && !isHolder) return res.status(403).json({ error: 'Not authorized.' });
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: { isKIV: false, kivNote: null, kivAt: null, kivByName: null }
+    });
+    broadcastUpdate(reqId, { action: 'un-kiv', fromDept: req.user?.name || '' });
+    res.json({ ok: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 // Forward / Return-to-Sender a requisition (target department response)
 app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) => {
   try {

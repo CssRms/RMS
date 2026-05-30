@@ -303,6 +303,11 @@ export const adminAPI = {
   savePrintSettings: (canPrintIds, showStamp) => api.post('/admin/print-settings', { canPrintIds, showStamp }),
 };
 
+export const kivAPI = {
+  kiv: (id, note) => api.post(`/requisitions/${id}/kiv`, { note }),
+  unKiv: (id) => api.post(`/requisitions/${id}/un-kiv`),
+};
+
 export const printSettingsAPI = {
   getAccess: () => api.get('/settings/print-access'),
 };
