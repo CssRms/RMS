@@ -1153,17 +1153,16 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
     );
   }
 
-  // ── Vetting department options (same filter as VettingSelectionModal) ──────────
-  const vettingDepts = departments.filter(d =>
-    /\bicc\b|integrity|compliance|audit|\baccount\b/i.test(d.name || '')
+  // ── Post-approval destination: Account only (ICC removed, Audit is pre-approval reviewer) ──
+  const vettingDepts = departments.filter(d => /\baccount\b/i.test(d.name || ''));
+
+  // ── For Cash requests: Audit must review and return before approval is unlocked ──
+  const isCashRequest = /^cash/i.test(req.type || '');
+  const auditDeptForGate = departments.find(d => /\baudit\b/i.test(d.name));
+  const auditHasReturned = !!auditDeptForGate && (detail?.forwardEvents || []).some(
+    e => e.action === 'returned' && e.fromDeptId === auditDeptForGate.id
   );
-  const selectedVetDept    = vettingDepts.find(d => String(d.id) === String(vetDeptId));
-  const isVetAccountDirect = selectedVetDept && /\baccount\b/i.test(selectedVetDept.name);
-  const isVetAuditDirect   = selectedVetDept && /audit/i.test(selectedVetDept.name);
-  const vetPathHint = !vetDeptId ? null
-    : isVetAccountDirect ? 'Direct to Account — no further forwarding needed'
-    : isVetAuditDirect   ? 'ICC skipped — flow: Audit → Account'
-    : 'Full chain — flow: ICC → Audit → Account';
+  const needsAuditPreReview = isCashRequest && !auditHasReturned;
 
   // ── Not yet approved: checkbox-driven sign + vetting in one action ───────────
   const handleApprove = async () => {
@@ -1197,6 +1196,28 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
     } finally { setActing(false); }
   };
 
+  // ── Audit pre-review gate (Cash requests only) ──────────────────────────────
+  if (needsAuditPreReview) {
+    return (
+      <div className="space-y-3 border border-amber-200 rounded-2xl p-4 bg-amber-50/60 shadow-sm relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
+        <div className="flex items-center gap-2 pl-1">
+          <ShieldCheck size={14} className="text-amber-700" />
+          <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Audit Pre-Review Required</p>
+          <span className="ml-auto px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-black text-amber-700 uppercase">{authorityLabel}</span>
+        </div>
+        <p className="text-[12px] text-amber-800 leading-relaxed">
+          This fund request must be reviewed by <strong>Audit</strong> before you can approve it.
+          Use the Forward option below to send it to the Audit department. Once Audit reviews and returns it to you, the approval form will unlock.
+        </p>
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-white border border-amber-200 text-[11px] text-amber-700 font-medium">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
+          <span>Approval is locked until Audit returns this document. You can still forward or return it using the routing panel.</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3 border border-emerald-200 rounded-2xl p-4 bg-emerald-50/60 shadow-sm relative overflow-hidden">
       <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
@@ -1205,6 +1226,13 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
         <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Final Approval</p>
         <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
       </div>
+
+      {isCashRequest && auditHasReturned && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50 border border-teal-200 text-[11px] text-teal-700 font-semibold">
+          <CheckCircle2 size={12} className="text-teal-600 shrink-0" />
+          Audit review complete — you may now approve this fund request.
+        </div>
+      )}
 
       {/* Approve & Sign checkbox */}
       <label className="flex items-center gap-3 p-3 rounded-xl border-2 border-emerald-300 bg-white cursor-pointer hover:bg-emerald-50 transition-colors select-none">
@@ -1230,29 +1258,23 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
             className="w-full bg-white border border-emerald-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 min-h-[60px] resize-none shadow-inner"
           />
 
-          {/* Required: select vetting department before approving */}
+          {/* Required: select Account department for treatment */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest pl-1">
-              Send to Vetting — Required *
+              Send to Account for Treatment — Required *
             </label>
             <select
               value={vetDeptId}
               onChange={e => setVetDeptId(e.target.value)}
               className="w-full bg-white border border-emerald-300 rounded-xl p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300 appearance-none shadow-sm"
             >
-              <option value="">— Select first vetting department —</option>
+              <option value="">— Select Account department —</option>
               {vettingDepts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              {vettingDepts.length === 0 && <option disabled>No vetting departments found</option>}
+              {vettingDepts.length === 0 && <option disabled>No Account department found</option>}
             </select>
-            {vetPathHint && (
-              <p className={`text-[11px] font-semibold px-3 py-2 rounded-lg ${
-                isVetAccountDirect ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                : isVetAuditDirect  ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              }`}>
-                {vetPathHint}
-              </p>
-            )}
+            <p className="text-[11px] font-semibold px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+              After approval, the request goes directly to Account for payment treatment.
+            </p>
           </div>
 
           {/* Optional file attachment */}
@@ -1288,7 +1310,7 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
             className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-sm shadow-md shadow-emerald-500/20"
           >
             {acting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {acting ? 'Processing…' : 'Final Approve & Send to Vetting'}
+            {acting ? 'Processing…' : 'Final Approve & Send to Account'}
           </button>
         </div>
       )}
@@ -1303,15 +1325,11 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
 
   const isGMOrAbove = /general\s*manager|\bgm\b|ceo|chairman/i.test(user?.department || '');
 
-  const vettingDepts = departments.filter(d => {
-    const n = d.name || '';
-    if (/\bicc\b|integrity|compliance|audit|\baccount\b/i.test(n)) return true;
-    return false;
-  });
+  const vettingDepts = departments.filter(d => /\baccount\b/i.test(d.name || ''));
 
   const selectedDept    = vettingDepts.find(d => String(d.id) === String(selectedId));
   const isAccountDirect = selectedDept && /\baccount\b/i.test(selectedDept.name);
-  const isAuditDirect   = selectedDept && /audit/i.test(selectedDept.name);
+  const isAuditDirect   = false; // Audit no longer in post-approval vetting
   const pathHint = !selectedId ? null
     : isAccountDirect
       ? 'Direct to Account — no further forwarding needed'
@@ -1456,25 +1474,16 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const auditDept   = departments.find(d => /\baudit\b/i.test(d.name));
   const accountDept = departments.find(d => /\baccount\b/i.test(d.name));
 
-  // Role-specific labels
-  const roleLabel      = isICC ? 'ICC Vetting' : isAudit ? 'Audit Vetting' : isAccount ? 'Account Vetting' : isChairman ? 'Chairman / CEO Vetting' : 'Vetting Review';
-  const primaryLabel    = isICC ? 'Submit to Audit' : 'Mark Treated';
-  // ICC needs Audit dept to exist; Audit needs a dept selected in the free-choice dropdown
-  const primaryDisabled = (isICC && !auditDept) || (isAudit && !forwardDeptId);
+  // Account is the only post-approval vetter
+  const roleLabel      = isAccount ? 'Account Treatment' : isChairman ? 'Chairman / CEO Treatment' : 'Payment Treatment';
+  const primaryLabel   = 'Mark Treated';
+  const primaryDisabled = false;
 
-  // Compute where Return sends the request (mirrors backend logic) for UI hint
-  const iccDeptInList = departments.find(d => /\bicc\b|integrity|compliance/i.test(d.name));
-  const auditDeptInList = departments.find(d => /\baudit\b/i.test(d.name));
-  const vettingEvts = detail?.vettingEvents || [];
-  const iccWasPresent = iccDeptInList && vettingEvts.some(e => e.deptId === iccDeptInList.id);
-  const auditWasPresent = auditDeptInList && vettingEvts.some(e => e.deptId === auditDeptInList.id);
+  // Account always returns to the approving authority (ICC/Audit no longer in post-approval chain)
   const finalApproverDeptName = detail?.finalApprovedByDeptId
     ? (departments.find(d => d.id === parseInt(detail.finalApprovedByDeptId))?.name || 'Approving Authority')
     : 'Approving Authority';
-  const returnDestLabel = isICC ? finalApproverDeptName
-    : isAudit ? (iccWasPresent ? (iccDeptInList?.name || 'ICC') : finalApproverDeptName)
-    : isAccount ? (auditWasPresent ? (auditDeptInList?.name || 'Audit') : finalApproverDeptName)
-    : finalApproverDeptName;
+  const returnDestLabel = finalApproverDeptName;
 
   // For Account: treatment gated by treatInitiated + paymentType; comment not required
   const accountTreatCanAct = isAccount && treatInitiated && !!paymentType && (!hasAmount || inputIsValid);
@@ -1490,12 +1499,10 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     try {
       let result = null;
       if (action === 'forward') {
-        let nextDeptId;
-        if (isICC)   nextDeptId = auditDept?.id;
-        else         nextDeptId = forwardDeptId ? parseInt(forwardDeptId) : null;
+        const nextDeptId = forwardDeptId ? parseInt(forwardDeptId) : null;
         if (!nextDeptId) { toast.error('Please select a department to forward to.'); setActing(false); return; }
         result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined, vetted: vetChecked });
-        if (result !== null) toast.success(vetChecked ? (isICC ? 'Vetted & submitted to Audit.' : isAudit ? 'Vetted & forwarded to Account.' : 'Vetted & forwarded.') : (isICC ? 'Submitted to Audit.' : isAudit ? 'Forwarded to Account.' : 'Forwarded.'));
+        if (result !== null) toast.success(vetChecked ? 'Vetted & forwarded.' : 'Forwarded.');
       } else if (action === 'treated') {
         const disbursed = hasAmount && !isNaN(parsedInput) ? parsedInput : undefined;
         // Account uses simple full/partial; others use existing treatChoice logic
@@ -2357,12 +2364,12 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Vetting Panel — for ICC, Audit, Account and Chairman.
-                  Also shown when Account holds a Material request regardless of finalApprovalStatus
-                  (Material requests can arrive via direct forward without going through vetting chain) */}
+              {/* Vetting Panel — Account only for post-approval treatment.
+                  Also shown when Account holds a Material request regardless of finalApprovalStatus. */}
               {!isTaggedObserver && user?.role === 'department' && detail && !loading &&
-               ((detail.finalApprovalStatus && detail.finalApprovalStatus !== 'none' && detail.finalApprovalStatus !== 'treated')
-                || (/\baccount\b/i.test(user?.name || '') && /^material/i.test(req?.type || '') && detail.targetDepartmentId === user?.deptId)) && (
+               /\baccount\b/i.test(user?.name || '') &&
+               ((detail.finalApprovalStatus && !['none', 'treated'].includes(detail.finalApprovalStatus))
+                || (/^material/i.test(req?.type || '') && detail.targetDepartmentId === user?.deptId)) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <VettingPanel
                     req={req}

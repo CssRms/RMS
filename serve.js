@@ -163,13 +163,11 @@ const checkFinalApproveAuthority = (deptName, amount, isMaterial = false) => {
   return null; // Amount outside this department's authorised band
 };
 
-// Vetting chain order: ICC → Audit → Account
-const VETTING_CHAIN = ['icc', 'audit', 'account'];
+// Post-approval vetting chain: Account only (Audit is now pre-approval reviewer, ICC removed)
+const VETTING_CHAIN = ['account'];
 const getVettingChainIndex = (deptName) => {
   const n = (deptName || '').toLowerCase();
-  if (/\bicc\b|integrity|compliance/i.test(n)) return 0;
-  if (/audit/i.test(n)) return 1;
-  if (/account/i.test(n)) return 2;
+  if (/account/i.test(n)) return 0;
   return -1;
 };
 
@@ -3153,47 +3151,24 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
     });
 
     if (action === 'return') {
-      // Auto-determine return destination based on chain position
+      // Account is the only post-approval vetter; always return to the approving authority
       const myChainIdx = getVettingChainIndex(actingDeptName);
-      const allDepts = await prisma.department.findMany({ select: { id: true, name: true } });
-      const iccDept   = allDepts.find(d => /\bicc\b|integrity|compliance/i.test(d.name));
-      const auditDept = allDepts.find(d => /\baudit\b/i.test(d.name));
 
       let returnToDeptId = null;
       let resetVetting = false;
 
-      if (myChainIdx === 0 || myChainIdx === -1) {
-        // ICC or Chairman/unrecognised → reset vetting entirely
-        // If the returning dept IS the final approver (Chairman returning their own decision),
-        // send back to the original creator's department instead
+      if (myChainIdx === 0) {
+        // Account → return to approving authority (HR/GM/CEO who approved)
+        returnToDeptId = requisition.finalApprovedByDeptId;
+        resetVetting = true;
+      } else {
+        // Chairman or unrecognised dept returning — return to approving authority or creator
         if (requisition.finalApprovedByDeptId && requisition.finalApprovedByDeptId !== userDeptId) {
           returnToDeptId = requisition.finalApprovedByDeptId;
         } else {
           returnToDeptId = requisition.departmentId;
         }
         resetVetting = true;
-      } else if (myChainIdx === 1) {
-        // Audit → return to ICC if ICC was in the chain, else to approving authority
-        const iccWasPresent = iccDept && await prisma.vettingEvent.findFirst({
-          where: { requisitionId: reqId, deptId: iccDept.id }
-        });
-        if (iccWasPresent) {
-          returnToDeptId = iccDept.id; // intra-vetting return to ICC
-        } else {
-          returnToDeptId = requisition.finalApprovedByDeptId; // ICC was skipped; reset
-          resetVetting = true;
-        }
-      } else if (myChainIdx === 2) {
-        // Account → return to Audit if Audit was in chain, else reset to approving authority
-        const auditWasPresent = auditDept && await prisma.vettingEvent.findFirst({
-          where: { requisitionId: reqId, deptId: auditDept.id }
-        });
-        if (auditWasPresent) {
-          returnToDeptId = auditDept.id;
-        } else {
-          returnToDeptId = requisition.finalApprovedByDeptId;
-          resetVetting = true;
-        }
       }
 
       if (!returnToDeptId) return res.status(400).json({ error: 'Could not determine return destination.' });
