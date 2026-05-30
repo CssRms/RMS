@@ -1156,13 +1156,12 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
   // ── Post-approval destination: Account only (ICC removed, Audit is pre-approval reviewer) ──
   const vettingDepts = departments.filter(d => /\baccount\b/i.test(d.name || ''));
 
-  // ── For Cash requests: Audit must review and return before approval is unlocked ──
-  const isCashRequest = /^cash/i.test(req.type || '');
+  // ── Audit must review and return before approval is unlocked (all request types) ──
   const auditDeptForGate = departments.find(d => /\baudit\b/i.test(d.name));
   const auditHasReturned = !!auditDeptForGate && (detail?.forwardEvents || []).some(
     e => e.action === 'returned' && e.fromDeptId === auditDeptForGate.id
   );
-  const needsAuditPreReview = isCashRequest && !auditHasReturned;
+  const needsAuditPreReview = !auditHasReturned;
 
   // ── Not yet approved: checkbox-driven sign + vetting in one action ───────────
   const handleApprove = async () => {
@@ -1207,7 +1206,7 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
           <span className="ml-auto px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-black text-amber-700 uppercase">{authorityLabel}</span>
         </div>
         <p className="text-[12px] text-amber-800 leading-relaxed">
-          This fund request must be reviewed by <strong>Audit</strong> before you can approve it.
+          This request must be reviewed by <strong>Audit</strong> before you can approve it.
           Use the Forward option below to send it to the Audit department. Once Audit reviews and returns it to you, the approval form will unlock.
         </p>
         <div className="flex items-start gap-2 p-3 rounded-xl bg-white border border-amber-200 text-[11px] text-amber-700 font-medium">
@@ -1227,10 +1226,10 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
         <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-[9px] font-black text-emerald-700 uppercase">{authorityLabel}</span>
       </div>
 
-      {isCashRequest && auditHasReturned && (
+      {auditHasReturned && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50 border border-teal-200 text-[11px] text-teal-700 font-semibold">
           <CheckCircle2 size={12} className="text-teal-600 shrink-0" />
-          Audit review complete — you may now approve this fund request.
+          Audit review complete — you may now approve this request.
         </div>
       )}
 
