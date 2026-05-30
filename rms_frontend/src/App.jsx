@@ -201,7 +201,7 @@ const getViewFromHash = () => {
 };
 
 const AppContent = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [currentView, setCurrentView] = useState(getViewFromHash);
   const [deptProfile, setDeptProfile] = useState(null);
   const [showDeptModal, setShowDeptModal] = useState(false);
@@ -348,6 +348,7 @@ const AppContent = () => {
           setDeptProfile(updated);
           setShowDeptModal(false);
         }}
+        onClose={logout}
       />
     </>
   );

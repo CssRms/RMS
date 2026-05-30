@@ -2045,7 +2045,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
 };
 
 // ── Detail Modal ─────────────────────────────────────────────────────────────
-const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onEditDraft }) => {
+const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onEditDraft, canPrint }) => {
   const [detail, setDetail]         = useState(null);
   const [loading, setLoading]       = useState(true);
   const [acting, setActing]         = useState(false);
@@ -3532,6 +3532,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
           req={selectedReq}
           user={user}
           departments={departments}
+          canPrint={canPrint}
           onClose={() => setSelectedReq(null)}
           onAction={() => { setSelectedReq(null); loadData(); }}
           onEditDraft={(req) => {

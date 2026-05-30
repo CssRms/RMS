@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 
-const DepartmentHeadModal = ({ isOpen, department, onSave }) => {
+const DepartmentHeadModal = ({ isOpen, department, onSave, onClose }) => {
   const [headName, setHeadName] = useState('');
   const [headTitle, setHeadTitle] = useState('');
   const [headEmail, setHeadEmail] = useState('');
@@ -21,11 +21,22 @@ const DepartmentHeadModal = ({ isOpen, department, onSave }) => {
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/90 backdrop-blur-md" />
       <div className="glass bg-white/95 w-full max-w-lg rounded-3xl border border-border/50 shadow-2xl relative overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-border/50">
-          <h2 className="text-xl font-bold text-foreground">Set Department Details</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            Department head details are required for notifications and official memo headers.
-          </p>
+        <div className="p-6 border-b border-border/50 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-foreground">Set Department Details</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Department head details are required for notifications and official memo headers.
+            </p>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Cancel and log out"
+              className="shrink-0 p-2 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
         <div className="p-6 space-y-4">
           <div className="space-y-2">
@@ -57,7 +68,12 @@ const DepartmentHeadModal = ({ isOpen, department, onSave }) => {
             />
           </div>
         </div>
-        <div className="p-6 border-t border-border/50 bg-muted/20">
+        <div className="p-6 border-t border-border/50 bg-muted/20 space-y-3">
+          {onClose && (
+            <p className="text-[10px] text-muted-foreground/60 text-center italic">
+              Closing this window will log you out. Complete setup to access the dashboard.
+            </p>
+          )}
           <button
             onClick={async () => {
               if (!headName.trim() || !headTitle.trim() || !headEmail.trim()) return;

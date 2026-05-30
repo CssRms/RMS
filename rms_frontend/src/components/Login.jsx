@@ -17,6 +17,7 @@ const Login = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showForgotCode, setShowForgotCode] = useState(false);
+  const [ictPhone, setIctPhone] = useState('');
   const { deptLogin } = useAuth();
 
   useEffect(() => {
@@ -25,6 +26,11 @@ const Login = () => {
       setDepartments(depts);
     };
     fetchDepts();
+
+    fetch('/api/public/support-phone')
+      .then(r => r.json())
+      .then(d => { if (d?.value) setIctPhone(d.value); })
+      .catch(() => {});
 
     // PWA Install Logic
     const handleBeforeInstallPrompt = (e) => {
@@ -274,41 +280,44 @@ const Login = () => {
               <div className="space-y-1.5">
                 <h3 className="text-lg font-bold text-foreground tracking-tight">Need Help With Your Code?</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  No worries — it happens to the best of us.
+                  Contact the ICT Department to reset your access code.
                 </p>
               </div>
 
-              <div className="w-full bg-primary/5 border border-primary/15 rounded-2xl p-5 space-y-3 text-left">
-                <p className="text-sm text-foreground font-semibold">Please reach out to 080********:</p>
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[9px] font-black text-primary">1</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Your <span className="font-semibold text-foreground">System Administrator</span> — they can reset your access code immediately from the Department Manager.
-                    </p>
+              <div className="w-full bg-primary/5 border border-primary/15 rounded-2xl p-5 text-left">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                    <PhoneCall size={16} className="text-primary" />
                   </div>
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[9px] font-black text-primary">2</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      The <span className="font-semibold text-foreground">ICT Department</span> — they will verify your identity and issue a new code promptly.
-                    </p>
+                  <div>
+                    <p className="text-xs font-black text-foreground uppercase tracking-tight">ICT Department</p>
+                    <p className="text-[10px] text-muted-foreground">Technical Support</p>
                   </div>
                 </div>
+                {ictPhone ? (
+                  <a
+                    href={`tel:${ictPhone}`}
+                    className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 transition-all active:scale-[0.98]"
+                  >
+                    <PhoneCall size={15} />
+                    Call {ictPhone}
+                  </a>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic text-center">
+                    Please contact the ICT Department directly.
+                  </p>
+                )}
               </div>
 
               <p className="text-[10px] text-muted-foreground/70 leading-relaxed italic">
-                For security reasons, access codes cannot be self-recovered. Our team is happy to assist you.
+                They will verify your identity and issue a new code promptly.
               </p>
 
               <button
                 onClick={() => setShowForgotCode(false)}
-                className="w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all active:scale-[0.98]"
+                className="w-full py-3 rounded-xl border border-border/50 text-muted-foreground text-sm font-semibold hover:bg-muted/40 transition-all active:scale-[0.98]"
               >
-                Got it, thank you
+                Close
               </button>
             </div>
           </div>

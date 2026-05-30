@@ -2615,6 +2615,14 @@ app.get('/api/public/login-style', async (req, res) => {
   } catch { res.json({ value: 'standard' }); }
 });
 
+// ── Public ICT support phone (no auth — shown on login forgot-code modal) ─────
+app.get('/api/public/support-phone', async (req, res) => {
+  try {
+    const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'ict_support_phone' LIMIT 1`;
+    res.json({ value: rows?.[0]?.value || '' });
+  } catch { res.json({ value: '' }); }
+});
+
 // ── System Settings ───────────────────────────────────────────────────────────
 // GET /api/system-settings/:key  — read one setting (public for dept-level reads like chairman access)
 app.get('/api/system-settings/:key', authenticateToken, async (req, res) => {

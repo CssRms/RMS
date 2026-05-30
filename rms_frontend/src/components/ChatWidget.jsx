@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import {
@@ -123,6 +124,10 @@ const MediaPreviewModal = ({ msg, onClose, onForward }) => {
               className="flex items-center gap-2 bg-white text-black font-bold px-7 py-3 rounded-full hover:bg-white/90 transition-colors text-sm">
               <Download size={16} /> Download to device
             </a>
+            <button onClick={onClose}
+              className="flex items-center gap-2 px-5 py-2 rounded-full border border-white/20 text-white/70 hover:text-white hover:border-white/40 transition-colors text-sm">
+              <X size={14} /> Close
+            </button>
           </div>
         </div>
       )}
@@ -841,23 +846,25 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
         </div>
       </div>
 
-      {/* Modals rendered with fixed position — escape overflow:hidden */}
-      {previewMsg && (
+      {/* Modals — rendered via portal to document.body so they escape the panel's stacking context */}
+      {previewMsg && createPortal(
         <MediaPreviewModal
           msg={previewMsg}
           onClose={() => setPreviewMsg(null)}
           onForward={(m) => { setPreviewMsg(null); setForwardMsg(m); }}
-        />
+        />,
+        document.body
       )}
-      {forwardMsg && (
+      {forwardMsg && createPortal(
         <ForwardModal
           msg={forwardMsg}
           myDeptId={myDeptId}
           onClose={() => setForwardMsg(null)}
           onDone={onNewMessage}
-        />
+        />,
+        document.body
       )}
-      {showReqPicker && (
+      {showReqPicker && createPortal(
         <ReqRefPicker
           onSelect={(r) => {
             setPendingReqRef({
@@ -871,7 +878,8 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
             setShowReqPicker(false);
           }}
           onClose={() => setShowReqPicker(false)}
-        />
+        />,
+        document.body
       )}
     </>
   );

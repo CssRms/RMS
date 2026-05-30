@@ -661,6 +661,10 @@ const DepartmentManager = ({ onViewChange }) => {
   const [showStampOnPdf, setShowStampOnPdf] = useState(true);
   const [savingPrint, setSavingPrint] = useState(false);
 
+  // ICT Support Phone
+  const [ictPhone, setIctPhone] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+
   // Deleted Records Bin (hidden from departments — super admin only)
   const [deletedRecords, setDeletedRecords] = useState([]);
   const [loadingBin, setLoadingBin] = useState(false);
@@ -763,6 +767,23 @@ const DepartmentManager = ({ onViewChange }) => {
     } catch { setCanPrintIds([]); }
   };
 
+  const loadIctPhone = async () => {
+    try {
+      const res = await settingsAPI.get('ict_support_phone');
+      if (res?.value) setIctPhone(res.value);
+    } catch { /* no value yet */ }
+  };
+
+  const saveIctPhone = async () => {
+    setSavingPhone(true);
+    try {
+      await settingsAPI.set('ict_support_phone', ictPhone.trim());
+      toast.success('Support phone number saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save phone number.');
+    } finally { setSavingPhone(false); }
+  };
+
   const savePrintSettings = async () => {
     if (canPrintIds === null) return;
     setSavingPrint(true);
@@ -784,7 +805,7 @@ const DepartmentManager = ({ onViewChange }) => {
     );
   };
 
-  useEffect(() => { loadDepts(); loadChairmanSetting(); loadAISetting(); loadDeletedRecords(); loadPrintSettings(); }, []);
+  useEffect(() => { loadDepts(); loadChairmanSetting(); loadAISetting(); loadDeletedRecords(); loadPrintSettings(); loadIctPhone(); }, []);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
@@ -1199,6 +1220,41 @@ const DepartmentManager = ({ onViewChange }) => {
                   This setting takes effect on all print records generated after saving. Existing saved PDFs are not affected.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* ── ICT Support Phone ── */}
+          <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+                  <Phone size={18} className="text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Support Contact Phone</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Shown on the login forgot-code screen. Users tap to call ICT directly.</p>
+                </div>
+              </div>
+              <button
+                onClick={saveIctPhone}
+                disabled={savingPhone || !ictPhone.trim()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50 shrink-0"
+              >
+                {savingPhone ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                Save
+              </button>
+            </div>
+            <div className="flex-1 flex flex-col justify-center">
+              <input
+                type="tel"
+                value={ictPhone}
+                onChange={(e) => setIctPhone(e.target.value)}
+                placeholder="e.g. +2348061629865"
+                className="w-full bg-muted/20 border border-border/50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-200 outline-none"
+              />
+              <p className="text-[10px] text-muted-foreground/70 mt-2 italic">
+                Include country code for tap-to-call to work on mobile devices.
+              </p>
             </div>
           </div>
 
