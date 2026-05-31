@@ -6,7 +6,7 @@ import {
   MessageCircle, X, ArrowLeft, Send, Users, MessageSquare,
   ChevronRight, Plus, Loader2, Mic, StopCircle, Paperclip,
   FileText, Download, ChevronDown, Reply, Forward, Copy, PenLine,
-  Check, Link2, ExternalLink, Search
+  Check, Link2, ExternalLink, Search, Share2
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -84,7 +84,7 @@ const MediaPreviewModal = ({ msg, onClose, onForward }) => {
   const dlUrl = chatAPI.mediaUrl(msg.mediaKey, true);
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col" onClick={onClose}>
+    <div className="absolute inset-0 z-50 bg-black/95 flex flex-col rounded-3xl overflow-hidden" onClick={onClose}>
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 shrink-0 bg-black/40"
@@ -161,8 +161,8 @@ const ForwardModal = ({ msg, myDeptId, onClose, onDone }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end" onClick={onClose}>
-      <div className="w-full bg-card rounded-t-3xl max-h-[70vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="absolute inset-0 z-50 bg-black/50 flex items-end rounded-3xl overflow-hidden" onClick={onClose}>
+      <div className="w-full bg-card rounded-t-3xl max-h-[70%] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border/40 shrink-0">
           <p className="font-black text-sm uppercase tracking-wide">Forward to…</p>
           <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
@@ -280,8 +280,8 @@ const ReqRefPicker = ({ onSelect, onClose }) => {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    api.get('/requisitions')
-      .then(data => setReqs(Array.isArray(data) ? data : []))
+    api.get('/requisitions', { params: { scope: 'requisitions' } })
+      .then(data => setReqs(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : [])))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -299,8 +299,8 @@ const ReqRefPicker = ({ onSelect, onClose }) => {
   }[s] || 'bg-gray-100 text-gray-600');
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end" onClick={onClose}>
-      <div className="w-full bg-card rounded-t-3xl max-h-[75vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="absolute inset-0 z-50 bg-black/50 flex items-end rounded-3xl overflow-hidden" onClick={onClose}>
+      <div className="w-full bg-card rounded-t-3xl max-h-[75%] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border/40 shrink-0">
           <p className="font-black text-sm uppercase tracking-wide">Attach Request</p>
           <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
@@ -347,30 +347,60 @@ const ReqRefPicker = ({ onSelect, onClose }) => {
 };
 
 // ── ActionMenu popup ──────────────────────────────────────────────────────────
-const ActionMenu = ({ msg, isMe, onReply, onForward, onCopy, onEdit, onClose }) => (
-  <div className="flex flex-col overflow-hidden">
-    <button onClick={() => { onReply(); onClose(); }}
-      className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
-      <Reply size={13} className="text-muted-foreground shrink-0" /> Reply
-    </button>
-    <button onClick={() => { onForward(); onClose(); }}
-      className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
-      <Forward size={13} className="text-muted-foreground shrink-0" /> Forward
-    </button>
-    {!msg.mediaKey && msg.body && (
-      <button onClick={() => { onCopy(); onClose(); }}
+const ActionMenu = ({ msg, isMe, onReply, onForward, onCopy, onEdit, onClose }) => {
+  const handleShare = () => {
+    const text = msg.body || (msg.mediaType === 'audio' ? 'Voice message' : msg.mediaName || 'Media');
+    const url = msg.mediaKey ? chatAPI.mediaUrl(msg.mediaKey) : window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: 'RMS Chat', text, url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(msg.mediaKey ? url : text);
+      toast.success('Copied to clipboard!');
+    }
+    onClose();
+  };
+  const handleDownload = () => {
+    const a = document.createElement('a');
+    a.href = chatAPI.mediaUrl(msg.mediaKey, true);
+    a.download = msg.mediaName || 'file';
+    a.click();
+    onClose();
+  };
+  return (
+    <div className="flex flex-col overflow-hidden">
+      <button onClick={() => { onReply(); onClose(); }}
         className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
-        <Copy size={13} className="text-muted-foreground shrink-0" /> Copy
+        <Reply size={13} className="text-muted-foreground shrink-0" /> Reply
       </button>
-    )}
-    {isMe && !msg.mediaKey && (
-      <button onClick={() => { onEdit(); onClose(); }}
+      <button onClick={() => { onForward(); onClose(); }}
         className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
-        <PenLine size={13} className="text-muted-foreground shrink-0" /> Edit
+        <Forward size={13} className="text-muted-foreground shrink-0" /> Forward
       </button>
-    )}
-  </div>
-);
+      {!msg.mediaKey && msg.body && (
+        <button onClick={() => { onCopy(); onClose(); }}
+          className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
+          <Copy size={13} className="text-muted-foreground shrink-0" /> Copy
+        </button>
+      )}
+      <button onClick={handleShare}
+        className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
+        <Share2 size={13} className="text-muted-foreground shrink-0" /> Share
+      </button>
+      {msg.mediaKey && (
+        <button onClick={handleDownload}
+          className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
+          <Download size={13} className="text-muted-foreground shrink-0" /> Download
+        </button>
+      )}
+      {isMe && !msg.mediaKey && (
+        <button onClick={() => { onEdit(); onClose(); }}
+          className="flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] font-medium hover:bg-muted/50 transition-colors text-foreground text-left w-full">
+          <PenLine size={13} className="text-muted-foreground shrink-0" /> Edit
+        </button>
+      )}
+    </div>
+  );
+};
 
 // ── Bubble ────────────────────────────────────────────────────────────────────
 const Bubble = ({ msg, isMe, onReply, onForward, onPreview, onEdit }) => {
@@ -712,9 +742,8 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
   const cancelEdit = () => { setEditingMsg(null); setInput(''); };
 
   return (
-    <>
-      <div className="flex flex-col h-full">
-        {/* Header */}
+    <div className="relative flex flex-col h-full">
+      {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border/40 shrink-0">
           <button onClick={onBack} className="p-1 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
             <ArrowLeft size={16} />
@@ -844,27 +873,24 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
           </div>
           <p className="text-[9px] text-muted-foreground/50 text-center mt-1">Enter to send · Shift+Enter for new line</p>
         </div>
-      </div>
 
-      {/* Modals — rendered via portal to document.body so they escape the panel's stacking context */}
-      {previewMsg && createPortal(
+      {/* Overlays — absolute inside the widget panel so they stay within its bounds */}
+      {previewMsg && (
         <MediaPreviewModal
           msg={previewMsg}
           onClose={() => setPreviewMsg(null)}
           onForward={(m) => { setPreviewMsg(null); setForwardMsg(m); }}
-        />,
-        document.body
+        />
       )}
-      {forwardMsg && createPortal(
+      {forwardMsg && (
         <ForwardModal
           msg={forwardMsg}
           myDeptId={myDeptId}
           onClose={() => setForwardMsg(null)}
           onDone={onNewMessage}
-        />,
-        document.body
+        />
       )}
-      {showReqPicker && createPortal(
+      {showReqPicker && (
         <ReqRefPicker
           onSelect={(r) => {
             setPendingReqRef({
@@ -878,10 +904,9 @@ const ThreadView = ({ thread, myDeptId, onBack, onNewMessage }) => {
             setShowReqPicker(false);
           }}
           onClose={() => setShowReqPicker(false)}
-        />,
-        document.body
+        />
       )}
-    </>
+    </div>
   );
 };
 
