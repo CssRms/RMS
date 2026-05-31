@@ -6,7 +6,7 @@ import {
   LogOut, Bell, Briefcase, Activity, User as UserIcon, PenTool,
   ChevronLeft, ChevronRight, ChevronDown, Menu, Inbox, Clock, WifiOff, RefreshCcw,
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
-  HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2
+  HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
@@ -401,6 +401,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
                           currentView === 'workflow_builder' ? 'Workflow Architecture' :
                             currentView === 'department_manager' ? 'Tenant Control' :
                               currentView === 'audit_logs' ? 'Security Audit' :
+                              currentView === 'sub_accounts' ? 'Sub-Accounts & Units' :
                                 currentView === 'hr_dashboard' ? 'HR Overview' :
                                   currentView === 'hr_employees' ? 'Employee Directory' :
                                     currentView === 'hr_leaves' ? 'Leave Management' :
@@ -1037,6 +1038,16 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
                   label="Profile"
                   active={currentView === 'dept_profile'}
                   onClick={() => onViewChange('dept_profile')}
+                  isCollapsed={isCollapsed}
+                />
+              )}
+
+              {user?.role === 'department' && !user?.isSubAccount && (
+                <SidebarItem
+                  icon={GitBranch}
+                  label="Sub-Accounts"
+                  active={currentView === 'sub_accounts'}
+                  onClick={() => onViewChange('sub_accounts')}
                   isCollapsed={isCollapsed}
                 />
               )}

@@ -57,6 +57,7 @@ const DocumentStudio = React.lazy(() => import('./components/DocumentStudio'))
 const RequisitionsPage = React.lazy(() => import('./components/RequisitionsPage'))
 const MemoManagement = React.lazy(() => import('./components/MemoManagement'))
 const DepartmentProfile = React.lazy(() => import('./components/DepartmentProfile'))
+const SubAccountsPage = React.lazy(() => import('./components/SubAccountsPanel'))
 const MyActivity = React.lazy(() => import('./components/MyActivity'))
 
 // ── HR Portal modules ──────────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ const NetworkProvider = ({ children }) => {
 const VALID_VIEWS = [
   'dashboard', 'requisitions', 'memos', 'activity',
   'workflow_builder', 'department_manager', 'audit_logs',
-  'document_studio', 'dept_profile',
+  'document_studio', 'dept_profile', 'sub_accounts',
   // HR Portal views
   'hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment'
 ];
@@ -316,6 +317,13 @@ const AppContent = () => {
     audit_logs: <AuditLogs onViewChange={navigate} />,
     document_studio: <DocumentStudio user={user} onViewChange={navigate} />,
     dept_profile: <DepartmentProfile user={user} onViewChange={navigate} />,
+    sub_accounts: (
+      <div className="p-6 max-w-2xl mx-auto">
+        <div className="bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
+          <SubAccountsPage />
+        </div>
+      </div>
+    ),
     // HR Portal
     hr_dashboard:   <HRDashboard onViewChange={navigate} />,
     hr_employees:   <EmployeeDirectory onViewChange={navigate} />,
