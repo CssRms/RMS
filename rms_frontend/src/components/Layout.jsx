@@ -705,8 +705,13 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
             <p className="text-[11px] font-black text-foreground leading-none flex items-center justify-end space-x-1.5">
               <span>{user?.name || 'Administrator'}</span>
             </p>
-            <p className="text-[9px] text-primary font-black mt-1 uppercase tracking-tighter opacity-80">
-              {user?.role === 'department' ? 'Controller' : (user?.role || 'Admin Account')}
+            <p className="text-[9px] text-primary font-black mt-1 uppercase tracking-tighter opacity-80 flex items-center justify-end gap-1.5">
+              {user?.role === 'department' ? (user?.isSubAccount ? 'Sub-Account' : 'Controller') : (user?.role || 'Admin Account')}
+              {user?.isSubAccount && (
+                <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[7px] font-black tracking-widest normal-case">
+                  UNIT
+                </span>
+              )}
             </p>
           </div>
 

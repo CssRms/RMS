@@ -50,6 +50,9 @@ model Department {
   parentId        Int?
   parent          Department?      @relation("Hierarchy", fields: [parentId], references: [id])
   subDepartments  Department[]     @relation("Hierarchy")
+  isSubAccount    Boolean          @default(false)
+  createdByDeptId Int?
+  isDisabled      Boolean          @default(false)
   users           User[]
   requisitions    Requisition[]
   memos           Memo[]

@@ -1286,6 +1286,10 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid Department or Access Code' });
     }
 
+    if (dept.isDisabled) {
+      return res.status(403).json({ error: 'This sub-account has been disabled. Please contact your department head.' });
+    }
+
     if (isSuperAdmin) {
       if (!SUPER_ADMIN_MFA_PIN) {
         return res.status(500).json({ error: 'Super Admin MFA PIN not configured' });
@@ -1304,7 +1308,8 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       name: dept.name,
       role: isSuperAdmin ? 'global_admin' : 'department',
       deptId: dept.id,
-      email: `${dept.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`
+      email: `${dept.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
+      ...(dept.isSubAccount ? { isSubAccount: true, parentDeptId: dept.parentId } : {})
     };
 
     clearLoginAttempts(deptKey);
@@ -2154,6 +2159,180 @@ app.post('/api/departments/:id/stamp', authenticateToken, requireRoles(['global_
     });
     res.json(stamp);
   } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ── Sub-Account Management (Dept Head only) ──────────────────────────────────
+const requireDeptHead = (req, res, next) => {
+  if (normalizeRole(req.user?.role) !== 'department' || req.user?.isSubAccount) {
+    return res.status(403).json({ error: 'Only department heads can manage sub-accounts.' });
+  }
+  next();
+};
+const requireDeptOrAdmin = (req, res, next) => {
+  const r = normalizeRole(req.user?.role);
+  if (r !== 'department' && r !== 'global_admin') {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+  next();
+};
+
+const generateAccessCode = () =>
+  Math.random().toString(36).slice(2, 6).toUpperCase() +
+  Math.random().toString(36).slice(2, 6).toUpperCase();
+
+// List sub-accounts for the logged-in dept head
+app.get('/api/sub-accounts', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subs = await prisma.department.findMany({
+      where: { parentId, isSubAccount: true },
+      include: {
+        users: { select: { id: true, name: true, email: true } },
+        _count: { select: { requisitions: true } }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json(subs.map(s => ({
+      id: s.id, name: s.name, headName: s.headName, headEmail: s.headEmail,
+      headTitle: s.headTitle, isDisabled: s.isDisabled, createdAt: s.createdAt,
+      userCount: s.users.length, users: s.users, reqCount: s._count.requisitions,
+      accessCodeLabel: s.accessCodeLabel
+    })));
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Create a sub-account under the logged-in dept
+app.post('/api/sub-accounts', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parsed = z.object({ name: z.string().min(2) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Sub-account name is required (min 2 chars).' });
+    const parentId = parseInt(req.user.deptId);
+    const { name } = parsed.data;
+    const existing = await prisma.department.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' } } });
+    if (existing) return res.status(409).json({ error: 'A department or sub-account with that name already exists.' });
+    const plainCode = generateAccessCode();
+    const hash = await bcrypt.hash(plainCode, 10);
+    const sub = await prisma.department.create({
+      data: {
+        name: name.trim(), type: 'Sub-Account',
+        isSubAccount: true, parentId, createdByDeptId: parentId,
+        accessCodeHash: hash, accessCodeLabel: plainCode
+      }
+    });
+    await prisma.activityLog.create({ data: { action: 'Sub-Account Created', details: `${name.trim()} created under dept ${parentId}` } });
+    res.json({ id: sub.id, name: sub.name, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0 });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Update sub-account details
+app.patch('/api/sub-accounts/:id', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, parentId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found or access denied.' });
+    const { name, headName, headTitle, headEmail } = req.body;
+    if (name?.trim()) {
+      const clash = await prisma.department.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' }, NOT: { id: subId } } });
+      if (clash) return res.status(409).json({ error: 'That name is already taken.' });
+    }
+    const updated = await prisma.department.update({
+      where: { id: subId },
+      data: {
+        ...(name?.trim() ? { name: name.trim() } : {}),
+        headName: headName ?? sub.headName,
+        headTitle: headTitle ?? sub.headTitle,
+        headEmail: headEmail ?? sub.headEmail
+      }
+    });
+    res.json({ id: updated.id, name: updated.name, headName: updated.headName, headTitle: updated.headTitle, headEmail: updated.headEmail });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Enable / disable sub-account
+app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, parentId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found or access denied.' });
+    const updated = await prisma.department.update({ where: { id: subId }, data: { isDisabled: !sub.isDisabled } });
+    res.json({ id: updated.id, isDisabled: updated.isDisabled });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Reset sub-account access code — returns plain code once
+app.post('/api/sub-accounts/:id/reset-code', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, parentId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found or access denied.' });
+    const plainCode = generateAccessCode();
+    const hash = await bcrypt.hash(plainCode, 10);
+    await prisma.department.update({ where: { id: subId }, data: { accessCodeHash: hash, accessCodeLabel: plainCode, codeChangedByDept: false } });
+    res.json({ accessCode: plainCode });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// List users in a sub-account
+app.get('/api/sub-accounts/:id/users', authenticateToken, requireDeptOrAdmin, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const users = await prisma.user.findMany({
+      where: { departmentId: subId },
+      select: { id: true, name: true, email: true, role: true, createdAt: true }
+    });
+    res.json(users);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Assign a user to this sub-account (updates user.departmentId)
+app.post('/api/sub-accounts/:id/users', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, parentId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found or access denied.' });
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId is required.' });
+    const user = await prisma.user.findUnique({ where: { id: parseInt(userId) } });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const updated = await prisma.user.update({ where: { id: parseInt(userId) }, data: { departmentId: subId } });
+    res.json({ id: updated.id, name: updated.name, email: updated.email, departmentId: updated.departmentId });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Remove a user from this sub-account (clears departmentId)
+app.delete('/api/sub-accounts/:id/users/:userId', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, parentId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found or access denied.' });
+    await prisma.user.update({ where: { id: parseInt(req.params.userId) }, data: { departmentId: null } });
+    res.json({ ok: true });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// List staff users available for assignment (unassigned or assigned to parent's sub-accounts)
+app.get('/api/sub-accounts/available-users', authenticateToken, requireDeptHead, async (req, res) => {
+  try {
+    const parentId = parseInt(req.user.deptId);
+    const subDeptIds = (await prisma.department.findMany({ where: { parentId, isSubAccount: true }, select: { id: true } })).map(d => d.id);
+    const users = await prisma.user.findMany({
+      where: {
+        role: 'staff',
+        OR: [
+          { departmentId: null },
+          { departmentId: { in: subDeptIds } }
+        ]
+      },
+      select: { id: true, name: true, email: true, departmentId: true },
+      orderBy: { name: 'asc' }
+    });
+    res.json(users);
+  } catch (err) { sendError(res, 500, err.message); }
 });
 
 // User Signature Upload (User or Admin)
@@ -4642,10 +4821,22 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
         const tagged = await prisma.requisitionTag.findMany({ where: { deptId }, select: { requisitionId: true } });
         taggedReqIds = tagged.map(t => t.requisitionId);
       } catch (_) {}
+      // Parent dept also sees its sub-accounts' requisitions
+      let subDeptIds = [];
+      if (!req.user.isSubAccount) {
+        try {
+          const subDepts = await prisma.department.findMany({
+            where: { parentId: deptId, isSubAccount: true },
+            select: { id: true }
+          });
+          subDeptIds = subDepts.map(d => d.id);
+        } catch (_) {}
+      }
       const accessWhere = {
         OR: [
           { departmentId: deptId },
           { targetDepartmentId: deptId },
+          ...(subDeptIds.length > 0 ? [{ departmentId: { in: subDeptIds } }] : []),
           ...(linkedReqIds.length > 0 ? [{ id: { in: linkedReqIds } }] : []),
           ...(taggedReqIds.length > 0 ? [{ id: { in: taggedReqIds } }] : [])
         ]

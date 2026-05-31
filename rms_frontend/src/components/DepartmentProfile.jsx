@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { reqAPI, deptAPI, authAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import SubAccountsPanel from './SubAccountsPanel';
 import { toast } from 'react-hot-toast';
 
 // ── Shared input field ────────────────────────────────────────────────────────
@@ -355,13 +356,22 @@ const AdminProfileContent = ({ user }) => {
 // ── Root component ────────────────────────────────────────────────────────────
 const DepartmentProfile = ({ user, onViewChange }) => {
   const isAdmin = user?.role === 'global_admin';
+  const isDeptHead = user?.role === 'department' && !user?.isSubAccount;
 
   return (
-    <div className="w-full">
+    <div className="w-full space-y-8">
       {isAdmin
         ? <AdminProfileContent user={user} />
         : <DeptProfileContent user={user} onViewChange={onViewChange} />
       }
+
+      {isDeptHead && (
+        <div className="max-w-2xl mx-auto px-4">
+          <div className="bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
+            <SubAccountsPanel />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
