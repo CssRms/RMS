@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, HelpCircle, X, PhoneCall } from 'lucide-react';
+import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, HelpCircle, X, PhoneCall, ChevronDown, GitBranch } from 'lucide-react';
 import { getDepartments } from '../lib/store';
 import { toast } from 'react-hot-toast';
 
@@ -18,7 +18,16 @@ const Login = () => {
   const [isStandalone, setIsStandalone] = useState(false);
   const [showForgotCode, setShowForgotCode] = useState(false);
   const [ictPhone, setIctPhone] = useState('');
+  const [deptDropOpen, setDeptDropOpen] = useState(false);
+  const [subDropOpen, setSubDropOpen] = useState(false);
+  const [loginType, setLoginType] = useState(''); // 'dept' | 'subunit'
+  const deptDropRef = useRef(null);
+  const subDropRef = useRef(null);
   const { deptLogin } = useAuth();
+
+  // Split departments into main and sub-units
+  const mainDepts = departments.filter(d => d.type !== 'Sub-Account');
+  const subUnits  = departments.filter(d => d.type === 'Sub-Account');
 
   useEffect(() => {
     const fetchDepts = async () => {
@@ -32,6 +41,13 @@ const Login = () => {
       .then(d => { if (d?.value) setIctPhone(d.value); })
       .catch(() => {});
 
+    // Close dropdowns on outside click
+    const handleOutside = (e) => {
+      if (deptDropRef.current && !deptDropRef.current.contains(e.target)) setDeptDropOpen(false);
+      if (subDropRef.current && !subDropRef.current.contains(e.target)) setSubDropOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+
     // PWA Install Logic
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
@@ -44,7 +60,10 @@ const Login = () => {
       setIsStandalone(true);
     }
 
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
   const handleInstallApp = async () => {
@@ -66,7 +85,7 @@ const Login = () => {
 
     try {
       if (!selectedDept) {
-        throw new Error("Please select a department");
+        throw new Error("Please select a department or sub-unit");
       }
       // Unify login to use the department portal (Backend now handles Super Admin role internally)
       await deptLogin(selectedDept, accessCode, mfaCode);
@@ -150,15 +169,12 @@ const Login = () => {
             </div>
           </div>
 
-          <div className="mb-7">
-            <h2 className="text-lg font-semibold text-foreground">Welcome back</h2>
-            <p className="text-sm text-muted-foreground mt-1">Authenticate to access the RMS portal</p>
-          </div>
-
           <div className="space-y-6">
-            <div className="text-center space-y-2">
+            <div className="text-center space-y-1.5">
               <h2 className="text-2xl font-bold tracking-tight text-foreground">Sign In to Dashboard</h2>
-              <p className="text-muted-foreground text-sm font-medium">Select your department and enter access code</p>
+              <h3 className="text-base font-semibold text-foreground">Welcome back</h3>
+              <p className="text-sm text-muted-foreground">Authenticate to access the RMS portal</p>
+              <p className="text-muted-foreground text-sm font-medium">Select your department or sub-unit, then enter access code</p>
             </div>
 
             {error && (
@@ -169,22 +185,99 @@ const Login = () => {
             )}
 
             <form onSubmit={handleLogin} className="space-y-5">
+              {/* ── Dept / Sub-Unit selector ── */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Department / Unit</label>
-                <div className="relative group">
-                  <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" size={16} />
-                  <select
-                    value={selectedDept}
-                    onChange={(e) => setSelectedDept(e.target.value)}
-                    disabled={isSubmitting}
-                    className="w-full bg-white border border-border rounded-xl pl-10 pr-4 py-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50 appearance-none cursor-pointer"
-                    required
-                  >
-                    <option value="">Choose your unit...</option>
-                    {departments.map(dept => (
-                      <option key={dept.id} value={dept.name}>{dept.name}</option>
-                    ))}
-                  </select>
+                <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  {loginType === 'subunit' ? 'Sub-Unit' : 'Department / Unit'}
+                </label>
+                <div className="flex gap-2">
+
+                  {/* DEPARTMENT / UNIT button */}
+                  <div ref={deptDropRef} className="relative flex-1">
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => { setDeptDropOpen(v => !v); setSubDropOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-3 py-3 rounded-xl border text-sm transition-all disabled:opacity-50
+                        ${loginType === 'dept' && selectedDept
+                          ? 'border-primary bg-primary/5 text-foreground font-semibold'
+                          : 'border-border bg-white text-muted-foreground hover:border-primary/50'}`}
+                    >
+                      <Building2 size={15} className={loginType === 'dept' && selectedDept ? 'text-primary shrink-0' : 'text-muted-foreground/50 shrink-0'} />
+                      <span className="flex-1 text-left truncate text-xs">
+                        {loginType === 'dept' && selectedDept ? selectedDept : 'Dept / Unit'}
+                      </span>
+                      {loginType === 'dept' && selectedDept ? (
+                        <X size={12} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={(e) => { e.stopPropagation(); setSelectedDept(''); setLoginType(''); }} />
+                      ) : (
+                        <ChevronDown size={13} className={`shrink-0 transition-transform ${deptDropOpen ? 'rotate-180' : ''}`} />
+                      )}
+                    </button>
+                    {deptDropOpen && mainDepts.length > 0 && (
+                      <div className="absolute top-full left-0 w-full mt-1 z-50 bg-white border border-border rounded-xl shadow-xl overflow-hidden">
+                        <div className="max-h-48 overflow-y-auto">
+                          {mainDepts.map(d => (
+                            <button
+                              key={d.id}
+                              type="button"
+                              onClick={() => { setSelectedDept(d.name); setLoginType('dept'); setDeptDropOpen(false); }}
+                              className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 hover:bg-primary/5 transition-colors
+                                ${selectedDept === d.name && loginType === 'dept' ? 'bg-primary/8 text-primary font-semibold' : 'text-foreground'}`}
+                            >
+                              <Building2 size={13} className="text-muted-foreground/50 shrink-0" />
+                              <span className="truncate">{d.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SUB-UNITS button */}
+                  <div ref={subDropRef} className="relative flex-1">
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => { setSubDropOpen(v => !v); setDeptDropOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-3 py-3 rounded-xl border text-sm transition-all disabled:opacity-50
+                        ${loginType === 'subunit' && selectedDept
+                          ? 'border-violet-400 bg-violet-50 text-foreground font-semibold'
+                          : 'border-border bg-white text-muted-foreground hover:border-violet-300'}`}
+                    >
+                      <GitBranch size={15} className={loginType === 'subunit' && selectedDept ? 'text-violet-600 shrink-0' : 'text-muted-foreground/50 shrink-0'} />
+                      <span className="flex-1 text-left truncate text-xs">
+                        {loginType === 'subunit' && selectedDept ? selectedDept : 'Sub-Units'}
+                      </span>
+                      {loginType === 'subunit' && selectedDept ? (
+                        <X size={12} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={(e) => { e.stopPropagation(); setSelectedDept(''); setLoginType(''); }} />
+                      ) : (
+                        <ChevronDown size={13} className={`shrink-0 transition-transform ${subDropOpen ? 'rotate-180' : ''}`} />
+                      )}
+                    </button>
+                    {subDropOpen && (
+                      <div className="absolute top-full left-0 w-full mt-1 z-50 bg-white border border-border rounded-xl shadow-xl overflow-hidden">
+                        {subUnits.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4 px-3 italic">No sub-units available.</p>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto">
+                            {subUnits.map(d => (
+                              <button
+                                key={d.id}
+                                type="button"
+                                onClick={() => { setSelectedDept(d.name); setLoginType('subunit'); setSubDropOpen(false); }}
+                                className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 hover:bg-violet-50 transition-colors
+                                  ${selectedDept === d.name && loginType === 'subunit' ? 'bg-violet-50 text-violet-700 font-semibold' : 'text-foreground'}`}
+                              >
+                                <GitBranch size={13} className="text-violet-400 shrink-0" />
+                                <span className="truncate">{d.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               </div>
 
