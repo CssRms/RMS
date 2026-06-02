@@ -3289,15 +3289,17 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const selectedReqRef = React.useRef(null);
 
   // Normalize a requisition so department/creator are always strings, not nested objects.
+  // isFromSubAccount and deptHeadName are already extracted by store.normalizeRequisitionList
+  // before the department object is flattened — don't re-derive them here.
   const normalizeReq = (r) => ({
     ...r,
-    department:          r.department?.name ?? r.department ?? r.departmentName ?? '',
-    isFromSubAccount:    r.department?.isSubAccount === true,
-    deptHeadName:        r.department?.headName ?? '',
+    department:           r.department?.name ?? r.department ?? r.departmentName ?? '',
+    isFromSubAccount:     r.isFromSubAccount ?? (r.department?.isSubAccount === true),
+    deptHeadName:         r.deptHeadName ?? r.department?.headName ?? '',
     visibleToSubAccounts: r.visibleToSubAccounts ?? false,
-    creator:             r.creator?.name ?? r.creator ?? r.creatorName ?? '',
-    currentStageName:    r.currentStage?.name ?? '',
-    finalState:          r.finalApprovalStatus ?? 'none',
+    creator:              r.creator?.name ?? r.creator ?? r.creatorName ?? '',
+    currentStageName:     r.currentStage?.name ?? '',
+    finalState:           r.finalApprovalStatus ?? 'none',
   });
 
   // Always fetch fresh data from server — show cached instantly, then replace with live

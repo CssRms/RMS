@@ -105,8 +105,12 @@ const Dashboard = ({ onViewChange }) => {
       const cc = all.filter(r => isOperationalRequisition(r) && Array.isArray(r.tags) && r.tags.some(t => Number(t.deptId) === userDeptId));
       setCcReqs(cc);
 
-      // My outgoing requests — created by this dept (excluding drafts for stats)
-      const mine = all.filter(r => Number(r.departmentId) === userDeptId || Number(r.creatorDeptId) === userDeptId);
+      // My outgoing requests — created by this dept OR by one of its sub-units
+      const mine = all.filter(r =>
+        Number(r.departmentId) === userDeptId ||
+        Number(r.creatorDeptId) === userDeptId ||
+        (r.isFromSubAccount === true && !user?.isSubAccount)
+      );
       const submitted = mine.filter(r => r.status !== 'draft');
       const inProgress = submitted.filter(r => !['treated', 'published', 'rejected'].includes(r.finalApprovalStatus) && r.status !== 'rejected');
       const approved = submitted.filter(r => r.finalApprovalStatus === 'approved');

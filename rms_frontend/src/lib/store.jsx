@@ -61,8 +61,10 @@ export const isOperationalRequisition = (recordOrType) => {
 
 const normalizeRequisitionList = (rawList) => rawList.map(r => ({
   ...r,
-  department: r.department?.name || r.department || r.departmentName,
-  creator: r.creator?.name || r.creator || r.creatorName,
+  department:       r.department?.name || r.department || r.departmentName,
+  isFromSubAccount: r.department?.isSubAccount === true, // preserve before department is flattened to string
+  deptHeadName:     r.department?.headName ?? '',
+  creator:          r.creator?.name || r.creator || r.creatorName,
   currentStageName: r.currentStage?.name || r.currentStageName
 }));
 
