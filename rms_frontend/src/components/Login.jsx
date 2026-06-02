@@ -4,6 +4,85 @@ import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, Hel
 import { getDepartments } from '../lib/store';
 import { toast } from 'react-hot-toast';
 
+// ── Animated background SVG elements ────────────────────────────────────────
+const ButterflyIcon = ({ color, size = 30 }) => (
+  <svg width={size} height={Math.round(size * 0.72)} viewBox="0 0 44 32" fill={color}>
+    <ellipse cx="13" cy="11" rx="12" ry="7.5" transform="rotate(-18 13 11)" />
+    <ellipse cx="13" cy="22" rx="9" ry="5.5" transform="rotate(18 13 22)" />
+    <ellipse cx="31" cy="11" rx="12" ry="7.5" transform="rotate(18 31 11)" />
+    <ellipse cx="31" cy="22" rx="9" ry="5.5" transform="rotate(-18 31 22)" />
+    <ellipse cx="22" cy="16" rx="1.5" ry="8" />
+  </svg>
+);
+
+const LeafIcon = ({ color, size = 26 }) => (
+  <svg width={Math.round(size * 0.75)} height={size} viewBox="0 0 30 40" fill={color}>
+    <path d="M15 38C7 28 4 20 4 14C4 5 15 1 15 1C15 1 26 5 26 14C26 20 23 28 15 38Z" />
+    <path d="M15 37 Q15 20 15 5" fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth="1.2" />
+  </svg>
+);
+
+const TractorIcon = ({ color, size = 36 }) => (
+  <svg width={Math.round(size * 1.65)} height={size} viewBox="0 0 60 37" fill={color}>
+    <rect x="18" y="10" width="28" height="17" rx="2.5" />
+    <rect x="33" y="4" width="14" height="12" rx="2" opacity="0.9" />
+    <circle cx="22" cy="28" r="9" fill="none" stroke={color} strokeWidth="2.5" />
+    <circle cx="22" cy="28" r="4.5" opacity="0.55" />
+    <circle cx="43" cy="30" r="6" fill="none" stroke={color} strokeWidth="2" />
+    <circle cx="43" cy="30" r="2.5" opacity="0.55" />
+    <rect x="35" y="0" width="3" height="7" rx="1.5" opacity="0.75" />
+    <path d="M18 27 L46 27" stroke={color} strokeWidth="1.5" opacity="0.25" fill="none" />
+  </svg>
+);
+
+const RMS_ANIM_CSS = `
+  @keyframes rmsFloat {
+    0%,100% { transform: translateY(0)     rotate(0deg);  }
+    33%      { transform: translateY(-14px) rotate(5deg);  }
+    66%      { transform: translateY(-6px)  rotate(-3deg); }
+  }
+  @keyframes rmsWander {
+    0%   { transform: translate(0,0)       rotate(0deg)   scaleX(1);  }
+    20%  { transform: translate(14px,-18px) rotate(14deg)  scaleX(-1); }
+    40%  { transform: translate(-7px,-32px) rotate(-7deg)  scaleX(1);  }
+    60%  { transform: translate(18px,-22px) rotate(17deg)  scaleX(-1); }
+    80%  { transform: translate(-9px,-10px) rotate(-9deg)  scaleX(1);  }
+    100% { transform: translate(0,0)       rotate(0deg)   scaleX(1);  }
+  }
+  @keyframes rmsSway {
+    0%,100% { transform: rotate(-11deg) translateY(0);     }
+    50%      { transform: rotate(11deg)  translateY(-10px); }
+  }
+  @keyframes rmsBobble {
+    0%,100% { transform: translateX(0)    translateY(0);   }
+    30%      { transform: translateX(7px)  translateY(-9px); }
+    70%      { transform: translateX(-5px) translateY(-4px); }
+  }
+`;
+
+const BG_ELS = [
+  { C: ButterflyIcon, color:'#fbbf24', size:34, style:{ top:'8%',    left:'10%'  }, anim:'rmsWander 7s ease-in-out infinite',          delay:'0s'   },
+  { C: ButterflyIcon, color:'#f97316', size:24, style:{ top:'52%',   right:'7%'  }, anim:'rmsWander 9.5s ease-in-out infinite reverse', delay:'1.5s' },
+  { C: ButterflyIcon, color:'#f87171', size:20, style:{ top:'28%',   left:'62%'  }, anim:'rmsWander 6.5s ease-in-out infinite',         delay:'3.5s' },
+  { C: LeafIcon,      color:'#fb923c', size:32, style:{ top:'11%',   right:'13%' }, anim:'rmsSway 4.5s ease-in-out infinite',           delay:'1s',   origin:'bottom center' },
+  { C: LeafIcon,      color:'#fde047', size:22, style:{ bottom:'22%',left:'12%'  }, anim:'rmsSway 5.5s ease-in-out infinite reverse',   delay:'0.5s', origin:'bottom center' },
+  { C: LeafIcon,      color:'#f87171', size:18, style:{ top:'68%',   right:'20%' }, anim:'rmsFloat 5s ease-in-out infinite',            delay:'2.5s' },
+  { C: LeafIcon,      color:'#fbbf24', size:28, style:{ top:'42%',   left:'4%'   }, anim:'rmsSway 6s ease-in-out infinite',             delay:'2s',   origin:'bottom center' },
+  { C: TractorIcon,   color:'#fb923c', size:30, style:{ bottom:'17%',left:'5%'   }, anim:'rmsBobble 6s ease-in-out infinite',           delay:'0s'   },
+  { C: TractorIcon,   color:'#fde047', size:22, style:{ bottom:'38%',right:'4%'  }, anim:'rmsBobble 8s ease-in-out infinite reverse',   delay:'4s'   },
+];
+
+const AnimBg = ({ mobile = false }) => (
+  <div className={`absolute inset-0 pointer-events-none overflow-hidden ${mobile ? 'lg:hidden z-0' : 'z-[1]'}`}>
+    {BG_ELS.map(({ C, color, size, style, anim, delay, origin }, i) => (
+      <div key={i} className="absolute" style={{ ...style, animation: anim, animationDelay: delay, transformOrigin: origin || 'center', opacity: mobile ? 0.16 : 0.62 }}>
+        <C color={color} size={size} />
+      </div>
+    ))}
+  </div>
+);
+// ────────────────────────────────────────────────────────────────────────────
+
 const Login = () => {
   const [selectedDept, setSelectedDept] = useState('');
   const [accessCode, setAccessCode] = useState('');
@@ -109,20 +188,28 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col lg:flex-row">
+    <>
+    <style>{RMS_ANIM_CSS}</style>
+    <div className="min-h-screen bg-background flex flex-col lg:flex-row relative overflow-hidden">
+      {/* Mobile animated bg layer — behind the form on white */}
+      <AnimBg mobile />
 
       {/* ── Left Branding Panel (Desktop Only) ── */}
-      <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-[hsl(var(--primary))] via-[hsl(var(--primary)/0.9)] to-[hsl(var(--primary)/0.7)] text-white relative overflow-hidden flex-col justify-between p-12">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/3 translate-x-1/3 blur-sm"></div>
-        <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full translate-y-1/3 -translate-x-1/3"></div>
+      <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-[hsl(var(--primary))] via-[hsl(var(--primary)/0.88)] to-[hsl(var(--primary)/0.65)] text-white relative overflow-hidden flex-col justify-between p-12">
+        {/* Darkening overlay for deeper green */}
+        <div className="absolute inset-0 bg-black/25 z-0" />
+        {/* Desktop animated elements */}
+        <AnimBg />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/3 translate-x-1/3 blur-sm z-[2]"></div>
+        <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full translate-y-1/3 -translate-x-1/3 z-[2]"></div>
 
         {/* Branding Card Wrapper */}
         <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] px-10 py-14 flex flex-col items-center justify-center text-center my-auto gap-10">
 
           {/* Logo + Company name */}
           <div className="flex flex-col items-center gap-4">
-            <div className="w-24 h-24 rounded-3xl overflow-hidden bg-white/10 border border-white/20 shadow-lg p-1">
-              <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-cover object-center rounded-2xl" />
+            <div className="w-44 h-28 rounded-2xl overflow-hidden bg-white/10 border border-white/20 shadow-lg">
+              <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-white/50">CSS Group of Companies</p>
@@ -164,7 +251,7 @@ const Login = () => {
       </div>
 
       {/* ── Right Form Panel ── */}
-      <div className="flex-1 flex items-center justify-center p-5 lg:p-12">
+      <div className="flex-1 flex items-center justify-center p-5 lg:p-12 relative z-10">
         <div className="w-full max-w-sm border border-border/60 rounded-2xl p-8 bg-white shadow-sm lg:border-0 lg:shadow-none lg:bg-transparent lg:p-0">
 
           {/* Mobile logo + app name (Banner Style) */}
@@ -441,6 +528,7 @@ const Login = () => {
         </button>
       )}
     </div>
+    </>
   );
 };
 
