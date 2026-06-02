@@ -2583,6 +2583,37 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
                 ]
               });
             }
+
+            // If this was submitted by a sub-account, also notify the parent department head
+            if (originDept?.isSubAccount && originDept?.parentId) {
+              const parentDept = await prisma.department.findUnique({ where: { id: originDept.parentId } });
+              if (parentDept) {
+                // In-app platform notification for the parent dept
+                try {
+                  await prisma.notification.create({
+                    data: {
+                      departmentId: parentDept.id,
+                      content: `Sub-unit ${originDept.name} submitted: ${_created.title}`,
+                      link: `/requisitions/${_created.id}`
+                    }
+                  });
+                } catch (_) {}
+                // Email notification to parent dept head
+                await notifyDepartmentHead({
+                  departmentId: parentDept.id,
+                  requisition: { ..._created, department: originDept },
+                  subject: `Sub-Unit Submission: ${_created.title}`,
+                  lines: [
+                    `Your sub-unit "${originDept.name}" submitted a new request.`,
+                    `Sent To: ${targetDeptForEmail?.name || 'Workflow'}`,
+                    `Type: ${_created.type}`,
+                    amountLine(_created.type, _created.amount),
+                    `Urgency: ${_created.urgency || 'normal'}`,
+                    `Description: ${_created.description || '—'}`
+                  ].filter(Boolean)
+                });
+              }
+            }
           } catch (e) { logger.warn('[NOTIFY] Post-create notifications failed:', e.message); }
         });
       }

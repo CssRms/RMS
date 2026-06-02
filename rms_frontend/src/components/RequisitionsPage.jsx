@@ -3488,6 +3488,8 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     if (Number(r.departmentId) === deptId) return true;           // creator
     if (Number(r.targetDepartmentId) === deptId) return true;     // currently at my desk
     if (r.currentVettingDeptId && Number(r.currentVettingDeptId) === deptId) return true; // vetting
+    // Sub-unit requests — backend already filters to only send our sub-unit records, always show
+    if (r.isFromSubAccount && !user?.isSubAccount) return true;
     return false;
   };
 

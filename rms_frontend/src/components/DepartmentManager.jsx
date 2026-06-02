@@ -665,6 +665,12 @@ const DepartmentManager = ({ onViewChange }) => {
   const [ictPhone, setIctPhone] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
 
+  // Email config status
+  const [emailStatus, setEmailStatus] = useState(null); // { configured, provider, gmailUser, error }
+  const [emailTestAddr, setEmailTestAddr] = useState('');
+  const [emailTesting, setEmailTesting] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState(null);
+
   // Deleted Records Bin (hidden from departments — super admin only)
   const [deletedRecords, setDeletedRecords] = useState([]);
   const [loadingBin, setLoadingBin] = useState(false);
@@ -774,6 +780,32 @@ const DepartmentManager = ({ onViewChange }) => {
     } catch { /* no value yet */ }
   };
 
+  const loadEmailStatus = async () => {
+    try {
+      const res = await reqAPI.getEmailStatus?.() || await fetch('/api/email-status', { credentials: 'include' }).then(r => r.json());
+      setEmailStatus(res);
+    } catch { setEmailStatus({ configured: false, error: 'Could not fetch email status.' }); }
+  };
+
+  const sendTestEmail = async () => {
+    if (!emailTestAddr.trim()) return;
+    setEmailTesting(true);
+    setEmailTestResult(null);
+    try {
+      const res = await fetch('/api/test-email', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: emailTestAddr.trim() })
+      }).then(r => r.json());
+      setEmailTestResult(res);
+      if (res.success) toast.success('Test email sent!');
+      else toast.error(res.message || res.error || 'Failed');
+    } catch (err) {
+      setEmailTestResult({ success: false, error: err.message });
+      toast.error('Test failed: ' + err.message);
+    } finally { setEmailTesting(false); }
+  };
+
   const saveIctPhone = async () => {
     setSavingPhone(true);
     try {
@@ -805,7 +837,7 @@ const DepartmentManager = ({ onViewChange }) => {
     );
   };
 
-  useEffect(() => { loadDepts(); loadChairmanSetting(); loadAISetting(); loadDeletedRecords(); loadPrintSettings(); loadIctPhone(); }, []);
+  useEffect(() => { loadDepts(); loadChairmanSetting(); loadAISetting(); loadDeletedRecords(); loadPrintSettings(); loadIctPhone(); loadEmailStatus(); }, []);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
@@ -1259,6 +1291,78 @@ const DepartmentManager = ({ onViewChange }) => {
           </div>
 
         </div>
+      </div>
+
+      {/* ── Email Configuration Status ──────────────────────────────────────── */}
+      <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-5">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${emailStatus?.configured ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+            {emailStatus?.configured ? <Wifi size={16} className="text-emerald-600" /> : <WifiOff size={16} className="text-red-500" />}
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-foreground">Email Notifications</h3>
+            <p className="text-[10px] text-muted-foreground/70 mt-0.5">Configure outgoing email so departments receive notifications</p>
+          </div>
+          <button onClick={loadEmailStatus} className="ml-auto p-2 rounded-xl border border-border/40 text-muted-foreground hover:bg-muted/60 transition-all">
+            <RotateCcw size={12} />
+          </button>
+        </div>
+
+        {emailStatus ? (
+          <div className="space-y-4">
+            {/* Status badge */}
+            <div className={`p-3 rounded-xl border text-xs flex items-start gap-3 ${emailStatus.configured ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              {emailStatus.configured ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
+              <div>
+                {emailStatus.configured ? (
+                  <p className="font-bold">Email is configured via <span className="uppercase">{emailStatus.provider}</span>{emailStatus.gmailUser ? ` (${emailStatus.gmailUser})` : ''}</p>
+                ) : (
+                  <>
+                    <p className="font-bold">Email is NOT configured — notifications will not be sent</p>
+                    {emailStatus.error && <p className="mt-1 opacity-80">{emailStatus.error}</p>}
+                    <div className="mt-2 space-y-1 opacity-90">
+                      <p className="font-semibold">To fix: add these variables in Railway → Variables:</p>
+                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_USER = your-gmail@gmail.com</code>
+                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_APP_PASSWORD = xxxx xxxx xxxx xxxx</code>
+                      <p className="text-[10px] mt-1">App Password (not regular password) — get it at <strong>myaccount.google.com/apppasswords</strong> (requires 2FA enabled)</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Test send */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Send Test Email</p>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={emailTestAddr}
+                  onChange={e => setEmailTestAddr(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && sendTestEmail()}
+                  placeholder="recipient@example.com"
+                  className="flex-1 text-sm border border-border/50 rounded-xl px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  onClick={sendTestEmail}
+                  disabled={emailTesting || !emailTestAddr.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                >
+                  {emailTesting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  Send
+                </button>
+              </div>
+              {emailTestResult && (
+                <div className={`p-2.5 rounded-xl text-xs border ${emailTestResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                  {emailTestResult.success ? `✓ ${emailTestResult.message}` : `✗ ${emailTestResult.message || emailTestResult.error}`}
+                  {emailTestResult.hint && <p className="mt-1 opacity-80 text-[10px]">{emailTestResult.hint}</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-muted-foreground/40" /></div>
+        )}
       </div>
 
       {/* ── Deleted Records Bin (super admin eyes only) ────────────────────── */}
