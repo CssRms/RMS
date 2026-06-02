@@ -1042,7 +1042,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
                 />
               )}
 
-              {user?.role === 'department' && !user?.isSubAccount && (
+              {(user?.role === 'department' && !user?.isSubAccount) || user?.role === 'global_admin' ? (
                 <SidebarItem
                   icon={GitBranch}
                   label="Sub-Accounts"
@@ -1050,7 +1050,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
                   onClick={() => onViewChange('sub_accounts')}
                   isCollapsed={isCollapsed}
                 />
-              )}
+              ) : null}
 
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} isCollapsed={isCollapsed} />
               <SidebarItem icon={History} label="My Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} isCollapsed={isCollapsed} />

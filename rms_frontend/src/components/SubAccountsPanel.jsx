@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
-  Check, Loader2, Copy, Eye, EyeOff, UserPlus, UserMinus, RefreshCw,
-  ShieldAlert, Building2, ChevronDown, ChevronUp
+  Check, Loader2, Copy, UserPlus, UserMinus,
+  ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck
 } from 'lucide-react';
-import { subAccountAPI } from '../lib/api';
+import { subAccountAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 
 // ── tiny helpers ──────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ const UserManager = ({ sub, availableUsers, onRefresh }) => {
 };
 
 // ── Single sub-account card ──────────────────────────────────────────────────
-const SubAccountCard = ({ sub, availableUsers, onRefresh }) => {
+const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
@@ -208,7 +208,12 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh }) => {
               <Badge color={sub.isDisabled ? 'red' : 'green'}>{sub.isDisabled ? 'Disabled' : 'Active'}</Badge>
             </div>
           )}
-          <p className="text-[10px] text-muted-foreground mt-0.5">{sub.userCount} user{sub.userCount !== 1 ? 's' : ''} · {sub.reqCount} request{sub.reqCount !== 1 ? 's' : ''}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {showParent && sub.parentDept?.name && (
+              <span className="text-violet-600 font-semibold">{sub.parentDept.name} · </span>
+            )}
+            {sub.userCount} user{sub.userCount !== 1 ? 's' : ''} · {sub.reqCount} request{sub.reqCount !== 1 ? 's' : ''}
+          </p>
         </div>
 
         {/* Actions */}
@@ -247,7 +252,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh }) => {
 };
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-const SubAccountsPanel = () => {
+const SubAccountsPanel = ({ isAdmin = false }) => {
   const [subs, setSubs] = useState([]);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -257,12 +262,27 @@ const SubAccountsPanel = () => {
   const [newCode, setNewCode] = useState(null);
   const [newSubName, setNewSubName] = useState('');
 
+  // Admin dept selector
+  const [departments, setDepartments] = useState([]);
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+
+  // The parentId to use for all API calls
+  const parentId = isAdmin ? (selectedDeptId ? parseInt(selectedDeptId) : null) : null;
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    deptAPI.getDepartments().then(d => {
+      const nonSub = (Array.isArray(d) ? d : []).filter(dept => !dept.isSubAccount && dept.name?.toLowerCase() !== 'super admin');
+      setDepartments(nonSub);
+    }).catch(() => {});
+  }, [isAdmin]);
+
   const load = async () => {
     setLoading(true);
     try {
       const [subsData, usersData] = await Promise.all([
-        subAccountAPI.list(),
-        subAccountAPI.availableUsers().catch(() => [])
+        subAccountAPI.list(parentId || undefined),
+        subAccountAPI.availableUsers(parentId || undefined).catch(() => [])
       ]);
       setSubs(Array.isArray(subsData) ? subsData : []);
       setAvailableUsers(Array.isArray(usersData) ? usersData : []);
@@ -271,13 +291,16 @@ const SubAccountsPanel = () => {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // For dept heads load immediately; for admin load when dept selected (or show all)
+    if (!isAdmin || selectedDeptId !== undefined) load();
+  }, [selectedDeptId, isAdmin]);
 
   const create = async () => {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      const res = await subAccountAPI.create(newName.trim());
+      const res = await subAccountAPI.create(newName.trim(), parentId || undefined);
       setNewCode(res.accessCode);
       setNewSubName(res.name);
       setNewName('');
@@ -296,21 +319,43 @@ const SubAccountsPanel = () => {
         <div>
           <h3 className="text-sm font-black text-foreground uppercase tracking-wide">Sub-Accounts / Units</h3>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            Create child units that log in with their own access code and submit requests under your department.
+            {isAdmin
+              ? 'View and manage sub-accounts across all departments.'
+              : 'Create child units that log in with their own access code and submit requests under your department.'}
           </p>
         </div>
         <button
           onClick={() => setShowCreate(v => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider hover:bg-primary/90 transition-all"
+          disabled={isAdmin && !selectedDeptId}
+          title={isAdmin && !selectedDeptId ? 'Select a department first' : undefined}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus size={13} /> New Unit
         </button>
       </div>
 
+      {/* Admin dept selector */}
+      {isAdmin && (
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedDeptId}
+            onChange={e => setSelectedDeptId(e.target.value)}
+            className="flex-1 text-xs border border-border/50 rounded-xl px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="">— All Departments —</option>
+            {departments.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Create form */}
       {showCreate && (
         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
-          <p className="text-[10px] font-black text-primary uppercase tracking-wider">New Sub-Account / Unit</p>
+          <p className="text-[10px] font-black text-primary uppercase tracking-wider">
+            New Sub-Account / Unit{isAdmin && selectedDeptId ? ` — ${departments.find(d => String(d.id) === selectedDeptId)?.name || ''}` : ''}
+          </p>
           <div className="flex gap-2">
             <input
               autoFocus
@@ -367,6 +412,7 @@ const SubAccountsPanel = () => {
               sub={sub}
               availableUsers={availableUsers}
               onRefresh={load}
+              showParent={isAdmin && !selectedDeptId}
             />
           ))}
         </div>

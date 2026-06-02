@@ -320,7 +320,7 @@ const AppContent = () => {
     sub_accounts: (
       <div className="p-6 max-w-2xl mx-auto">
         <div className="bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
-          <SubAccountsPage />
+          <SubAccountsPage isAdmin={user?.role === 'global_admin'} />
         </div>
       </div>
     ),

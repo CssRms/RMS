@@ -447,15 +447,15 @@ export const aiAPI = {
 };
 
 export const subAccountAPI = {
-  list: () => api.get('/sub-accounts'),
-  create: (name) => api.post('/sub-accounts', { name }),
+  list: (parentId) => api.get('/sub-accounts', { params: parentId ? { parentId } : {} }),
+  create: (name, parentId) => api.post('/sub-accounts', { name, ...(parentId ? { parentId } : {}) }),
   update: (id, data) => api.patch(`/sub-accounts/${id}`, data),
   toggle: (id) => api.patch(`/sub-accounts/${id}/toggle`),
   resetCode: (id) => api.post(`/sub-accounts/${id}/reset-code`),
   listUsers: (id) => api.get(`/sub-accounts/${id}/users`),
   assignUser: (id, userId) => api.post(`/sub-accounts/${id}/users`, { userId }),
   removeUser: (id, userId) => api.delete(`/sub-accounts/${id}/users/${userId}`),
-  availableUsers: () => api.get('/sub-accounts/available-users'),
+  availableUsers: (parentId) => api.get('/sub-accounts/available-users', { params: parentId ? { parentId } : {} }),
 };
 
 export default api;
