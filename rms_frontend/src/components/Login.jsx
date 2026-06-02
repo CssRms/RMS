@@ -117,31 +117,40 @@ const Login = () => {
         <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full translate-y-1/3 -translate-x-1/3"></div>
 
         {/* Branding Card Wrapper */}
-        <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] p-10 py-12 flex flex-col items-center justify-center text-center my-auto">
-          <div className="flex flex-col items-center">
-            <div className="w-32 h-20 rounded-2xl overflow-hidden bg-white/10 border border-white/20 shadow-inner">
-              <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-cover object-center" />
+        <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] px-10 py-14 flex flex-col items-center justify-center text-center my-auto gap-10">
+
+          {/* Logo + Company name */}
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-24 h-24 rounded-3xl overflow-hidden bg-white/10 border border-white/20 shadow-lg p-1">
+              <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-cover object-center rounded-2xl" />
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60 mt-4">CSS Group of Companies</p>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.3em] text-white/50">CSS Group of Companies</p>
+              <div className="mt-1.5 w-10 h-[2px] bg-white/20 mx-auto rounded-full" />
+            </div>
           </div>
 
-          <div className="mt-12">
-            <h1 className="text-4xl font-bold tracking-tight leading-tight">
+          {/* Headline */}
+          <div className="space-y-3">
+            <h1 className="text-5xl font-black tracking-tight leading-[1.1] text-white">
               Requisition<br />
-              <span className="italic font-black text-white/90">Management</span>
+              <span className="italic text-white/80 font-extrabold text-4xl">Management</span>
             </h1>
-            <p className="text-base text-white/80 mt-5 leading-relaxed max-w-xs mx-auto">
+            <p className="text-sm text-white/60 leading-relaxed max-w-[220px] mx-auto font-medium">
               Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
             </p>
-            <div className="mt-8 space-y-3.5">
-              {['End-to-end approval tracking', 'Offline draft capability', 'Multi-department oversight'].map((item, i) => (
-                <div key={i} className="flex items-center justify-center space-x-3">
-                  <CheckCircle2 size={16} className="text-white/60 flex-shrink-0" />
-                  <span className="text-sm text-white/75 font-medium">{item}</span>
-                </div>
-              ))}
-            </div>
           </div>
+
+          {/* Feature list */}
+          <div className="w-full space-y-2.5 border-t border-white/10 pt-8">
+            {['End-to-end approval tracking', 'Offline draft capability', 'Multi-department oversight'].map((item, i) => (
+              <div key={i} className="flex items-center justify-center gap-3">
+                <CheckCircle2 size={14} className="text-white/40 shrink-0" />
+                <span className="text-[13px] font-semibold text-white/70 tracking-wide">{item}</span>
+              </div>
+            ))}
+          </div>
+
         </div>
 
         {/* Footer info (Outside Card) */}
@@ -174,7 +183,6 @@ const Login = () => {
               <h2 className="text-2xl font-bold tracking-tight text-foreground">Sign In to Dashboard</h2>
               <h3 className="text-base font-semibold text-foreground">Welcome back</h3>
               <p className="text-sm text-muted-foreground">Authenticate to access the RMS portal</p>
-              <p className="text-muted-foreground text-sm font-medium">Select your department or sub-unit, then enter access code</p>
             </div>
 
             {error && (
