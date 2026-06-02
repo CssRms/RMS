@@ -208,9 +208,11 @@ const Login = () => {
 
           {/* Logo + Company name */}
           <div className="flex flex-col items-center gap-4">
-            <div className="w-44 h-28 rounded-2xl overflow-hidden bg-white/10 border border-white/20 shadow-lg">
-              <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-contain" />
-            </div>
+            <img
+              src="/CSS_Group.png"
+              alt="CSS Group Logo"
+              className="max-w-[176px] w-auto h-auto object-contain drop-shadow-xl rounded-xl"
+            />
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-white/50">CSS Group of Companies</p>
               <div className="mt-1.5 w-10 h-[2px] bg-white/20 mx-auto rounded-full" />

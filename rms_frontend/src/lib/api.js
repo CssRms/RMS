@@ -260,6 +260,9 @@ export const reqAPI = {
   },
   async tagRequisitionDepts(id, deptIds) {
     return api.post(`/requisitions/${id}/tag`, { deptIds });
+  },
+  async toggleSubAccountVisibility(id) {
+    return api.patch(`/requisitions/${id}/sub-account-visibility`);
   }
 };
 

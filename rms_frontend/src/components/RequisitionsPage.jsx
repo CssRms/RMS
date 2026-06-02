@@ -10,12 +10,12 @@ import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import {
-  Search, Plus, Eye, FileText, X,
+  Search, Plus, Eye, EyeOff, FileText, X,
   ChevronRight, Paperclip, ShieldCheck, Clock,
   ArrowRightCircle, CornerDownLeft, Loader2, Send, Trash2, Printer,
   Building2, ArrowRight, ArrowLeft, History, Download, AlertTriangle,
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
-  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked
+  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked, Users
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
 
@@ -2044,6 +2044,36 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   );
 };
 
+// ── Sub-account visibility toggle button ──────────────────────────────────────
+const SubVisibilityToggle = ({ req, onAction }) => {
+  const [toggling, setToggling] = useState(false);
+  const [visible, setVisible]   = useState(req.visibleToSubAccounts ?? false);
+  const toggle = async () => {
+    setToggling(true);
+    try {
+      const res = await reqAPI.toggleSubAccountVisibility(req.id);
+      setVisible(res.visibleToSubAccounts);
+      onAction?.('refreshed', { ...req, visibleToSubAccounts: res.visibleToSubAccounts });
+      toast.success(res.visibleToSubAccounts ? 'Now visible to sub-units.' : 'Hidden from sub-units.');
+    } catch { toast.error('Failed to update visibility.'); }
+    finally { setToggling(false); }
+  };
+  return (
+    <button
+      onClick={toggle}
+      disabled={toggling}
+      title={visible ? 'Click to hide from sub-units' : 'Click to share with sub-units'}
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-50
+        ${visible
+          ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+          : 'bg-muted/40 border-border/50 text-muted-foreground hover:bg-muted/70'}`}
+    >
+      {toggling ? <Loader2 size={9} className="animate-spin"/> : visible ? <Eye size={9}/> : <EyeOff size={9}/>}
+      {visible ? 'Visible to Units' : 'Hidden from Units'}
+    </button>
+  );
+};
+
 // ── Detail Modal ─────────────────────────────────────────────────────────────
 const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onEditDraft, canPrint }) => {
   const [detail, setDetail]         = useState(null);
@@ -2377,17 +2407,28 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tighter leading-tight">{req.title}</h2>
-            <div className="flex items-center gap-4 text-xs tracking-wide text-muted-foreground font-semibold flex-wrap">
+            <div className="flex items-center gap-3 text-xs tracking-wide text-muted-foreground font-semibold flex-wrap">
                <span className="flex items-center gap-1.5">
                  <Building2 size={13}/> {req.department}
                  {req.isFromSubAccount && (
                    <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest">UNIT</span>
                  )}
                </span>
+               {/* Creator indicator — shows for sub-accounts viewing parent's shared request */}
+               {req.visibleToSubAccounts && user?.isSubAccount && (
+                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[9px] font-black uppercase tracking-wider">
+                   <Users size={9}/> {req.deptHeadName || req.department} (Dept Head)
+                 </span>
+               )}
                {detail?.targetDepartment?.name && (
                  <span className="flex items-center gap-1.5"><ArrowRight size={13}/> {detail.targetDepartment.name}</span>
                )}
                <span className="px-2 py-0.5 rounded-md bg-muted font-mono text-[10px] tracking-widest">#{req.id}</span>
+
+               {/* Sub-account visibility toggle — dept head only, own dept, non-sub-account requests */}
+               {user?.role === 'department' && !user?.isSubAccount && !req.isFromSubAccount && req.departmentId === user?.deptId && (
+                 <SubVisibilityToggle req={req} onAction={onAction} />
+               )}
             </div>
           </div>
           
@@ -3250,11 +3291,13 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   // Normalize a requisition so department/creator are always strings, not nested objects.
   const normalizeReq = (r) => ({
     ...r,
-    department:       r.department?.name ?? r.department ?? r.departmentName ?? '',
-    isFromSubAccount: r.department?.isSubAccount === true,
-    creator:          r.creator?.name    ?? r.creator    ?? r.creatorName    ?? '',
-    currentStageName: r.currentStage?.name ?? '',
-    finalState:       r.finalApprovalStatus ?? 'none',
+    department:          r.department?.name ?? r.department ?? r.departmentName ?? '',
+    isFromSubAccount:    r.department?.isSubAccount === true,
+    deptHeadName:        r.department?.headName ?? '',
+    visibleToSubAccounts: r.visibleToSubAccounts ?? false,
+    creator:             r.creator?.name ?? r.creator ?? r.creatorName ?? '',
+    currentStageName:    r.currentStage?.name ?? '',
+    finalState:          r.finalApprovalStatus ?? 'none',
   });
 
   // Always fetch fresh data from server — show cached instantly, then replace with live
@@ -3540,7 +3583,16 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
           departments={departments}
           canPrint={canPrint}
           onClose={() => setSelectedReq(null)}
-          onAction={() => { setSelectedReq(null); loadData(); }}
+          onAction={(actionType, updatedReq) => {
+            if (actionType === 'refreshed' && updatedReq) {
+              // In-place update — keep modal open, no reload, instant
+              setRequisitions(prev => prev.map(r => r.id === updatedReq.id ? { ...r, ...updatedReq } : r));
+              setSelectedReq(prev => prev ? { ...prev, ...updatedReq } : prev);
+              return;
+            }
+            setSelectedReq(null);
+            loadData(true); // always silent — no loading spinner on action
+          }}
           onEditDraft={(req) => {
             if (/^memo/i.test(req.type)) return; // Memo drafts handled in Memo page
             setEditDraft(req);

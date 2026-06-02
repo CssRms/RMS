@@ -3058,6 +3058,28 @@ app.post('/api/requisitions/:id/un-kiv', authenticateToken, async (req, res) => 
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// Toggle sub-account visibility — dept head only, on their own (non-sub-account) department's requests
+app.patch('/api/requisitions/:id/sub-account-visibility', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'department' || req.user?.isSubAccount) {
+      return res.status(403).json({ error: 'Only department heads can control sub-account visibility.' });
+    }
+    const deptId = parseInt(req.user.deptId);
+    const existing = await prisma.requisition.findUnique({ where: { id: reqId }, include: { department: { select: { isSubAccount: true } } } });
+    if (!existing) return res.status(404).json({ error: 'Requisition not found.' });
+    if (existing.departmentId !== deptId) return res.status(403).json({ error: 'You can only control visibility of your own department\'s requests.' });
+    if (existing.department?.isSubAccount) return res.status(400).json({ error: 'Sub-account requests cannot use this toggle.' });
+    const updated = await prisma.requisition.update({
+      where: { id: reqId },
+      data: { visibleToSubAccounts: !existing.visibleToSubAccounts }
+    });
+    broadcastUpdate(reqId, { action: 'visibility-toggled', visibleToSubAccounts: updated.visibleToSubAccounts });
+    res.json({ id: updated.id, visibleToSubAccounts: updated.visibleToSubAccounts });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
 // Forward / Return-to-Sender a requisition (target department response)
 app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) => {
   try {
@@ -3800,6 +3822,10 @@ app.put('/api/department/profile', authenticateToken, async (req, res) => {
 app.post('/api/department/signature', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     if (req.user.role !== 'department' || !req.user.deptId) return res.status(403).json({ error: 'Forbidden' });
+    // Sub-accounts are bound to the parent department's signature — they cannot set their own
+    if (req.user.isSubAccount) {
+      return res.status(403).json({ error: 'Sub-accounts cannot upload a signature. Your department head\'s signature is used automatically.' });
+    }
     if (!req.file) return res.status(400).json({ error: 'No signature file uploaded' });
 
     const dept = await prisma.department.findUnique({ where: { id: req.user.deptId } });
@@ -4898,13 +4924,18 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
           subDeptIds = subDepts.map(d => d.id);
         } catch (_) {}
       }
+      // Sub-accounts also see their parent dept head's requests that were made visible
+      const parentVisibleClause = (req.user.isSubAccount && req.user.parentDeptId)
+        ? [{ departmentId: parseInt(req.user.parentDeptId), visibleToSubAccounts: true }]
+        : [];
       const accessWhere = {
         OR: [
           { departmentId: deptId },
           { targetDepartmentId: deptId },
           ...(subDeptIds.length > 0 ? [{ departmentId: { in: subDeptIds } }] : []),
           ...(linkedReqIds.length > 0 ? [{ id: { in: linkedReqIds } }] : []),
-          ...(taggedReqIds.length > 0 ? [{ id: { in: taggedReqIds } }] : [])
+          ...(taggedReqIds.length > 0 ? [{ id: { in: taggedReqIds } }] : []),
+          ...parentVisibleClause
         ]
       };
       where = typeValues.length > 0 ? { AND: [accessWhere, typeScopeWhere] } : accessWhere;
@@ -4918,7 +4949,7 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
       prisma.requisition.findMany({
         where,
         include: {
-          department: { select: { name: true, isSubAccount: true } },
+          department: { select: { name: true, isSubAccount: true, headName: true } },
           targetDepartment: { select: { name: true, headEmail: true } },
           creator: { select: { name: true } },
           currentStage: true,

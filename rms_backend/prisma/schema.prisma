@@ -124,6 +124,9 @@ model Requisition {
   kivAt      DateTime?
   kivByName  String?
 
+  // Sub-account visibility — dept head can share their requests with their sub-units
+  visibleToSubAccounts Boolean @default(false)
+
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 }
