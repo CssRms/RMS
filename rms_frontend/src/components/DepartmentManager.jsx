@@ -1316,16 +1316,24 @@ const DepartmentManager = ({ onViewChange }) => {
               {emailStatus.configured ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
               <div>
                 {emailStatus.configured ? (
-                  <p className="font-bold">Email is configured via <span className="uppercase">{emailStatus.provider}</span>{emailStatus.gmailUser ? ` (${emailStatus.gmailUser})` : ''}</p>
+                  <>
+                    <p className="font-bold">Email is configured via <span className="uppercase">{emailStatus.provider}</span>{emailStatus.gmailUser ? ` (${emailStatus.gmailUser})` : ''}</p>
+                    {emailStatus.error && <p className="mt-1 text-amber-700">⚠ Verification warning: {emailStatus.error}</p>}
+                  </>
                 ) : (
                   <>
                     <p className="font-bold">Email is NOT configured — notifications will not be sent</p>
-                    {emailStatus.error && <p className="mt-1 opacity-80">{emailStatus.error}</p>}
+                    {emailStatus.hasQuotes && (
+                      <p className="mt-1 font-black text-red-900 bg-red-100 px-2 py-1 rounded">
+                        ⚠ Your Railway variable value has surrounding quotes — remove them. Set the value as plain text with no " or ' characters.
+                      </p>
+                    )}
+                    {emailStatus.error && !emailStatus.hasQuotes && <p className="mt-1 opacity-80">{emailStatus.error}</p>}
                     <div className="mt-2 space-y-1 opacity-90">
-                      <p className="font-semibold">To fix: add these variables in Railway → Variables:</p>
-                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_USER = your-gmail@gmail.com</code>
-                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_APP_PASSWORD = xxxx xxxx xxxx xxxx</code>
-                      <p className="text-[10px] mt-1">App Password (not regular password) — get it at <strong>myaccount.google.com/apppasswords</strong> (requires 2FA enabled)</p>
+                      <p className="font-semibold">In Railway → Variables, set exactly (no quotes):</p>
+                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_USER  →  geniusmultidisciplinary@gmail.com</code>
+                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_APP_PASSWORD  →  mzwv ligm bvpw mzvt</code>
+                      <p className="text-[10px] mt-1 font-bold">The app password goes in as-is with spaces — do NOT wrap in quotes.</p>
                     </div>
                   </>
                 )}
