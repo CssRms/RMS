@@ -117,8 +117,8 @@ const Login = () => {
         <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full translate-y-1/3 -translate-x-1/3"></div>
 
         {/* Branding Card Wrapper */}
-        <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] p-10 py-12 flex flex-col justify-center my-auto">
-          <div>
+        <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] p-10 py-12 flex flex-col items-center justify-center text-center my-auto">
+          <div className="flex flex-col items-center">
             <div className="w-32 h-20 rounded-2xl overflow-hidden bg-white/10 border border-white/20 shadow-inner">
               <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-cover object-center" />
             </div>
@@ -130,12 +130,12 @@ const Login = () => {
               Requisition<br />
               <span className="italic font-black text-white/90">Management</span>
             </h1>
-            <p className="text-base text-white/80 mt-5 leading-relaxed max-w-xs">
+            <p className="text-base text-white/80 mt-5 leading-relaxed max-w-xs mx-auto">
               Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
             </p>
             <div className="mt-8 space-y-3.5">
               {['End-to-end approval tracking', 'Offline draft capability', 'Multi-department oversight'].map((item, i) => (
-                <div key={i} className="flex items-center space-x-3">
+                <div key={i} className="flex items-center justify-center space-x-3">
                   <CheckCircle2 size={16} className="text-white/60 flex-shrink-0" />
                   <span className="text-sm text-white/75 font-medium">{item}</span>
                 </div>
