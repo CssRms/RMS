@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition } from '../lib/store';
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride } from '../lib/store';
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -1510,6 +1510,221 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
   );
 };
 
+// ── Audit Price Override Panel ────────────────────────────────────────────────
+// Shown only to the Audit department when they currently hold the request.
+// Allows them to build a verified items table that supersedes the creator's price.
+const AuditOverridePanel = ({ req, detail, user, onDone }) => {
+  const _fmt = n => `₦${Number(n || 0).toLocaleString()}`;
+
+  const existingOverride = detail?.hasAuditOverride
+    ? (() => { try { return JSON.parse(detail.auditContent); } catch { return null; } })()
+    : null;
+
+  const blankRow = () => ({ description: '', qty: 1, amount: '' });
+
+  const [rows, setRows] = useState(() =>
+    existingOverride?.items?.length
+      ? existingOverride.items.map(i => ({ description: i.description, qty: i.qty, amount: String(i.amount) }))
+      : [blankRow()]
+  );
+  const [comment, setComment] = useState(existingOverride?.comment || '');
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [showForm, setShowForm] = useState(!detail?.hasAuditOverride);
+
+  const calcLineTotal = (row) => {
+    const qty = parseFloat(row.qty) || 0;
+    const amt = parseFloat(row.amount) || 0;
+    return qty * amt;
+  };
+  const grandTotal = rows.reduce((s, r) => s + calcLineTotal(r), 0);
+
+  const updateRow = (idx, field, val) => {
+    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+  };
+  const addRow = () => setRows(prev => [...prev, blankRow()]);
+  const removeRow = (idx) => setRows(prev => prev.filter((_, i) => i !== idx));
+
+  const handleSave = async () => {
+    const validRows = rows.filter(r => r.description.trim() && parseFloat(r.amount) > 0);
+    if (!validRows.length) { toast.error('Add at least one item with a description and price.'); return; }
+    setSaving(true);
+    try {
+      const items = validRows.map(r => ({
+        description: r.description.trim(),
+        qty: parseFloat(r.qty) || 1,
+        amount: parseFloat(r.amount),
+        lineTotal: parseFloat(((parseFloat(r.qty) || 1) * parseFloat(r.amount)).toFixed(2)),
+      }));
+      await saveAuditOverride(req.id, { items, comment: comment.trim() || undefined });
+      toast.success('Audit verified table saved. This amount will be used for approval & payment.');
+      setShowForm(false);
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not save audit override.');
+    } finally { setSaving(false); }
+  };
+
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      await clearAuditOverride(req.id);
+      toast.success('Audit override cleared. Original creator amount is now effective.');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not clear override.');
+    } finally { setClearing(false); }
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 border border-purple-200 rounded-2xl shadow-sm relative overflow-hidden bg-purple-50/40">
+      <div className="absolute top-0 left-0 w-1 h-full bg-purple-500" />
+      <div className="p-4">
+        <div className="flex items-center justify-between pl-1 mb-3">
+          <div className="flex items-center gap-2">
+            <Gavel size={14} className="text-purple-700" />
+            <p className="text-[10px] font-black text-purple-800 uppercase tracking-widest">Audit Price Override</p>
+            {detail?.hasAuditOverride && (
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Override Active</span>
+            )}
+          </div>
+          {detail?.hasAuditOverride && !showForm && (
+            <button onClick={() => setShowForm(true)} className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline">Edit</button>
+          )}
+        </div>
+
+        {detail?.hasAuditOverride && !showForm && existingOverride && (
+          <div className="mb-3 space-y-2">
+            <p className="text-xs text-purple-700/80 pl-1">Verified amount: <span className="font-black text-purple-900">{_fmt(detail.auditAmount)}</span></p>
+            {existingOverride.comment && <p className="text-xs text-purple-700/80 italic pl-1">"{existingOverride.comment}"</p>}
+            <button
+              onClick={handleClear}
+              disabled={clearing}
+              className="text-[10px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1 pl-1"
+            >
+              {clearing ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+              Clear Override (revert to creator's amount)
+            </button>
+          </div>
+        )}
+
+        {showForm && (
+          <div className="space-y-3">
+            <p className="text-[11px] text-purple-700/80 pl-1 leading-relaxed">
+              Build your verified items table below. This will <strong>override the creator's estimated amount</strong> for threshold decisions and payment. The creator's original table remains visible.
+            </p>
+
+            <div className="overflow-x-auto rounded-xl border border-purple-200 shadow-sm">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-purple-100/60 border-b border-purple-200">
+                    <th className="text-left px-2 py-2 text-[10px] font-black text-purple-700 uppercase tracking-wider w-8">#</th>
+                    <th className="text-left px-2 py-2 text-[10px] font-black text-purple-700 uppercase tracking-wider">Item Description</th>
+                    <th className="text-center px-2 py-2 text-[10px] font-black text-purple-700 uppercase tracking-wider w-16">Qty</th>
+                    <th className="text-right px-2 py-2 text-[10px] font-black text-purple-700 uppercase tracking-wider w-28">Unit Price (₦)</th>
+                    <th className="text-right px-2 py-2 text-[10px] font-black text-purple-700 uppercase tracking-wider w-24">Total</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-purple-100">
+                  {rows.map((row, idx) => (
+                    <tr key={idx} className="bg-white">
+                      <td className="px-2 py-2 text-xs text-muted-foreground font-mono">{idx + 1}</td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="text"
+                          value={row.description}
+                          onChange={e => updateRow(idx, 'description', e.target.value)}
+                          placeholder="Item description"
+                          className="w-full text-xs border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          min="1"
+                          value={row.qty}
+                          onChange={e => updateRow(idx, 'qty', e.target.value)}
+                          className="w-full text-xs text-center border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={row.amount}
+                          onChange={e => updateRow(idx, 'amount', e.target.value)}
+                          placeholder="0.00"
+                          className="w-full text-xs text-right border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-xs text-right font-mono font-bold text-foreground">
+                        {_fmt(calcLineTotal(row))}
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        {rows.length > 1 && (
+                          <button onClick={() => removeRow(idx)} className="text-red-400 hover:text-red-600">
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-purple-50/80 border-t-2 border-purple-200">
+                    <td colSpan={4} className="px-2 py-2 text-xs font-black text-right uppercase tracking-widest text-purple-700">Verified Grand Total</td>
+                    <td className="px-2 py-2 text-sm font-black text-right font-mono text-purple-800">{_fmt(grandTotal)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <button
+              onClick={addRow}
+              className="flex items-center gap-1.5 text-[11px] font-bold text-purple-700 hover:text-purple-900 transition-colors pl-1"
+            >
+              <Plus size={13} /> Add Row
+            </button>
+
+            <div>
+              <label className="block text-[10px] font-black text-purple-700 uppercase tracking-widest mb-1 pl-1">Comment (optional)</label>
+              <textarea
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                rows={2}
+                placeholder="e.g. Prices verified against market rate..."
+                className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-400 resize-none"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm transition-all disabled:opacity-50 shadow-md"
+              >
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Gavel size={15} />}
+                {saving ? 'Saving…' : 'Save Audit Verified Table'}
+              </button>
+              {detail?.hasAuditOverride && (
+                <button
+                  onClick={() => setShowForm(false)}
+                  className="px-4 py-2.5 rounded-xl border border-border text-muted-foreground text-sm font-bold hover:bg-muted transition-all"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Vetting Panel (ICC / Audit / Account — role-specific auto-routing) ─────────
 const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const [comment, setComment]       = useState('');
@@ -2222,46 +2437,93 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
     </div>
   ) : null;
 
+  const _hasAuditOverride = !!detail?.hasAuditOverride;
+  const _auditParsed = _hasAuditOverride
+    ? (() => { try { return JSON.parse(detail.auditContent); } catch { return null; } })()
+    : null;
+
+  const _renderItemsTable = (items, total, comment, opts = {}) => {
+    const { headerBg = 'bg-muted/60', headerText = 'text-muted-foreground', footerBg = 'bg-primary/5', footerBorder = 'border-primary/20', footerText = 'text-primary', borderColor = 'border-border/50' } = opts;
+    return (
+      <div className={`overflow-x-auto rounded-xl border ${borderColor} shadow-sm`}>
+        {comment && <p className="text-sm text-muted-foreground italic px-3 pt-2">{comment}</p>}
+        <table className="w-full text-sm">
+          <thead>
+            <tr className={`${headerBg} border-b ${borderColor}`}>
+              <th className={`text-left px-3 py-2.5 text-[10px] font-black ${headerText} uppercase tracking-wider w-8`}>S/N</th>
+              <th className={`text-left px-3 py-2.5 text-[10px] font-black ${headerText} uppercase tracking-wider`}>Item Description</th>
+              <th className={`text-center px-3 py-2.5 text-[10px] font-black ${headerText} uppercase tracking-wider w-20`}>Quantity</th>
+              <th className={`text-right px-3 py-2.5 text-[10px] font-black ${headerText} uppercase tracking-wider`}>Unit Price</th>
+              <th className={`text-right px-3 py-2.5 text-[10px] font-black ${headerText} uppercase tracking-wider`}>Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/30">
+            {items.map((item, idx) => (
+              <tr key={idx} className="bg-white hover:bg-muted/20 transition-colors">
+                <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{idx + 1}</td>
+                <td className="px-3 py-2.5 text-sm font-medium text-foreground">{item.description}</td>
+                <td className="px-3 py-2.5 text-xs text-center font-semibold">{item.qty}</td>
+                <td className="px-3 py-2.5 text-xs text-right font-mono text-muted-foreground">{_fmt(item.amount)}</td>
+                <td className="px-3 py-2.5 text-xs text-right font-mono font-bold text-foreground">{_fmt(item.lineTotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className={`${footerBg} border-t-2 ${footerBorder}`}>
+              <td colSpan={4} className={`px-3 py-2.5 text-xs font-black text-right uppercase tracking-widest ${footerText}`}>Grand Total</td>
+              <td className={`px-3 py-2.5 text-sm font-black text-right font-mono ${footerText}`}>{_fmt(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    );
+  };
+
   const itemsBlock = (() => {
     if (!_parsedContent) return null;
     if (_parsedContent.itemized && Array.isArray(_parsedContent.items) && _parsedContent.items.length > 0) {
       return (
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2">
-            <Paperclip size={15} className="text-primary" />
-            <p className="text-xs font-black text-foreground uppercase tracking-[0.1em]">Item Details</p>
+        <div className="space-y-4">
+          {/* Creator's original table — always shown */}
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Paperclip size={15} className="text-primary" />
+              <p className="text-xs font-black text-foreground uppercase tracking-[0.1em]">
+                {_hasAuditOverride ? 'Creator\'s Estimate (Original)' : 'Item Details'}
+              </p>
+              {_hasAuditOverride && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-muted border border-border text-muted-foreground uppercase">For Reference</span>
+              )}
+            </div>
+            {_renderItemsTable(
+              _parsedContent.items,
+              _parsedContent.total,
+              _parsedContent.comment,
+              _hasAuditOverride
+                ? { headerBg: 'bg-muted/40', headerText: 'text-muted-foreground', footerBg: 'bg-muted/30', footerBorder: 'border-border/40', footerText: 'text-muted-foreground', borderColor: 'border-border/40' }
+                : {}
+            )}
           </div>
-          {_parsedContent.comment && <p className="text-sm text-muted-foreground italic px-1">{_parsedContent.comment}</p>}
-          <div className="overflow-x-auto rounded-xl border border-border/50 shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/60 border-b border-border/50">
-                  <th className="text-left px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider w-8">S/N</th>
-                  <th className="text-left px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider">Item Description</th>
-                  <th className="text-center px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider w-20">Quantity</th>
-                  <th className="text-right px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider">Unit Price</th>
-                  <th className="text-right px-3 py-2.5 text-[10px] font-black text-muted-foreground uppercase tracking-wider">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/30">
-                {_parsedContent.items.map((item, idx) => (
-                  <tr key={idx} className="bg-white hover:bg-muted/20 transition-colors">
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{idx + 1}</td>
-                    <td className="px-3 py-2.5 text-sm font-medium text-foreground">{item.description}</td>
-                    <td className="px-3 py-2.5 text-xs text-center font-semibold">{item.qty}</td>
-                    <td className="px-3 py-2.5 text-xs text-right font-mono text-muted-foreground">{_fmt(item.amount)}</td>
-                    <td className="px-3 py-2.5 text-xs text-right font-mono font-bold text-foreground">{_fmt(item.lineTotal)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-primary/5 border-t-2 border-primary/20">
-                  <td colSpan={4} className="px-3 py-2.5 text-xs font-black text-right uppercase tracking-widest text-primary">Grand Total</td>
-                  <td className="px-3 py-2.5 text-sm font-black text-right font-mono text-primary">{_fmt(_parsedContent.total)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+
+          {/* Audit verified table — shown when override exists */}
+          {_hasAuditOverride && _auditParsed?.items?.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Gavel size={15} className="text-purple-600" />
+                <p className="text-xs font-black text-purple-800 uppercase tracking-[0.1em]">Audit Verified Amount</p>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Effective for Approval & Payment</span>
+              </div>
+              {detail.auditDeptName && (
+                <p className="text-[11px] text-purple-600/80 pl-1">Verified by: <span className="font-bold">{detail.auditDeptName}</span></p>
+              )}
+              {_renderItemsTable(
+                _auditParsed.items,
+                _auditParsed.total,
+                _auditParsed.comment,
+                { headerBg: 'bg-purple-100/60', headerText: 'text-purple-700', footerBg: 'bg-purple-50/80', footerBorder: 'border-purple-200', footerText: 'text-purple-800', borderColor: 'border-purple-200' }
+              )}
+            </div>
+          )}
         </div>
       );
     }
@@ -2433,9 +2695,18 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
           </div>
           
           {isFinancial && (
-             <div className="sm:text-right bg-white border border-border/40 p-4 rounded-xl shadow-sm min-w-[200px]">
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-1">Total Amount</p>
-                <p className="text-2xl font-mono font-black text-foreground">₦{Number(req.amount || 0).toLocaleString()}</p>
+             <div className={`sm:text-right border p-4 rounded-xl shadow-sm min-w-[200px] ${_hasAuditOverride ? 'bg-purple-50 border-purple-200' : 'bg-white border-border/40'}`}>
+                <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${_hasAuditOverride ? 'text-purple-700' : 'text-muted-foreground'}`}>
+                  {_hasAuditOverride ? 'Audit Verified Amount' : 'Total Amount'}
+                </p>
+                <p className={`text-2xl font-mono font-black ${_hasAuditOverride ? 'text-purple-900' : 'text-foreground'}`}>
+                  ₦{Number(_hasAuditOverride ? (detail?.auditAmount ?? req.amount) : req.amount || 0).toLocaleString()}
+                </p>
+                {_hasAuditOverride && (
+                  <p className="text-[9px] text-muted-foreground mt-0.5 line-through">
+                    Originally: ₦{Number(req.amount || 0).toLocaleString()}
+                  </p>
+                )}
              </div>
           )}
         </div>
@@ -2541,6 +2812,24 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                      departments={departments}
                      onDone={() => { onAction(); }}
                    />
+                </div>
+              )}
+
+              {/* Audit Override Panel — shown to Audit dept when they hold the request and it has an itemized table */}
+              {!isTaggedObserver && user?.role === 'department' && detail && !loading &&
+               /\baudit\b/i.test(user?.name || '') &&
+               detail.targetDepartmentId === user?.deptId &&
+               _parsedContent?.itemized && (
+                <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
+                  <AuditOverridePanel
+                    req={req}
+                    detail={detail}
+                    user={user}
+                    onDone={() => {
+                      getRequisitionDetail(req.id).then(d => setDetail(d));
+                      onAction();
+                    }}
+                  />
                 </div>
               )}
 

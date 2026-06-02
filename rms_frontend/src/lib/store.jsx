@@ -757,6 +757,9 @@ export async function vettingActionRequisition(reqId, { action, comment, nextDep
 export const kivRequisition = (id, note) => kivAPI.kiv(id, note);
 export const unKivRequisition = (id) => kivAPI.unKiv(id);
 
+export const saveAuditOverride = (reqId, payload) => auditAPI.saveOverride(reqId, payload);
+export const clearAuditOverride = (reqId) => auditAPI.clearOverride(reqId);
+
 // ── HR offline-safe read functions ────────────────────────────────────────────
 // Each follows NetworkFirst: try the server, fall back to the local cache.
 // Write operations (create/update/delete) still go through hrAPI directly

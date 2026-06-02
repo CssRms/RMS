@@ -178,6 +178,12 @@ export const forwardAPI = {
 export const auditAPI = {
   async getAuditLogs() {
     return api.get('/audit-logs');
+  },
+  async saveOverride(reqId, payload) {
+    return api.post(`/requisitions/${reqId}/audit-override`, payload);
+  },
+  async clearOverride(reqId) {
+    return api.delete(`/requisitions/${reqId}/audit-override`);
   }
 };
 

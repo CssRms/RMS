@@ -3753,6 +3753,124 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── AUDIT PRICE OVERRIDE ──────────────────────────────────────────────────────
+// Audit dept (pre-approval reviewer) can save a verified items table that
+// supersedes the creator's estimated prices for threshold & payment decisions.
+// The creator's original table is preserved and still visible.
+app.post('/api/requisitions/:id/audit-override', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    // Resolve acting department
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
+      : null;
+    const isAuditDept = actingDept && /\baudit\b/i.test(actingDept.name);
+
+    if (!isAdmin && !isAuditDept) {
+      return res.status(403).json({ error: 'Only the Audit department can save a verified items table.' });
+    }
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { id: true, title: true, departmentId: true, targetDepartmentId: true, status: true }
+    });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+
+    // Audit must currently hold the request (be the target dept) OR admin override
+    if (!isAdmin && requisition.targetDepartmentId !== userDeptId) {
+      return res.status(403).json({ error: 'Your department does not currently hold this requisition.' });
+    }
+
+    const parsed = z.object({
+      items: z.array(z.object({
+        description: z.string().min(1),
+        qty: z.union([z.number(), z.string()]).transform(v => Number(v)),
+        amount: z.union([z.number(), z.string()]).transform(v => parseFloat(String(v))),
+        lineTotal: z.union([z.number(), z.string()]).transform(v => parseFloat(String(v))).optional(),
+      })).min(1),
+      comment: z.string().optional(),
+    }).safeParse(req.body || {});
+
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid audit override payload. Provide at least one item.' });
+
+    const { items, comment } = parsed.data;
+
+    // Recalculate lineTotals and grand total server-side (don't trust client totals)
+    const verifiedItems = items.map(item => ({
+      description: item.description,
+      qty: item.qty,
+      amount: item.amount,
+      lineTotal: parseFloat((item.qty * item.amount).toFixed(2)),
+    }));
+    const auditTotal = parseFloat(verifiedItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
+
+    const auditContent = JSON.stringify({
+      itemized: true,
+      items: verifiedItems,
+      comment: comment || null,
+      total: auditTotal,
+    });
+
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: {
+        hasAuditOverride: true,
+        auditContent,
+        auditAmount: auditTotal,
+        auditDeptId: userDeptId || null,
+        auditDeptName: actingDept?.name || null,
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'Audit Price Override',
+        details: `Req #${reqId}: Audit verified table saved by ${actingDept?.name || 'Audit'}. Total: ₦${auditTotal.toLocaleString()}`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'audit_override', fromDept: actingDept?.name || 'Audit' });
+    pushToTaggedDepts(reqId, {
+      title: 'Audit Verified Amount Set',
+      body: `Req #${reqId} has an Audit-verified price table. Amount: ₦${auditTotal.toLocaleString()}.`,
+      url: `/?req=${reqId}`
+    });
+
+    res.json({ success: true, auditAmount: auditTotal });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ── AUDIT OVERRIDE CLEAR ──────────────────────────────────────────────────────
+// Audit can also clear their override (e.g. if they choose comment + return instead)
+app.delete('/api/requisitions/:id/audit-override', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true } })
+      : null;
+    const isAuditDept = actingDept && /\baudit\b/i.test(actingDept.name);
+
+    if (!isAdmin && !isAuditDept) {
+      return res.status(403).json({ error: 'Only the Audit department can clear a verified table.' });
+    }
+
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: { hasAuditOverride: false, auditContent: null, auditAmount: null, auditDeptId: null, auditDeptName: null }
+    });
+
+    broadcastUpdate(reqId, { action: 'audit_override_cleared' });
+    res.json({ success: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 // ── PUBLISH MEMO TO ALL DEPARTMENTS ──────────────────────────────────────────
 app.post('/api/requisitions/:id/publish-memo', authenticateToken, async (req, res) => {
   try {
@@ -4131,7 +4249,8 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
     try {
       const extRows = await prisma.$queryRaw`
         SELECT "finalApprovalStatus", "finalApprovedByDeptId", "finalApprovedAt",
-               "finalApprovedNote", "currentVettingDeptId", "treatedByDeptId", "treatedAt"
+               "finalApprovedNote", "currentVettingDeptId", "treatedByDeptId", "treatedAt",
+               "hasAuditOverride", "auditContent", "auditAmount", "auditDeptId", "auditDeptName"
         FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
       `;
       ext = extRows?.[0] || {};

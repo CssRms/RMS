@@ -127,6 +127,14 @@ model Requisition {
   // Sub-account visibility — dept head can share their requests with their sub-units
   visibleToSubAccounts Boolean @default(false)
 
+  // Audit / Vetting Price Override — vetting dept can supply their own verified items table
+  // which supersedes the creator's estimate for threshold decisions and payment
+  hasAuditOverride  Boolean  @default(false)
+  auditContent      String?  @db.Text   // JSON: { itemized, items, comment, total }
+  auditAmount       Float?              // verified total from audit dept
+  auditDeptId       Int?
+  auditDeptName     String?
+
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 }
