@@ -5,7 +5,8 @@ import {
   Plus, Trash2, Building2, Briefcase, Search, ChevronDown, ChevronRight,
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
   CheckCircle2, RotateCcw, Info, User, Mail, Phone, MapPin, BadgeCheck, Download,
-  Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles, Upload, PenTool, Award
+  Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles, Upload, PenTool, Award,
+  Send, AlertCircle, Wifi, WifiOff
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
 import { deptAPI, settingsAPI, adminAPI, reqAPI } from '../lib/api';

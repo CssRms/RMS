@@ -5146,6 +5146,22 @@ app.delete('/api/attachments/:id', authenticateToken, async (req, res) => {
   } catch (err) { sendError(res, 500, err.message); }
 });
 
+// ── EMAIL STATUS ──
+app.get('/api/email-status', authenticateToken, requireRoles(['global_admin']), (req, res) => {
+  const gmailUser = process.env.GMAIL_USER;
+  const smtpHost  = process.env.SMTP_HOST;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  const status = getTransportStatus();
+  res.json({
+    configured: status.configured,
+    error: status.error || null,
+    provider: gmailUser ? 'gmail' : smtpHost ? 'smtp' : 'none',
+    gmailUser: gmailUser || null,
+    smtpHost: smtpHost || null,
+    gmailPassLength: gmailPass ? gmailPass.replace(/\s/g,'').length : 0,
+  });
+});
+
 // ── EMAIL TEST ENDPOINT (Admin only) ──
 app.post('/api/test-email', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
   try {
