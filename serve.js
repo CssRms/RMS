@@ -2613,11 +2613,18 @@ app.put('/api/requisitions/:id', authenticateToken, generalLimiter, async (req, 
     if (!existing) return res.status(404).json({ error: 'Requisition not found' });
     if (existing.status !== 'draft') return res.status(400).json({ error: 'Only drafts can be edited' });
 
-    // Verify ownership
+    // Verify ownership — also allow the parent dept head to edit sub-account drafts
     const systemUser = await prisma.user.findFirst({ where: { role: 'global_admin' } });
     const isAdmin = getNumericUserId(req.user) === systemUser?.id;
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
-    if (!isAdmin && existing.departmentId !== userDeptId) {
+    let canEdit = isAdmin || existing.departmentId === userDeptId;
+    if (!canEdit && userDeptId) {
+      const subDept = await prisma.department.findFirst({
+        where: { id: existing.departmentId, isSubAccount: true, parentId: userDeptId }
+      });
+      canEdit = !!subDept;
+    }
+    if (!canEdit) {
       return res.status(403).json({ error: 'You do not have permission to perform this action.' });
     }
 
@@ -2701,7 +2708,14 @@ app.delete('/api/requisitions/:id', authenticateToken, async (req, res) => {
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
 
     if (!isAdmin) {
-      if (existing.departmentId !== userDeptId) {
+      let canDelete = existing.departmentId === userDeptId;
+      if (!canDelete && userDeptId) {
+        const subDept = await prisma.department.findFirst({
+          where: { id: existing.departmentId, isSubAccount: true, parentId: userDeptId }
+        });
+        canDelete = !!subDept;
+      }
+      if (!canDelete) {
         return res.status(403).json({ error: 'You can only delete records belonging to your department.' });
       }
       // Block deletion once the record has been finally treated, published, or fully approved
@@ -4904,7 +4918,7 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
       prisma.requisition.findMany({
         where,
         include: {
-          department: { select: { name: true } },
+          department: { select: { name: true, isSubAccount: true } },
           targetDepartment: { select: { name: true, headEmail: true } },
           creator: { select: { name: true } },
           currentStage: true,

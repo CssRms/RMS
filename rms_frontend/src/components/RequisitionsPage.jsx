@@ -2377,8 +2377,13 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tighter leading-tight">{req.title}</h2>
-            <div className="flex items-center gap-4 text-xs tracking-wide text-muted-foreground font-semibold">
-               <span className="flex items-center gap-1.5"><Building2 size={13}/> {req.department}</span>
+            <div className="flex items-center gap-4 text-xs tracking-wide text-muted-foreground font-semibold flex-wrap">
+               <span className="flex items-center gap-1.5">
+                 <Building2 size={13}/> {req.department}
+                 {req.isFromSubAccount && (
+                   <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest">UNIT</span>
+                 )}
+               </span>
                {detail?.targetDepartment?.name && (
                  <span className="flex items-center gap-1.5"><ArrowRight size={13}/> {detail.targetDepartment.name}</span>
                )}
@@ -3246,6 +3251,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const normalizeReq = (r) => ({
     ...r,
     department:       r.department?.name ?? r.department ?? r.departmentName ?? '',
+    isFromSubAccount: r.department?.isSubAccount === true,
     creator:          r.creator?.name    ?? r.creator    ?? r.creatorName    ?? '',
     currentStageName: r.currentStage?.name ?? '',
     finalState:       r.finalApprovalStatus ?? 'none',
@@ -3722,6 +3728,9 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className="font-bold text-muted-foreground opacity-60 uppercase">{r.department}</span>
+                            {r.isFromSubAccount && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">UNIT</span>
+                            )}
                             {r.targetDepartment?.name && (
                               <>
                                 <ArrowRight size={9} className="text-muted-foreground/30" />
