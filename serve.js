@@ -5175,30 +5175,35 @@ app.get('/api/email-status', authenticateToken, requireRoles(['global_admin']), 
 app.post('/api/test-email', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
   try {
     const { to } = req.body;
-    if (!to) return res.status(400).json({ error: 'Please provide a "to" email address.' });
-    logger.info(`[MAIL-TEST] Attempting test email to: ${to}`);
-    logger.info(`[MAIL-TEST] GMAIL_USER=${process.env.GMAIL_USER || 'NOT SET'}`);
-    logger.info(`[MAIL-TEST] GMAIL_APP_PASSWORD=${process.env.GMAIL_APP_PASSWORD ? 'SET (' + process.env.GMAIL_APP_PASSWORD.length + ' chars)' : 'NOT SET'}`);
+    if (!to) return res.json({ success: false, message: 'Please provide a recipient email address.' });
+
+    const rawUser = process.env.GMAIL_USER || '';
+    const rawPass = process.env.GMAIL_APP_PASSWORD || '';
+    logger.info(`[MAIL-TEST] to=${to} GMAIL_USER=${rawUser || 'NOT SET'} PASS_LEN=${rawPass.replace(/[\s"']/g,'').length}`);
+
     const { text, html } = buildEmailContent({
       title: 'CSS RMS — Email Test',
-      lines: [
-        'This is a test email from the CSS RMS platform.',
-        `Sent at: ${new Date().toLocaleString()}`,
-        'If you receive this, email notifications are working correctly.'
-      ],
-      actionUrl: APP_BASE_URL || '',
-      actionLabel: 'Open RMS Dashboard'
+      lines: ['This is a test email from the CSS RMS platform.', `Sent at: ${new Date().toLocaleString()}`, 'If you receive this, email notifications are working correctly.'],
+      actionUrl: APP_BASE_URL || '', actionLabel: 'Open RMS Dashboard'
     });
+
     const result = await sendEmail({ to, subject: 'CSS RMS — Email Delivery Test', text, html });
     if (result && result.skipped) {
-      logger.warn('[MAIL-TEST] SKIPPED — transport not configured');
-      return res.json({ success: false, message: 'Email transport not configured. Check GMAIL_USER and GMAIL_APP_PASSWORD env vars.' });
+      return res.json({ success: false, message: 'Email transport not configured.', hint: !rawUser ? 'Set GMAIL_USER in Railway.' : !rawPass ? 'Set GMAIL_APP_PASSWORD in Railway.' : 'Both are set but transport failed — check Railway logs.' });
     }
-    logger.info(`[MAIL-TEST] ✅ Test email sent to ${to}`);
     res.json({ success: true, message: `Test email sent to ${to}` });
-  } catch (error) {
-    logger.error('[MAIL-TEST] FAILED:', error.message, error.stack);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    logger.error('[MAIL-TEST] FAILED:', err.message);
+    // Always return 200 with JSON so the UI can display the exact error
+    res.json({
+      success: false,
+      message: err.message,
+      hint: /invalid.*credentials|535|username.*password/i.test(err.message)
+        ? 'Gmail rejected the App Password. Make sure 2FA is ON at myaccount.google.com/security, then create a fresh App Password at myaccount.google.com/apppasswords and update GMAIL_APP_PASSWORD in Railway.'
+        : /ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(err.message)
+          ? 'Cannot reach Gmail servers. Check Railway outbound firewall settings.'
+          : 'Check Railway logs for full error details.'
+    });
   }
 });
 
