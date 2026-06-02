@@ -5149,22 +5149,13 @@ app.delete('/api/attachments/:id', authenticateToken, async (req, res) => {
 // ── EMAIL STATUS ──
 app.get('/api/email-status', authenticateToken, requireRoles(['global_admin']), (req, res) => {
   try {
-    // Strip accidental surrounding quotes Railway users sometimes add
-    const strip = (v) => v ? v.trim().replace(/^["']|["']$/g, '') : null;
-    const gmailUser = strip(process.env.GMAIL_USER);
-    const gmailPass = strip(process.env.GMAIL_APP_PASSWORD);
-    const smtpHost  = strip(process.env.SMTP_HOST);
-    let status = { configured: false, error: null };
+    let status = { configured: false, error: null, provider: 'none' };
     try { status = getTransportStatus(); } catch (_) {}
     res.json({
-      configured: !!(gmailUser || smtpHost) && status.configured,
-      rawConfigured: status.configured,
+      configured: status.configured,
+      provider: status.provider,
       error: status.error || null,
-      provider: gmailUser ? 'gmail' : smtpHost ? 'smtp' : 'none',
-      gmailUser: gmailUser || null,
-      smtpHost: smtpHost || null,
-      gmailPassLength: gmailPass ? gmailPass.replace(/\s/g, '').length : 0,
-      hasQuotes: !!(process.env.GMAIL_USER?.match(/^["']/) || process.env.GMAIL_APP_PASSWORD?.match(/^["']/)),
+      fromAddress: status.fromAddress || null,
     });
   } catch (err) {
     res.json({ configured: false, error: err.message, provider: 'none' });

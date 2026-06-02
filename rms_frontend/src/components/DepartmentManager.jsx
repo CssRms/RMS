@@ -1317,23 +1317,18 @@ const DepartmentManager = ({ onViewChange }) => {
               <div>
                 {emailStatus.configured ? (
                   <>
-                    <p className="font-bold">Email is configured via <span className="uppercase">{emailStatus.provider}</span>{emailStatus.gmailUser ? ` (${emailStatus.gmailUser})` : ''}</p>
-                    {emailStatus.error && <p className="mt-1 text-amber-700">⚠ Verification warning: {emailStatus.error}</p>}
+                    <p className="font-bold">Email ready via Resend{emailStatus.fromAddress ? ` · ${emailStatus.fromAddress}` : ''}</p>
+                    {emailStatus.error && <p className="mt-1 text-amber-700">⚠ {emailStatus.error}</p>}
                   </>
                 ) : (
                   <>
                     <p className="font-bold">Email is NOT configured — notifications will not be sent</p>
-                    {emailStatus.hasQuotes && (
-                      <p className="mt-1 font-black text-red-900 bg-red-100 px-2 py-1 rounded">
-                        ⚠ Your Railway variable value has surrounding quotes — remove them. Set the value as plain text with no " or ' characters.
-                      </p>
-                    )}
-                    {emailStatus.error && !emailStatus.hasQuotes && <p className="mt-1 opacity-80">{emailStatus.error}</p>}
+                    {emailStatus.error && <p className="mt-1 opacity-80">{emailStatus.error}</p>}
                     <div className="mt-2 space-y-1 opacity-90">
-                      <p className="font-semibold">In Railway → Variables, set exactly (no quotes):</p>
-                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_USER  →  geniusmultidisciplinary@gmail.com</code>
-                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">GMAIL_APP_PASSWORD  →  mzwv ligm bvpw mzvt</code>
-                      <p className="text-[10px] mt-1 font-bold">The app password goes in as-is with spaces — do NOT wrap in quotes.</p>
+                      <p className="font-semibold">Add to Railway Variables:</p>
+                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">RESEND_API_KEY = re_xxxxxxxxxxxx</code>
+                      <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">RESEND_FROM_EMAIL = info@yourdomain.com</code>
+                      <p className="text-[10px] mt-1">Get a free key at <strong>resend.com</strong> (3000 emails/month free)</p>
                     </div>
                   </>
                 )}
