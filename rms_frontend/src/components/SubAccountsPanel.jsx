@@ -132,7 +132,7 @@ const UserManager = ({ sub, availableUsers, onRefresh }) => {
 };
 
 // ── Single sub-account card ──────────────────────────────────────────────────
-const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false }) => {
+const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, isAdmin = false }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
@@ -171,7 +171,8 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false }) 
       const res = await subAccountAPI.resetCode(sub.id);
       setNewCode(res.accessCode);
       toast.success('New access code generated.');
-      onRefresh();
+      // Do NOT call onRefresh() here — it triggers setLoading(true) which unmounts this card
+      // and destroys the newCode state before the user can copy it. Refresh happens on dismiss.
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to reset code.');
     } finally { setResetting(false); }
@@ -233,10 +234,25 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false }) 
         </div>
       </div>
 
-      {/* New code reveal */}
+      {/* Admin — permanent access code always visible */}
+      {isAdmin && !newCode && sub.accessCodeLabel && (
+        <div className="px-4 pb-3 pt-1 flex items-center justify-between gap-3 bg-amber-50/60 border-t border-amber-100">
+          <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest shrink-0">Access Code</span>
+          <code className="font-mono text-sm font-black text-amber-900 tracking-[0.25em] flex-1 text-center select-all">{sub.accessCodeLabel}</code>
+          <button
+            onClick={() => { navigator.clipboard.writeText(sub.accessCodeLabel); toast.success('Code copied!'); }}
+            className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-100 transition-all"
+            title="Copy code"
+          >
+            <Copy size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* New code reveal — one-time for dept heads; also shown for admin after reset */}
       {newCode && (
         <div className="px-4 pb-3">
-          <CodeBox code={newCode} onDismiss={() => setNewCode(null)} />
+          <CodeBox code={newCode} onDismiss={() => { setNewCode(null); onRefresh(); }} />
         </div>
       )}
 
@@ -413,6 +429,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
               availableUsers={availableUsers}
               onRefresh={load}
               showParent={isAdmin && !selectedDeptId}
+              isAdmin={isAdmin}
             />
           ))}
         </div>

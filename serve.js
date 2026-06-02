@@ -2179,9 +2179,18 @@ const resolveParentId = (req) => {
   return parseInt(req.user.deptId);
 };
 
-const generateAccessCode = () =>
-  Math.random().toString(36).slice(2, 6).toUpperCase() +
-  Math.random().toString(36).slice(2, 6).toUpperCase();
+// Pattern: first 2 letters of name (uppercase) + 2 random digits, unique across all dept accessCodeLabels
+const generateUniqueAccessCode = async (name) => {
+  const prefix = (name || '').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase().padEnd(2, 'X');
+  for (let i = 0; i < 50; i++) {
+    const digits = String(Math.floor(Math.random() * 100)).padStart(2, '0');
+    const code = prefix + digits;
+    const clash = await prisma.department.findFirst({ where: { accessCodeLabel: code } });
+    if (!clash) return code;
+  }
+  // Extremely unlikely fallback if all 100 combos are taken
+  return prefix + String(Math.floor(Math.random() * 9000) + 1000);
+};
 
 // List ALL sub-accounts across all depts (admin only) OR for a specific parent
 app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async (req, res) => {
@@ -2201,11 +2210,13 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
       },
       orderBy: { createdAt: 'asc' }
     });
+    const isAdmin = role === 'global_admin';
     res.json(subs.map(s => ({
       id: s.id, name: s.name, headName: s.headName, headEmail: s.headEmail,
       headTitle: s.headTitle, isDisabled: s.isDisabled, createdAt: s.createdAt,
       userCount: s.users.length, users: s.users, reqCount: s._count.requisitions,
-      accessCodeLabel: s.accessCodeLabel,
+      // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
+      ...(isAdmin ? { accessCodeLabel: s.accessCodeLabel } : {}),
       parentDept: s.parent ? { id: s.parent.id, name: s.parent.name } : null
     })));
   } catch (err) { sendError(res, 500, err.message); }
@@ -2223,7 +2234,7 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
     const { name } = parsed.data;
     const existing = await prisma.department.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' } } });
     if (existing) return res.status(409).json({ error: 'A department or sub-account with that name already exists.' });
-    const plainCode = generateAccessCode();
+    const plainCode = await generateUniqueAccessCode(name.trim());
     const hash = await bcrypt.hash(plainCode, 10);
     const sub = await prisma.department.create({
       data: {
@@ -2276,17 +2287,38 @@ app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireSubAccountMa
   } catch (err) { sendError(res, 500, err.message); }
 });
 
-// Reset sub-account access code — returns plain code once
+// Reset sub-account access code — returns plain code once; emails parent dept head
 app.post('/api/sub-accounts/:id/reset-code', authenticateToken, requireSubAccountManager, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
-    const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
+    const sub = await prisma.department.findFirst({
+      where: { id: subId, isSubAccount: true },
+      include: { parent: { select: { id: true, name: true, headEmail: true } } }
+    });
     if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
     const parentId = resolveParentId(req);
     if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'Access denied.' });
-    const plainCode = generateAccessCode();
+    const plainCode = await generateUniqueAccessCode(sub.name);
     const hash = await bcrypt.hash(plainCode, 10);
     await prisma.department.update({ where: { id: subId }, data: { accessCodeHash: hash, accessCodeLabel: plainCode, codeChangedByDept: false } });
+
+    // Email the parent department head with the new code
+    const recipientEmail = sub.parent?.headEmail;
+    if (recipientEmail && !recipientEmail.endsWith('@cssgroup.local')) {
+      const resetBy = req.user?.name || req.user?.email || 'Administrator';
+      const { text, html } = buildEmailContent({
+        title: `Access Code Reset — ${sub.name}`,
+        lines: [
+          `Unit: ${sub.name}`,
+          `Parent Department: ${sub.parent?.name || '—'}`,
+          `New Access Code: ${plainCode}`,
+          `Reset by: ${resetBy}`,
+          `Please share this code securely with the relevant unit staff.`
+        ]
+      });
+      sendEmail({ to: recipientEmail, subject: `[RMS] Access Code Reset — ${sub.name}`, text, html }).catch(() => {});
+    }
+
     res.json({ accessCode: plainCode });
   } catch (err) { sendError(res, 500, err.message); }
 });
