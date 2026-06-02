@@ -1499,21 +1499,107 @@ const amountLine = (type, amount) => {
 
 const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
   const safeLines = lines.filter(Boolean).map((line) => String(line));
-  const text = [title, '', ...safeLines, actionUrl ? '' : null, actionUrl ? `Open: ${actionUrl}` : null]
-    .filter(Boolean)
-    .join('\n');
-  const listItems = safeLines.map((line) => `<li style="margin-bottom:6px;">${escapeHtml(line)}</li>`).join('');
-  const button = actionUrl
-    ? `<p style="margin-top:16px;"><a href="${actionUrl}" style="display:inline-block;padding:10px 16px;background:#1a3a6e;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">${escapeHtml(actionLabel || 'Open RMS')}</a></p>`
-    : '';
-  const html = `
-    <div style="font-family:Arial, sans-serif; color:#1a1a1a;">
-      <h2 style="margin:0 0 12px 0; color:#1a3a6e;">${escapeHtml(title)}</h2>
-      <ul style="padding-left:18px; margin:0 0 12px 0;">${listItems}</ul>
-      ${button}
-      <p style="font-size:12px;color:#666;margin-top:18px;">CSS RMS Automated Notification</p>
-    </div>
-  `;
+  const text = [title, '', ...safeLines, actionUrl ? `\nOpen: ${actionUrl}` : ''].filter(Boolean).join('\n');
+
+  // Split lines into key:value pairs vs plain sentences
+  const rows = safeLines.map((line) => {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx > 0 && colonIdx < 40) {
+      const key = line.slice(0, colonIdx).trim();
+      const val = line.slice(colonIdx + 1).trim();
+      return `
+        <tr>
+          <td style="padding:10px 16px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#6b7280;font-weight:600;white-space:nowrap;width:40%;vertical-align:top;">${escapeHtml(key)}</td>
+          <td style="padding:10px 16px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#111827;font-weight:500;vertical-align:top;">${escapeHtml(val)}</td>
+        </tr>`;
+    }
+    return `
+      <tr>
+        <td colspan="2" style="padding:10px 16px;border-bottom:1px solid #f0f0f0;font-size:13px;color:#374151;">${escapeHtml(line)}</td>
+      </tr>`;
+  }).join('');
+
+  const button = actionUrl ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
+      <tr>
+        <td align="center">
+          <a href="${actionUrl}" style="display:inline-block;background-color:#1a7a3c;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 32px;border-radius:8px;letter-spacing:0.3px;">
+            ${escapeHtml(actionLabel || 'Open in RMS Portal')} &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>` : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#1a7a3c 0%,#155f30 100%);padding:28px 32px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <p style="margin:0;font-size:11px;font-weight:700;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase;">CSS Group of Companies</p>
+                  <p style="margin:4px 0 0;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.3px;">Requisition Management System</p>
+                </td>
+                <td align="right" style="vertical-align:middle;">
+                  <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 12px;display:inline-block;">
+                    <p style="margin:0;font-size:10px;font-weight:800;color:rgba(255,255,255,0.9);letter-spacing:2px;text-transform:uppercase;">RMS</p>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Title bar -->
+        <tr>
+          <td style="background:#f8fffe;border-bottom:2px solid #e8f5ed;padding:20px 32px;">
+            <p style="margin:0;font-size:17px;font-weight:800;color:#111827;">${escapeHtml(title)}</p>
+            <p style="margin:4px 0 0;font-size:11px;color:#6b7280;">Automated notification &bull; ${new Date().toLocaleString('en-NG', { dateStyle: 'long', timeStyle: 'short' })}</p>
+          </td>
+        </tr>
+
+        <!-- Details table -->
+        <tr>
+          <td style="padding:0;">
+            <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+          </td>
+        </tr>
+
+        <!-- Action button -->
+        <tr><td style="padding:0 32px 28px;">${button}</td></tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:18px 32px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <p style="margin:0;font-size:11px;color:#9ca3af;">This is an automated message from <strong style="color:#6b7280;">CSS RMS</strong>. Please do not reply to this email.</p>
+                  <p style="margin:4px 0 0;font-size:10px;color:#d1d5db;">&copy; ${new Date().getFullYear()} CSS Group of Companies. All rights reserved.</p>
+                </td>
+                <td align="right" style="vertical-align:middle;">
+                  <div style="width:32px;height:32px;background:#1a7a3c;border-radius:6px;display:inline-block;line-height:32px;text-align:center;">
+                    <span style="color:#fff;font-size:13px;font-weight:900;">R</span>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
   return { text, html };
 };
 
