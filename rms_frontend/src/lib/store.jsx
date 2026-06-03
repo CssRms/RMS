@@ -1,7 +1,7 @@
 import localforage from 'localforage';
 import { toast } from 'react-hot-toast';
 import React from 'react';
-import api, { deptAPI, reqAPI, auditAPI, userAPI, forwardAPI, vettingAPI, hrAPI, kivAPI } from './api';
+import api, { deptAPI, reqAPI, auditAPI, iccAPI, userAPI, forwardAPI, vettingAPI, hrAPI, kivAPI } from './api';
 
 // ── Configure storage namespaces ──
 const requisitionStore = localforage.createInstance({ name: 'CSS_RMS', storeName: 'requisitions' });
@@ -757,8 +757,12 @@ export async function vettingActionRequisition(reqId, { action, comment, nextDep
 export const kivRequisition = (id, note) => kivAPI.kiv(id, note);
 export const unKivRequisition = (id) => kivAPI.unKiv(id);
 
-export const saveAuditOverride = (reqId, payload) => auditAPI.saveOverride(reqId, payload);
-export const clearAuditOverride = (reqId) => auditAPI.clearOverride(reqId);
+export const saveAuditOverride  = (reqId, payload) => auditAPI.saveOverride(reqId, payload);
+export const clearAuditOverride = (reqId)          => auditAPI.clearOverride(reqId);
+
+export const iccComment  = (reqId, comment) => iccAPI.comment(reqId, comment);
+export const iccFreeze   = (reqId, note)    => iccAPI.freeze(reqId, note);
+export const iccUnfreeze = (reqId)          => iccAPI.unfreeze(reqId);
 
 // ── HR offline-safe read functions ────────────────────────────────────────────
 // Each follows NetworkFirst: try the server, fall back to the local cache.

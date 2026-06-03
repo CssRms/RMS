@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride } from '../lib/store';
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze } from '../lib/store';
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -15,7 +15,8 @@ import {
   ArrowRightCircle, CornerDownLeft, Loader2, Send, Trash2, Printer,
   Building2, ArrowRight, ArrowLeft, History, Download, AlertTriangle,
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
-  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked, Users
+  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked, Users,
+  Lock, Unlock, ShieldAlert, MessageCircle
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
 
@@ -1510,6 +1511,176 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
   );
 };
 
+// ── ICC Observer Panel ────────────────────────────────────────────────────────
+// Shown to ICC on every request EXCEPT ones ICC itself created.
+// Allows: leave a comment (non-blocking) OR freeze the request (blocks all actions).
+const IccObserverPanel = ({ req, detail, onDone }) => {
+  const [comment, setComment] = useState('');
+  const [freezeNote, setFreezeNote] = useState('');
+  const [showFreezeForm, setShowFreezeForm] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [freezing, setFreezing] = useState(false);
+  const [unfreezing, setUnfreezing] = useState(false);
+
+  const frozen = !!detail?.iccFrozen;
+
+  const handleComment = async () => {
+    if (!comment.trim()) { toast.error('Please enter a comment.'); return; }
+    setPosting(true);
+    try {
+      await iccComment(req.id, comment.trim());
+      toast.success('ICC comment posted — visible to all involved parties.');
+      setComment('');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not post comment.');
+    } finally { setPosting(false); }
+  };
+
+  const handleFreeze = async () => {
+    if (!freezeNote.trim()) { toast.error('A reason is required to freeze this request.'); return; }
+    setFreezing(true);
+    try {
+      await iccFreeze(req.id, freezeNote.trim());
+      toast.success('Request frozen. All actions are now blocked until ICC lifts the freeze.');
+      setFreezeNote('');
+      setShowFreezeForm(false);
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not freeze request.');
+    } finally { setFreezing(false); }
+  };
+
+  const handleUnfreeze = async () => {
+    setUnfreezing(true);
+    try {
+      await iccUnfreeze(req.id);
+      toast.success('Freeze lifted. Processing may resume.');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not unfreeze request.');
+    } finally { setUnfreezing(false); }
+  };
+
+  return (
+    <div className={`animate-in fade-in slide-in-from-bottom-5 duration-500 border rounded-2xl shadow-sm relative overflow-hidden ${frozen ? 'border-red-300 bg-red-50/50' : 'border-indigo-200 bg-indigo-50/40'}`}>
+      <div className={`absolute top-0 left-0 w-1 h-full ${frozen ? 'bg-red-500' : 'bg-indigo-500'}`} />
+      <div className="p-4 pl-5">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={14} className={frozen ? 'text-red-700' : 'text-indigo-700'} />
+            <p className={`text-[10px] font-black uppercase tracking-widest ${frozen ? 'text-red-800' : 'text-indigo-800'}`}>
+              ICC Observer Panel
+            </p>
+            {frozen && (
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-100 border border-red-300 text-red-700 uppercase flex items-center gap-1">
+                <Lock size={9}/> Frozen
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Unfreeze section (shown when frozen) */}
+        {frozen && (
+          <div className="mb-4 p-3 rounded-xl bg-red-100/70 border border-red-200 space-y-2">
+            <p className="text-xs font-black text-red-800 uppercase tracking-wide flex items-center gap-1.5">
+              <Lock size={11}/> This request is currently frozen
+            </p>
+            {detail?.iccFreezeNote && (
+              <p className="text-xs text-red-700/90 leading-relaxed">
+                <span className="font-bold">Reason:</span> {detail.iccFreezeNote}
+              </p>
+            )}
+            {detail?.iccFreezeBy && (
+              <p className="text-[10px] text-red-600/70">Frozen by: {detail.iccFreezeBy}</p>
+            )}
+            <button
+              onClick={handleUnfreeze}
+              disabled={unfreezing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+            >
+              {unfreezing ? <Loader2 size={12} className="animate-spin"/> : <Unlock size={12}/>}
+              {unfreezing ? 'Lifting freeze…' : 'Lift Freeze — Resume Processing'}
+            </button>
+          </div>
+        )}
+
+        {/* Comment box */}
+        <div className="space-y-2 mb-3">
+          <label className={`text-[10px] font-black uppercase tracking-widest ${frozen ? 'text-red-700' : 'text-indigo-700'}`}>
+            <MessageCircle size={10} className="inline mr-1"/>
+            Post ICC Comment
+          </label>
+          <textarea
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            rows={3}
+            placeholder="Add an observation or note visible to all involved parties — does not affect request processing…"
+            className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400 resize-none"
+          />
+          <button
+            onClick={handleComment}
+            disabled={posting || !comment.trim()}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm ${frozen ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+          >
+            {posting ? <Loader2 size={12} className="animate-spin"/> : <MessageCircle size={12}/>}
+            {posting ? 'Posting…' : 'Post Comment Only (no freeze)'}
+          </button>
+        </div>
+
+        <div className="w-full h-px bg-border/30 mb-3"/>
+
+        {/* Freeze section */}
+        {!frozen && (
+          <div className="space-y-2">
+            {!showFreezeForm ? (
+              <button
+                onClick={() => setShowFreezeForm(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold hover:bg-red-100 transition-all w-full justify-center"
+              >
+                <Lock size={12}/> Freeze This Request
+              </button>
+            ) : (
+              <div className="space-y-2 p-3 rounded-xl bg-red-50 border border-red-200">
+                <p className="text-[10px] font-black text-red-800 uppercase tracking-wide flex items-center gap-1.5">
+                  <Lock size={10}/> Freeze Request — Mandatory Reason
+                </p>
+                <p className="text-[11px] text-red-700/80 leading-relaxed">
+                  This will block ALL actions on this request by every department until ICC lifts the freeze. All involved parties will see your reason.
+                </p>
+                <textarea
+                  value={freezeNote}
+                  onChange={e => setFreezeNote(e.target.value)}
+                  rows={3}
+                  placeholder="State the reason for freezing this request (required)…"
+                  className="w-full text-xs border border-red-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-400 resize-none bg-white"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleFreeze}
+                    disabled={freezing || !freezeNote.trim()}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+                  >
+                    {freezing ? <Loader2 size={12} className="animate-spin"/> : <Lock size={12}/>}
+                    {freezing ? 'Freezing…' : 'Confirm Freeze'}
+                  </button>
+                  <button
+                    onClick={() => { setShowFreezeForm(false); setFreezeNote(''); }}
+                    className="px-4 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-bold hover:bg-muted transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Audit Price Override Panel ────────────────────────────────────────────────
 // Shown only to the Audit department when they currently hold the request.
 // Allows them to build a verified items table that supersedes the creator's price.
@@ -2344,6 +2515,12 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
     && parseInt(detail.targetDepartmentId) === parseInt(user?.deptId);
   const isTaggedObserver = !!(detail?.isTagged) && !wasTaggedNowActive;
 
+  // ICC globals
+  const isIccUser = user?.role === 'department' && /\bicc\b|integrity.*compliance|compliance.*integrity/i.test(user?.name || '');
+  const isOwnRequest = req.departmentId === user?.deptId; // ICC created this request themselves
+  const showIccPanel = isIccUser && !isOwnRequest; // ICC panel only on other depts' requests
+  const isFrozen = !!detail?.iccFrozen; // frozen by ICC — blocks all actions for non-ICC
+
   // Determine the sequence of events for the explanatory banner.
   // We need to know: (a) how the request arrived at this dept and
   // (b) whether the tag was applied before or after that arrival.
@@ -2711,6 +2888,25 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
           )}
         </div>
 
+        {/* ICC Freeze Banner — visible to ALL users when request is frozen */}
+        {detail?.iccFrozen && (
+          <div className="mx-4 mt-3 p-4 rounded-xl bg-red-50 border-2 border-red-300 flex items-start gap-3 animate-in fade-in slide-in-from-top-3 shadow-sm">
+            <Lock size={20} className="text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-red-800 uppercase tracking-wide flex items-center gap-2">
+                Request Frozen by ICC
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-100 border border-red-300 text-red-700 uppercase">All Actions Blocked</span>
+              </p>
+              <p className="text-sm text-red-700 mt-1 leading-relaxed font-medium">
+                {detail.iccFreezeNote || 'ICC has placed a hold on this request. No actions may be taken until ICC lifts the freeze.'}
+              </p>
+              {detail.iccFreezeBy && (
+                <p className="text-[10px] text-red-600/70 mt-1 font-bold">Frozen by: {detail.iccFreezeBy}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Return Warning Banner */}
         {latestReturn && detail?.targetDepartmentId === detail?.departmentId && (
           <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3 animate-in fade-in slide-in-from-top-3">
@@ -2793,7 +2989,35 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 );
               })()}
 
-              {!isTaggedObserver && isReturnedToCreator && req.status === 'pending' && !loading && (
+              {/* ICC Observer Panel — shown to ICC for all requests except ICC's own */}
+              {showIccPanel && detail && !loading && (
+                <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
+                  <IccObserverPanel
+                    req={req}
+                    detail={detail}
+                    onDone={() => {
+                      getRequisitionDetail(req.id).then(d => setDetail(d));
+                      onAction();
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Frozen notice for non-ICC depts — action panels below are hidden when frozen */}
+              {isFrozen && !isIccUser && !loading && (
+                <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 border-2 border-red-300 rounded-2xl p-4 bg-red-50/70 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500" />
+                  <div className="flex items-center gap-2 pl-1 mb-1">
+                    <Lock size={14} className="text-red-700" />
+                    <p className="text-[10px] font-black text-red-800 uppercase tracking-widest">Actions Blocked by ICC</p>
+                  </div>
+                  <p className="text-xs text-red-700/85 leading-relaxed pl-1">
+                    ICC has frozen this request. You cannot forward, approve, return, or take any action until the freeze is lifted by ICC.
+                  </p>
+                </div>
+              )}
+
+              {!isTaggedObserver && isReturnedToCreator && req.status === 'pending' && !loading && !isFrozen && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <CreatorCommentPanel
                     req={req}
@@ -2803,7 +3027,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {!isTaggedObserver && !approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading &&
+              {!isTaggedObserver && !approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading && !isFrozen &&
                (!['treated', 'published', 'approved', 'vetting', 'partial'].includes(detail?.finalApprovalStatus) || isVettingReturned) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                    <RespondPanel
@@ -2816,7 +3040,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
 
               {/* Audit Override Panel — shown to Audit dept when they hold the request and it has an itemized table */}
-              {!isTaggedObserver && user?.role === 'department' && detail && !loading &&
+              {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isFrozen &&
                /\baudit\b/i.test(user?.name || '') &&
                detail.targetDepartmentId === user?.deptId &&
                _parsedContent?.itemized && (
@@ -2833,7 +3057,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {!isTaggedObserver && !loading && canApprove && (
+              {!isTaggedObserver && !loading && canApprove && !isFrozen && (
                 <div className="space-y-3 pt-4 border-t border-border/50">
                   <div className="flex items-center space-x-2">
                      <ShieldCheck size={13} className="text-primary" />
@@ -2851,7 +3075,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
 
               {/* Vetting Panel — Account only for post-approval treatment.
                   Also shown when Account holds a Material request regardless of finalApprovalStatus. */}
-              {!isTaggedObserver && user?.role === 'department' && detail && !loading &&
+              {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isFrozen &&
                /\baccount\b/i.test(user?.name || '') &&
                ((detail.finalApprovalStatus && !['none', 'treated'].includes(detail.finalApprovalStatus))
                 || (/^material/i.test(req?.type || '') && detail.targetDepartmentId === user?.deptId)) && (
@@ -3393,6 +3617,27 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             reasonLine,
                             ev.comment ? `Note: "${ev.comment}"` : null,
                           ].filter(Boolean).join(' ');
+                        } else if (ev.action === 'icc_comment') {
+                          fromLabel = ev.deptName || 'ICC';
+                          toLabel = null;
+                          badgeText = 'ICC Comment';
+                          badgeColor = 'bg-indigo-100 text-indigo-700';
+                          iconColor = 'bg-indigo-500';
+                          description = ev.comment ? `ICC Observation: "${ev.comment}"` : 'ICC posted a comment.';
+                        } else if (ev.action === 'icc_freeze') {
+                          fromLabel = ev.deptName || 'ICC';
+                          toLabel = null;
+                          badgeText = '🔒 ICC Freeze';
+                          badgeColor = 'bg-red-100 text-red-700';
+                          iconColor = 'bg-red-500';
+                          description = ev.comment ? `Request frozen by ICC. Reason: "${ev.comment}"` : 'ICC froze this request — all actions blocked.';
+                        } else if (ev.action === 'icc_unfreeze') {
+                          fromLabel = ev.deptName || 'ICC';
+                          toLabel = null;
+                          badgeText = '🔓 ICC Unfrozen';
+                          badgeColor = 'bg-emerald-100 text-emerald-700';
+                          iconColor = 'bg-emerald-500';
+                          description = 'ICC lifted the freeze — processing resumed.';
                         } else {
                           fromLabel = ev.deptName;
                           toLabel = null;

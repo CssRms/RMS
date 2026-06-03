@@ -187,6 +187,12 @@ export const auditAPI = {
   }
 };
 
+export const iccAPI = {
+  comment:  (reqId, comment)  => api.post(`/requisitions/${reqId}/icc-comment`,  { comment }),
+  freeze:   (reqId, note)     => api.post(`/requisitions/${reqId}/icc-freeze`,   { note }),
+  unfreeze: (reqId)           => api.post(`/requisitions/${reqId}/icc-unfreeze`),
+};
+
 export const settingsAPI = {
   async get(key) {
     return api.get(`/system-settings/${key}`);

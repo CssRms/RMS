@@ -163,6 +163,27 @@ const checkFinalApproveAuthority = (deptName, amount, isMaterial = false) => {
   return null; // Amount outside this department's authorised band
 };
 
+// ── ICC helpers ───────────────────────────────────────────────────────────────
+const isIccDept = (name) => /\bicc\b|integrity.*compliance|compliance.*integrity/i.test(name || '');
+
+// Blocks any mutating action on a frozen request. Returns true (and sends 403) if frozen.
+async function blockIfIccFrozen(reqId, res) {
+  try {
+    const rows = await prisma.$queryRaw`SELECT "iccFrozen", "iccFreezeBy", "iccFreezeNote" FROM "Requisition" WHERE id = ${reqId} LIMIT 1`;
+    const r = rows?.[0];
+    if (r?.iccFrozen) {
+      res.status(403).json({
+        error: `This request has been frozen by ICC (Integrity & Compliance). No actions are permitted until ICC lifts the freeze.`,
+        iccFrozen: true,
+        iccFreezeBy: r.iccFreezeBy || 'ICC',
+        iccFreezeNote: r.iccFreezeNote || ''
+      });
+      return true;
+    }
+  } catch (_) { /* columns not yet migrated — allow through */ }
+  return false;
+}
+
 // Post-approval vetting chain: Account only (Audit is now pre-approval reviewer, ICC removed)
 const VETTING_CHAIN = ['account'];
 const getVettingChainIndex = (deptName) => {
@@ -618,6 +639,9 @@ async function getInvolvedDeptIds(reqId) {
 async function canReadRequisition(requisition, user) {
   const userRole = normalizeRole(user?.role);
   if (userRole === 'global_admin' || userRole !== 'department') return true;
+
+  // ICC can read every request (global observer)
+  if (isIccDept(user?.name)) return true;
 
   const deptId = toIntOrNull(user?.deptId);
   const reqId = toIntOrNull(requisition?.id);
@@ -3087,6 +3111,7 @@ app.get('/api/departments/:id/activation', authenticateToken, async (req, res) =
 app.post('/api/requisitions/:id/creator-comment', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    if (await blockIfIccFrozen(parseInt(id), res)) return;
     const parsed = z.object({ comment: z.string().min(1) }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Comment text is required' });
     const { comment } = parsed.data;
@@ -3133,6 +3158,7 @@ app.post('/api/requisitions/:id/creator-comment', authenticateToken, async (req,
 app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const { note } = req.body || {};
     const userDeptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
@@ -3156,6 +3182,7 @@ app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
 app.post('/api/requisitions/:id/un-kiv', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const userDeptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
     const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
@@ -3201,6 +3228,7 @@ app.patch('/api/requisitions/:id/sub-account-visibility', authenticateToken, asy
 app.post('/api/requisitions/:id/forward', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    if (await blockIfIccFrozen(parseInt(id), res)) return;
     const parsed = z.object({
       targetDepartmentId: z.number().nullable().optional(),
       note: z.string().optional(),
@@ -3338,6 +3366,7 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
   try {
     const { id } = req.params;
     const reqId = parseInt(id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const parsed = z.object({ note: z.string().optional() }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid payload' });
     const { note } = parsed.data;
@@ -3402,6 +3431,7 @@ app.post('/api/requisitions/:id/send-to-vetting', authenticateToken, async (req,
   try {
     const { id } = req.params;
     const reqId = parseInt(id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const parsed = z.object({ vettingDeptId: z.number() }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'vettingDeptId is required' });
     const { vettingDeptId } = parsed.data;
@@ -3482,6 +3512,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
   try {
     const { id } = req.params;
     const reqId = parseInt(id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const parsed = z.object({
       action: z.enum(['forward', 'treated', 'return']),
@@ -3760,6 +3791,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 app.post('/api/requisitions/:id/audit-override', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
 
@@ -3871,11 +3903,189 @@ app.delete('/api/requisitions/:id/audit-override', authenticateToken, async (req
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── ICC GLOBAL OBSERVER ROUTES ───────────────────────────────────────────────
+
+// ICC Comment — leave a non-blocking annotation on any request at any stage
+app.post('/api/requisitions/:id/icc-comment', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
+      : null;
+
+    if (!isAdmin && !isIccDept(actingDept?.name)) {
+      return res.status(403).json({ error: 'Only the ICC department can use this action.' });
+    }
+
+    const parsed = z.object({ comment: z.string().min(1) }).safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Comment text is required.' });
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { id: true, title: true, departmentId: true }
+    });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: userDeptId || 0,
+        deptName: actingDept?.name || 'ICC',
+        action: 'icc_comment',
+        comment: parsed.data.comment,
+        actorName: actingDept?.name || 'ICC'
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'ICC Comment',
+        details: `Req #${reqId}: ICC comment posted by ${actingDept?.name || 'ICC'}.`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'icc_comment', fromDept: actingDept?.name || 'ICC' });
+    broadcastPushToInvolved(reqId, {
+      title: 'ICC Comment',
+      body: `ICC has commented on Req #${reqId}: "${requisition.title || ''}"`,
+      url: `/?req=${reqId}`
+    });
+
+    res.json({ success: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ICC Freeze — freeze the request; blocks ALL actions by any other dept
+app.post('/api/requisitions/:id/icc-freeze', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
+      : null;
+
+    if (!isAdmin && !isIccDept(actingDept?.name)) {
+      return res.status(403).json({ error: 'Only the ICC department can freeze a request.' });
+    }
+
+    const parsed = z.object({ note: z.string().min(1, 'A reason is required to freeze a request.') }).safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Freeze reason is required.' });
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { id: true, title: true, departmentId: true }
+    });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: {
+        iccFrozen: true,
+        iccFreezeNote: parsed.data.note,
+        iccFreezeAt: new Date(),
+        iccFreezeBy: actingDept?.name || 'ICC'
+      }
+    });
+
+    // Log as a vetting event so it appears in the request history
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: userDeptId || 0,
+        deptName: actingDept?.name || 'ICC',
+        action: 'icc_freeze',
+        comment: parsed.data.note,
+        actorName: actingDept?.name || 'ICC'
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'ICC Freeze',
+        details: `Req #${reqId} FROZEN by ${actingDept?.name || 'ICC'}. Reason: ${parsed.data.note}`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'icc_freeze', fromDept: actingDept?.name || 'ICC' });
+    broadcastPushToInvolved(reqId, {
+      title: '🔒 Request Frozen by ICC',
+      body: `Req #${reqId} "${requisition.title || ''}" has been frozen by ICC. Reason: ${parsed.data.note}`,
+      url: `/?req=${reqId}`
+    });
+
+    res.json({ success: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ICC Unfreeze — lift the freeze; restores full action capability
+app.post('/api/requisitions/:id/icc-unfreeze', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
+      : null;
+
+    if (!isAdmin && !isIccDept(actingDept?.name)) {
+      return res.status(403).json({ error: 'Only the ICC department can unfreeze a request.' });
+    }
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { id: true, title: true, departmentId: true }
+    });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: { iccFrozen: false, iccFreezeNote: null, iccFreezeAt: null, iccFreezeBy: null }
+    });
+
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: userDeptId || 0,
+        deptName: actingDept?.name || 'ICC',
+        action: 'icc_unfreeze',
+        comment: 'ICC freeze lifted — processing may resume.',
+        actorName: actingDept?.name || 'ICC'
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'ICC Unfreeze',
+        details: `Req #${reqId} unfrozen by ${actingDept?.name || 'ICC'}.`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'icc_unfreeze', fromDept: actingDept?.name || 'ICC' });
+    broadcastPushToInvolved(reqId, {
+      title: '🔓 ICC Freeze Lifted',
+      body: `Req #${reqId} "${requisition.title || ''}" has been unfrozen by ICC. Processing may resume.`,
+      url: `/?req=${reqId}`
+    });
+
+    res.json({ success: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 // ── PUBLISH MEMO TO ALL DEPARTMENTS ──────────────────────────────────────────
 app.post('/api/requisitions/:id/publish-memo', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const reqId = parseInt(id);
+    if (await blockIfIccFrozen(reqId, res)) return;
     const deptId = req.user.deptId ? parseInt(req.user.deptId) : null;
     const dept = deptId ? await prisma.department.findUnique({ where: { id: deptId } }) : null;
     const deptName = dept?.name || req.user.name || '';
@@ -3924,6 +4134,7 @@ app.post('/api/requisitions/:id/publish-memo', authenticateToken, async (req, re
 app.post('/api/requisitions/:id/approve', authenticateToken, approvalLimiter, async (req, res) => {
   try {
     const { id } = req.params;
+    if (await blockIfIccFrozen(parseInt(id), res)) return;
     const parsed = z.object({ remarks: z.string().optional() }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid approval payload' });
     const updated = await processApprovalAction({ requisitionId: parseInt(id), action: 'approved', remarks: parsed.data.remarks, user: req.user });
@@ -3938,6 +4149,7 @@ app.post('/api/requisitions/:id/approve', authenticateToken, approvalLimiter, as
 app.post('/api/requisitions/:id/reject', authenticateToken, approvalLimiter, async (req, res) => {
   try {
     const { id } = req.params;
+    if (await blockIfIccFrozen(parseInt(id), res)) return;
     const parsed = z.object({ remarks: z.string().optional() }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid rejection payload' });
     const updated = await processApprovalAction({ requisitionId: parseInt(id), action: 'rejected', remarks: parsed.data.remarks, user: req.user });
@@ -3952,6 +4164,7 @@ app.post('/api/requisitions/:id/reject', authenticateToken, approvalLimiter, asy
 // Backward compatible status endpoint
 app.post('/api/requisitions/:id/status', authenticateToken, approvalLimiter, async (req, res) => {
   try {
+    if (await blockIfIccFrozen(parseInt(req.params.id), res)) return;
     const { status, remarks } = req.body || {};
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ error: 'Unsupported status change' });
@@ -4250,7 +4463,8 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
       const extRows = await prisma.$queryRaw`
         SELECT "finalApprovalStatus", "finalApprovedByDeptId", "finalApprovedAt",
                "finalApprovedNote", "currentVettingDeptId", "treatedByDeptId", "treatedAt",
-               "hasAuditOverride", "auditContent", "auditAmount", "auditDeptId", "auditDeptName"
+               "hasAuditOverride", "auditContent", "auditAmount", "auditDeptId", "auditDeptName",
+               "iccFrozen", "iccFreezeNote", "iccFreezeAt", "iccFreezeBy"
         FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
       `;
       ext = extRows?.[0] || {};
@@ -5130,8 +5344,10 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
     const typeValues = [...new Set(scopeTypes.flatMap(t => typeAliases[t.toLowerCase()] || [t]))];
     const typeScopeWhere = typeValues.length > 0 ? { type: { in: typeValues } } : {};
     let where = typeScopeWhere;
-    // RBAC: department accounts see records where their department is involved.
-    if (normalizeRole(req.user.role) === 'department' && req.user.deptId) {
+    // ICC: global observer — sees ALL requests regardless of routing
+    if (normalizeRole(req.user.role) === 'department' && isIccDept(req.user?.name)) {
+      // ICC sees everything — typeScopeWhere already applied above, no extra dept filter
+    } else if (normalizeRole(req.user.role) === 'department' && req.user.deptId) {
       const deptId = parseInt(req.user.deptId);
       // Extra IDs from columns not in Prisma schema — safe fallback if columns don't exist yet
       let linkedReqIds = await getDepartmentLinkedRequisitionIds(deptId);
