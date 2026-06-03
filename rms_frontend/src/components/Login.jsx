@@ -4,84 +4,282 @@ import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, Hel
 import { getDepartments } from '../lib/store';
 import { toast } from 'react-hot-toast';
 
-// ── Animated background SVG elements ────────────────────────────────────────
-const ButterflyIcon = ({ color, size = 30 }) => (
-  <svg width={size} height={Math.round(size * 0.72)} viewBox="0 0 44 32" fill={color}>
-    <ellipse cx="13" cy="11" rx="12" ry="7.5" transform="rotate(-18 13 11)" />
-    <ellipse cx="13" cy="22" rx="9" ry="5.5" transform="rotate(18 13 22)" />
-    <ellipse cx="31" cy="11" rx="12" ry="7.5" transform="rotate(18 31 11)" />
-    <ellipse cx="31" cy="22" rx="9" ry="5.5" transform="rotate(-18 31 22)" />
-    <ellipse cx="22" cy="16" rx="1.5" ry="8" />
+// ── Realistic botanical / farm SVG icons ────────────────────────────────────
+const SunflowerIcon = ({ color = '#fbbf24', size = 40 }) => {
+  const r = size / 2;
+  const petal = size * 0.32;
+  const center = size * 0.22;
+  return (
+    <svg width={size} height={size + size * 0.55} viewBox={`0 0 ${size} ${size + size * 0.55}`} fill="none">
+      {/* stem */}
+      <path d={`M${r} ${size * 0.9} Q${r - size * 0.12} ${size * 1.1} ${r - size * 0.06} ${size * 1.5}`}
+        stroke="#4ade80" strokeWidth={size * 0.07} strokeLinecap="round" />
+      {/* leaf on stem */}
+      <ellipse cx={r - size * 0.18} cy={size * 1.18} rx={size * 0.17} ry={size * 0.09}
+        fill="#4ade80" transform={`rotate(-35 ${r - size * 0.18} ${size * 1.18})`} opacity="0.9" />
+      {/* 8 petals */}
+      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg, i) => (
+        <ellipse
+          key={i}
+          cx={r + Math.cos((deg - 90) * Math.PI / 180) * (r - center * 0.4)}
+          cy={r + Math.sin((deg - 90) * Math.PI / 180) * (r - center * 0.4)}
+          rx={petal * 0.38}
+          ry={petal * 0.72}
+          fill={color}
+          opacity="0.92"
+          transform={`rotate(${deg} ${r + Math.cos((deg - 90) * Math.PI / 180) * (r - center * 0.4)} ${r + Math.sin((deg - 90) * Math.PI / 180) * (r - center * 0.4)})`}
+        />
+      ))}
+      {/* center dark */}
+      <circle cx={r} cy={r} r={center} fill="#78350f" />
+      <circle cx={r} cy={r} r={center * 0.65} fill="#92400e" />
+      {/* center dots */}
+      {[0, 60, 120, 180, 240, 300].map((deg, i) => (
+        <circle key={i}
+          cx={r + Math.cos(deg * Math.PI / 180) * center * 0.38}
+          cy={r + Math.sin(deg * Math.PI / 180) * center * 0.38}
+          r={center * 0.1} fill="#fbbf24" opacity="0.7" />
+      ))}
+    </svg>
+  );
+};
+
+const TropicalLeafIcon = ({ color = '#fb923c', size = 36 }) => (
+  <svg width={size * 0.68} height={size} viewBox="0 0 34 52" fill="none">
+    {/* main leaf */}
+    <path d="M17 50 C5 36 1 24 1 15 C1 5 17 0 17 0 C17 0 33 5 33 15 C33 24 29 36 17 50Z" fill={color} opacity="0.88" />
+    {/* center vein */}
+    <path d="M17 48 Q16 30 17 4" stroke="rgba(0,0,0,0.2)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+    {/* side veins */}
+    {[12, 20, 28, 36].map((y, i) => (
+      <g key={i}>
+        <path d={`M17 ${y} Q10 ${y - 4} 6 ${y - 2}`} stroke="rgba(0,0,0,0.15)" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+        <path d={`M17 ${y} Q24 ${y - 4} 28 ${y - 2}`} stroke="rgba(0,0,0,0.15)" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+      </g>
+    ))}
+    {/* shine */}
+    <path d="M20 6 Q26 12 25 24" stroke="rgba(255,255,255,0.22)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
   </svg>
 );
 
-const LeafIcon = ({ color, size = 26 }) => (
-  <svg width={Math.round(size * 0.75)} height={size} viewBox="0 0 30 40" fill={color}>
-    <path d="M15 38C7 28 4 20 4 14C4 5 15 1 15 1C15 1 26 5 26 14C26 20 23 28 15 38Z" />
-    <path d="M15 37 Q15 20 15 5" fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth="1.2" />
+const FlowerIcon = ({ color = '#f87171', size = 32 }) => {
+  const r = size / 2;
+  const pRadius = r * 0.55;
+  return (
+    <svg width={size} height={size + size * 0.5} viewBox={`0 0 ${size} ${size + size * 0.5}`} fill="none">
+      {/* stem */}
+      <path d={`M${r} ${size * 0.88} Q${r + size * 0.1} ${size * 1.1} ${r + size * 0.05} ${size * 1.45}`}
+        stroke="#4ade80" strokeWidth={size * 0.065} strokeLinecap="round" />
+      {/* leaf */}
+      <ellipse cx={r + size * 0.16} cy={size * 1.15} rx={size * 0.15} ry={size * 0.08}
+        fill="#4ade80" transform={`rotate(30 ${r + size * 0.16} ${size * 1.15})`} opacity="0.85" />
+      {/* 5 petals */}
+      {[0, 72, 144, 216, 288].map((deg, i) => (
+        <ellipse key={i}
+          cx={r + Math.cos((deg - 90) * Math.PI / 180) * pRadius}
+          cy={r + Math.sin((deg - 90) * Math.PI / 180) * pRadius}
+          rx={r * 0.32} ry={r * 0.52}
+          fill={color} opacity="0.9"
+          transform={`rotate(${deg} ${r + Math.cos((deg - 90) * Math.PI / 180) * pRadius} ${r + Math.sin((deg - 90) * Math.PI / 180) * pRadius})`}
+        />
+      ))}
+      {/* center */}
+      <circle cx={r} cy={r} r={r * 0.28} fill="#fde047" />
+      <circle cx={r} cy={r} r={r * 0.14} fill="#fbbf24" />
+    </svg>
+  );
+};
+
+const DetailedTractorIcon = ({ color = '#fbbf24', size = 48 }) => {
+  const s = size / 48;
+  return (
+    <svg width={size * 1.6} height={size} viewBox="0 0 76 48" fill="none">
+      {/* rear large wheel */}
+      <circle cx="22" cy="33" r="14" stroke={color} strokeWidth="2.8" fill="none" />
+      <circle cx="22" cy="33" r="9" stroke={color} strokeWidth="1.2" fill="none" opacity="0.4" />
+      <circle cx="22" cy="33" r="3" fill={color} opacity="0.7" />
+      {/* wheel spokes */}
+      {[0, 60, 120, 180, 240, 300].map((deg, i) => (
+        <line key={i}
+          x1={22 + Math.cos(deg * Math.PI / 180) * 3.5}
+          y1={33 + Math.sin(deg * Math.PI / 180) * 3.5}
+          x2={22 + Math.cos(deg * Math.PI / 180) * 8.5}
+          y2={33 + Math.sin(deg * Math.PI / 180) * 8.5}
+          stroke={color} strokeWidth="1.5" opacity="0.6" strokeLinecap="round" />
+      ))}
+      {/* front small wheel */}
+      <circle cx="57" cy="37" r="8" stroke={color} strokeWidth="2.2" fill="none" />
+      <circle cx="57" cy="37" r="4.5" stroke={color} strokeWidth="1" fill="none" opacity="0.4" />
+      <circle cx="57" cy="37" r="2" fill={color} opacity="0.7" />
+      {/* wheel spokes front */}
+      {[0, 90, 180, 270].map((deg, i) => (
+        <line key={i}
+          x1={57 + Math.cos(deg * Math.PI / 180) * 2.5}
+          y1={37 + Math.sin(deg * Math.PI / 180) * 2.5}
+          x2={57 + Math.cos(deg * Math.PI / 180) * 4}
+          y2={37 + Math.sin(deg * Math.PI / 180) * 4}
+          stroke={color} strokeWidth="1.2" opacity="0.55" strokeLinecap="round" />
+      ))}
+      {/* body / chassis */}
+      <path d="M22 33 L22 20 L36 18 L50 20 L57 24 L57 37" stroke={color} strokeWidth="1.2" fill="none" opacity="0.3" />
+      {/* engine hood */}
+      <rect x="33" y="18" width="22" height="13" rx="2.5" fill={color} opacity="0.82" />
+      {/* cab */}
+      <rect x="13" y="10" width="22" height="16" rx="3" fill={color} opacity="0.75" />
+      {/* cab window */}
+      <rect x="16" y="12" width="8" height="8" rx="1.5" fill="rgba(255,255,255,0.35)" />
+      <rect x="26" y="12" width="6" height="8" rx="1.5" fill="rgba(255,255,255,0.2)" />
+      {/* exhaust stack */}
+      <rect x="50" y="5" width="4" height="14" rx="2" fill={color} opacity="0.7" />
+      <ellipse cx="52" cy="4" rx="3.5" ry="2" fill={color} opacity="0.5" />
+      {/* exhaust puff */}
+      <circle cx="52" cy="1.5" r="1.8" fill={color} opacity="0.25" />
+      {/* fender over rear wheel */}
+      <path d="M8 22 Q14 16 22 18 Q30 19 33 22" stroke={color} strokeWidth="2.5" fill="none" opacity="0.6" strokeLinecap="round" />
+      {/* ground shadow */}
+      <ellipse cx="36" cy="47" rx="26" ry="2.5" fill={color} opacity="0.12" />
+    </svg>
+  );
+};
+
+const PalmLeafIcon = ({ color = '#ffffff', size = 38 }) => (
+  <svg width={size} height={size * 1.1} viewBox="0 0 38 42" fill="none">
+    {/* stem */}
+    <path d="M19 40 Q18 32 19 22" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" />
+    {/* fronds */}
+    <path d="M19 22 Q4 16 2 6" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.85" />
+    <path d="M19 22 Q14 8 16 2" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.85" />
+    <path d="M19 22 Q24 8 22 2" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.85" />
+    <path d="M19 22 Q34 16 36 6" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.85" />
+    <path d="M19 22 Q6 22 2 18" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.6" />
+    <path d="M19 22 Q32 22 36 18" stroke={color} strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.6" />
+    {/* small leaf fills */}
+    {[[4, 8], [15, 3], [22, 3], [35, 7]].map(([cx, cy], i) => (
+      <ellipse key={i} cx={cx} cy={cy} rx="4.5" ry="2.2" fill={color} opacity="0.35"
+        transform={`rotate(${i * 25 - 30} ${cx} ${cy})`} />
+    ))}
   </svg>
 );
 
-const TractorIcon = ({ color, size = 36 }) => (
-  <svg width={Math.round(size * 1.65)} height={size} viewBox="0 0 60 37" fill={color}>
-    <rect x="18" y="10" width="28" height="17" rx="2.5" />
-    <rect x="33" y="4" width="14" height="12" rx="2" opacity="0.9" />
-    <circle cx="22" cy="28" r="9" fill="none" stroke={color} strokeWidth="2.5" />
-    <circle cx="22" cy="28" r="4.5" opacity="0.55" />
-    <circle cx="43" cy="30" r="6" fill="none" stroke={color} strokeWidth="2" />
-    <circle cx="43" cy="30" r="2.5" opacity="0.55" />
-    <rect x="35" y="0" width="3" height="7" rx="1.5" opacity="0.75" />
-    <path d="M18 27 L46 27" stroke={color} strokeWidth="1.5" opacity="0.25" fill="none" />
-  </svg>
-);
+// ── Watermark scrolling text ──────────────────────────────────────────────────
+const WatermarkBg = () => {
+  const phrase = 'CSS RMS • CSS RMS • CSS RMS • CSS RMS • ';
+  const rows = [
+    { top: '4%',  dur: 22, dir: 'normal',  delay: '0s'   },
+    { top: '16%', dur: 28, dir: 'reverse', delay: '-8s'  },
+    { top: '28%', dur: 20, dir: 'normal',  delay: '-14s' },
+    { top: '40%', dur: 26, dir: 'reverse', delay: '-4s'  },
+    { top: '52%', dur: 24, dir: 'normal',  delay: '-18s' },
+    { top: '64%', dur: 30, dir: 'reverse', delay: '-10s' },
+    { top: '76%', dur: 21, dir: 'normal',  delay: '-6s'  },
+    { top: '88%', dur: 27, dir: 'reverse', delay: '-2s'  },
+  ];
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" style={{ opacity: 0.055 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{
+          position: 'absolute',
+          top: r.top,
+          left: 0,
+          whiteSpace: 'nowrap',
+          animation: `rmsMarquee ${r.dur}s linear infinite`,
+          animationDirection: r.dir,
+          animationDelay: r.delay,
+          fontSize: '13px',
+          fontWeight: 900,
+          color: 'white',
+          letterSpacing: '0.25em',
+          textTransform: 'uppercase',
+          fontFamily: 'system-ui, sans-serif',
+          transform: 'rotate(-8deg)',
+          transformOrigin: 'left center',
+        }}>
+          {phrase.repeat(6)}
+        </div>
+      ))}
+    </div>
+  );
+};
 
+// ── CSS animations ────────────────────────────────────────────────────────────
 const RMS_ANIM_CSS = `
   @keyframes rmsFloat {
-    0%,100% { transform: translateY(0)     rotate(0deg);  }
-    33%      { transform: translateY(-14px) rotate(5deg);  }
-    66%      { transform: translateY(-6px)  rotate(-3deg); }
-  }
-  @keyframes rmsWander {
-    0%   { transform: translate(0,0)       rotate(0deg)   scaleX(1);  }
-    20%  { transform: translate(14px,-18px) rotate(14deg)  scaleX(-1); }
-    40%  { transform: translate(-7px,-32px) rotate(-7deg)  scaleX(1);  }
-    60%  { transform: translate(18px,-22px) rotate(17deg)  scaleX(-1); }
-    80%  { transform: translate(-9px,-10px) rotate(-9deg)  scaleX(1);  }
-    100% { transform: translate(0,0)       rotate(0deg)   scaleX(1);  }
+    0%,100% { transform: translateY(0)     rotate(0deg);   }
+    33%      { transform: translateY(-12px) rotate(4deg);   }
+    66%      { transform: translateY(-5px)  rotate(-3deg);  }
   }
   @keyframes rmsSway {
-    0%,100% { transform: rotate(-11deg) translateY(0);     }
-    50%      { transform: rotate(11deg)  translateY(-10px); }
+    0%,100% { transform: rotate(-12deg) translateY(0);    }
+    50%      { transform: rotate(12deg)  translateY(-9px); }
+  }
+  @keyframes rmsSwayAlt {
+    0%,100% { transform: rotate(-8deg) scale(1);    }
+    50%      { transform: rotate(10deg) scale(1.04); }
   }
   @keyframes rmsBobble {
-    0%,100% { transform: translateX(0)    translateY(0);   }
-    30%      { transform: translateX(7px)  translateY(-9px); }
-    70%      { transform: translateX(-5px) translateY(-4px); }
+    0%,100% { transform: translateX(0)    translateY(0);    }
+    25%      { transform: translateX(6px)  translateY(-7px);  }
+    75%      { transform: translateX(-5px) translateY(-3px);  }
+  }
+  @keyframes rmsDrive {
+    0%,100% { transform: translateX(0)   translateY(0); }
+    25%      { transform: translateX(4px) translateY(-5px); }
+    50%      { transform: translateX(8px) translateY(0); }
+    75%      { transform: translateX(4px) translateY(-4px); }
+  }
+  @keyframes rmsPulse {
+    0%,100% { transform: scale(1)    rotate(0deg); }
+    50%      { transform: scale(1.07) rotate(5deg); }
+  }
+  @keyframes rmsMarquee {
+    0%   { transform: rotate(-8deg) translateX(0); }
+    100% { transform: rotate(-8deg) translateX(-50%); }
+  }
+  @keyframes rmsSpin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
 `;
 
 const BG_ELS = [
-  { C: ButterflyIcon, color:'#fbbf24', size:34, style:{ top:'8%',    left:'10%'  }, anim:'rmsWander 7s ease-in-out infinite',          delay:'0s'   },
-  { C: ButterflyIcon, color:'#f97316', size:24, style:{ top:'52%',   right:'7%'  }, anim:'rmsWander 9.5s ease-in-out infinite reverse', delay:'1.5s' },
-  { C: ButterflyIcon, color:'#f87171', size:20, style:{ top:'28%',   left:'62%'  }, anim:'rmsWander 6.5s ease-in-out infinite',         delay:'3.5s' },
-  { C: LeafIcon,      color:'#fb923c', size:32, style:{ top:'11%',   right:'13%' }, anim:'rmsSway 4.5s ease-in-out infinite',           delay:'1s',   origin:'bottom center' },
-  { C: LeafIcon,      color:'#fde047', size:22, style:{ bottom:'22%',left:'12%'  }, anim:'rmsSway 5.5s ease-in-out infinite reverse',   delay:'0.5s', origin:'bottom center' },
-  { C: LeafIcon,      color:'#f87171', size:18, style:{ top:'68%',   right:'20%' }, anim:'rmsFloat 5s ease-in-out infinite',            delay:'2.5s' },
-  { C: LeafIcon,      color:'#fbbf24', size:28, style:{ top:'42%',   left:'4%'   }, anim:'rmsSway 6s ease-in-out infinite',             delay:'2s',   origin:'bottom center' },
-  { C: TractorIcon,   color:'#fb923c', size:30, style:{ bottom:'17%',left:'5%'   }, anim:'rmsBobble 6s ease-in-out infinite',           delay:'0s'   },
-  { C: TractorIcon,   color:'#fde047', size:22, style:{ bottom:'38%',right:'4%'  }, anim:'rmsBobble 8s ease-in-out infinite reverse',   delay:'4s'   },
+  // Sunflowers — yellow, lively sway
+  { C: SunflowerIcon, color: '#fbbf24', size: 42, style: { top: '6%',    left: '8%'   }, anim: 'rmsSway 4.5s ease-in-out infinite',          delay: '0s',   origin: 'bottom center' },
+  { C: SunflowerIcon, color: '#fde047', size: 30, style: { top: '60%',   right: '6%'  }, anim: 'rmsSway 5.5s ease-in-out infinite reverse',   delay: '1.5s', origin: 'bottom center' },
+  { C: SunflowerIcon, color: '#fbbf24', size: 24, style: { top: '35%',   left: '3%'   }, anim: 'rmsSway 6s ease-in-out infinite',             delay: '3s',   origin: 'bottom center' },
+  // Tropical leaves — orange, swaying
+  { C: TropicalLeafIcon, color: '#fb923c', size: 38, style: { top: '10%', right: '10%' }, anim: 'rmsSway 5s ease-in-out infinite',             delay: '1s',   origin: 'bottom center' },
+  { C: TropicalLeafIcon, color: '#f97316', size: 26, style: { bottom: '20%', left: '10%' }, anim: 'rmsSway 6.5s ease-in-out infinite reverse', delay: '2s',   origin: 'bottom center' },
+  { C: TropicalLeafIcon, color: '#fde047', size: 32, style: { top: '48%', right: '3%'  }, anim: 'rmsSwayAlt 5s ease-in-out infinite',          delay: '4s',   origin: 'bottom center' },
+  // Flowers — red, floating
+  { C: FlowerIcon,    color: '#f87171', size: 34, style: { top: '22%',   left: '58%'  }, anim: 'rmsFloat 5.5s ease-in-out infinite',          delay: '0.5s' },
+  { C: FlowerIcon,    color: '#ef4444', size: 26, style: { bottom: '35%',right: '15%' }, anim: 'rmsPulse 4.5s ease-in-out infinite',          delay: '2.5s' },
+  { C: FlowerIcon,    color: '#fca5a5', size: 20, style: { top: '75%',   left: '55%'  }, anim: 'rmsFloat 7s ease-in-out infinite reverse',    delay: '1s'   },
+  // Palm leaves — white, floating
+  { C: PalmLeafIcon,  color: '#ffffff', size: 36, style: { top: '30%',   left: '64%'  }, anim: 'rmsSway 7s ease-in-out infinite',             delay: '3.5s', origin: 'bottom center' },
+  { C: PalmLeafIcon,  color: '#ffffff', size: 26, style: { bottom: '28%',left: '38%'  }, anim: 'rmsSwayAlt 6s ease-in-out infinite reverse',  delay: '1.5s', origin: 'bottom center' },
+  // Tractors — yellow/white, driving bobble
+  { C: DetailedTractorIcon, color: '#fde047', size: 40, style: { bottom: '13%', left: '3%' }, anim: 'rmsDrive 5s ease-in-out infinite',        delay: '0s'   },
+  { C: DetailedTractorIcon, color: '#ffffff', size: 28, style: { bottom: '42%', right: '2%' }, anim: 'rmsDrive 7s ease-in-out infinite reverse', delay: '3.5s' },
 ];
 
 const AnimBg = ({ mobile = false }) => (
   <div className={`absolute inset-0 pointer-events-none overflow-hidden ${mobile ? 'lg:hidden z-0' : 'z-[1]'}`}>
+    {!mobile && <WatermarkBg />}
     {BG_ELS.map(({ C, color, size, style, anim, delay, origin }, i) => (
-      <div key={i} className="absolute" style={{ ...style, animation: anim, animationDelay: delay, transformOrigin: origin || 'center', opacity: mobile ? 0.16 : 0.62 }}>
+      <div key={i} className="absolute" style={{
+        ...style,
+        animation: anim,
+        animationDelay: delay,
+        transformOrigin: origin || 'center',
+        opacity: mobile ? 0.13 : 0.72,
+        filter: mobile ? 'none' : 'drop-shadow(0 2px 6px rgba(0,0,0,0.18))',
+      }}>
         <C color={color} size={size} />
       </div>
     ))}
   </div>
 );
-// ────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Login = () => {
   const [selectedDept, setSelectedDept] = useState('');
@@ -104,7 +302,6 @@ const Login = () => {
   const subDropRef = useRef(null);
   const { deptLogin } = useAuth();
 
-  // Split departments into main and sub-units
   const mainDepts = departments.filter(d => d.type !== 'Sub-Account');
   const subUnits  = departments.filter(d => d.type === 'Sub-Account');
 
@@ -120,19 +317,16 @@ const Login = () => {
       .then(d => { if (d?.value) setIctPhone(d.value); })
       .catch(() => {});
 
-    // Close dropdowns on outside click
     const handleOutside = (e) => {
       if (deptDropRef.current && !deptDropRef.current.contains(e.target)) setDeptDropOpen(false);
       if (subDropRef.current && !subDropRef.current.contains(e.target)) setSubDropOpen(false);
     };
     document.addEventListener('mousedown', handleOutside);
 
-    // PWA Install Logic
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
     };
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
     if (window.matchMedia('(display-mode: standalone)').matches) {
@@ -152,21 +346,15 @@ const Login = () => {
     }
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
+    if (outcome === 'accepted') setDeferredPrompt(null);
   };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setIsSubmitting(true);
-
     try {
-      if (!selectedDept) {
-        throw new Error("Please select a department or sub-unit");
-      }
-      // Unify login to use the department portal (Backend now handles Super Admin role internally)
+      if (!selectedDept) throw new Error("Please select a department or sub-unit");
       await deptLogin(selectedDept, accessCode, mfaCode);
     } catch (err) {
       const status = err.response?.status;
@@ -191,63 +379,74 @@ const Login = () => {
     <>
     <style>{RMS_ANIM_CSS}</style>
     <div className="min-h-screen bg-background flex flex-col lg:flex-row relative overflow-hidden">
-      {/* Mobile animated bg layer — behind the form on white */}
+      {/* Mobile animated bg */}
       <AnimBg mobile />
 
-      {/* ── Left Branding Panel (Desktop Only) ── */}
+      {/* ── Left Branding Panel (Desktop) ── */}
       <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-[hsl(var(--primary))] via-[hsl(var(--primary)/0.88)] to-[hsl(var(--primary)/0.65)] text-white relative overflow-hidden flex-col justify-between p-12">
-        {/* Darkening overlay for deeper green */}
-        <div className="absolute inset-0 bg-black/25 z-0" />
-        {/* Desktop animated elements */}
+        <div className="absolute inset-0 bg-black/28 z-0" />
         <AnimBg />
-        <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/3 translate-x-1/3 blur-sm z-[2]"></div>
-        <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full translate-y-1/3 -translate-x-1/3 z-[2]"></div>
+        <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/3 translate-x-1/3 blur-sm z-[2]" />
+        <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full translate-y-1/3 -translate-x-1/3 z-[2]" />
 
-        {/* Branding Card Wrapper */}
-        <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] px-10 py-14 flex flex-col items-center justify-center text-center my-auto gap-10">
+        {/* Branding Card */}
+        <div className="relative z-10 border border-white/20 bg-white/5 backdrop-blur-sm rounded-[40px] px-10 py-10 flex flex-col items-center justify-center text-center my-auto gap-0">
 
-          {/* Logo + Company name */}
-          <div className="flex flex-col items-center gap-4">
+          {/* ── Section 1: Logo identity ── */}
+          <div className="flex items-center gap-4 w-full justify-center mb-6">
             <img
               src="/CSS_Group.png"
               alt="CSS Group Logo"
-              className="max-w-[176px] w-auto h-auto object-contain drop-shadow-xl rounded-xl"
+              className="w-[72px] h-[72px] object-contain drop-shadow-xl rounded-2xl shrink-0 ring-2 ring-white/10"
             />
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-white/50">CSS Group of Companies</p>
-              <div className="mt-1.5 w-10 h-[2px] bg-white/20 mx-auto rounded-full" />
+            <div className="text-left">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 leading-none">CSS Group of</p>
+              <p className="text-lg font-black uppercase tracking-[0.18em] text-white leading-tight">Companies</p>
             </div>
           </div>
 
-          {/* Headline */}
-          <div className="space-y-3">
-            <h1 className="text-5xl font-black tracking-tight leading-[1.1] text-white">
-              Requisition<br />
-              <span className="italic text-white/80 font-extrabold text-4xl">Management</span>
-            </h1>
-            <p className="text-sm text-white/60 leading-relaxed max-w-[220px] mx-auto font-medium">
-              Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
-            </p>
-          </div>
+          <div className="w-full h-px bg-white/10 mb-7" />
 
-          {/* Feature list */}
-          <div className="w-full space-y-2.5 border-t border-white/10 pt-8">
-            {['End-to-end approval tracking', 'Offline draft capability', 'Multi-department oversight'].map((item, i) => (
-              <div key={i} className="flex items-center justify-center gap-3">
-                <CheckCircle2 size={14} className="text-white/40 shrink-0" />
-                <span className="text-[13px] font-semibold text-white/70 tracking-wide">{item}</span>
+          {/* ── Section 2: Product name ── */}
+          <div className="mb-2">
+            <span className="inline-block px-3 py-0.5 rounded-full bg-white/10 text-[9px] font-black uppercase tracking-[0.35em] text-white/50 mb-4">
+              Enterprise Portal
+            </span>
+          </div>
+          <h1 className="text-[52px] font-black tracking-tight leading-[0.95] text-white mb-2">
+            Requisition
+          </h1>
+          <h2 className="text-[32px] italic font-extrabold text-white/70 leading-none mb-5">
+            Management
+          </h2>
+          <p className="text-[12px] text-white/50 leading-relaxed max-w-[210px] mx-auto font-medium mb-8">
+            Streamlined enterprise workflow for requisitions, memos, and procurement across all CSS Group departments.
+          </p>
+
+          <div className="w-full h-px bg-white/10 mb-7" />
+
+          {/* ── Section 3: Feature pills ── */}
+          <div className="w-full flex flex-col gap-2.5">
+            {[
+              { label: 'End-to-end approval tracking', icon: '✓' },
+              { label: 'Offline draft capability',     icon: '✓' },
+              { label: 'Multi-department oversight',   icon: '✓' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/5 border border-white/8 hover:bg-white/8 transition-colors">
+                <span className="w-5 h-5 rounded-full bg-white/15 flex items-center justify-center text-white text-[10px] font-black shrink-0">{item.icon}</span>
+                <span className="text-[12px] font-semibold text-white/65 tracking-wide text-left">{item.label}</span>
               </div>
             ))}
           </div>
 
         </div>
 
-        {/* Footer info (Outside Card) */}
+        {/* Footer */}
         <div className="relative z-10">
           <div className="flex items-center space-x-4 text-[9px] text-white/40 uppercase tracking-widest">
             <span>RMS</span>
-            <div className="w-1 h-1 rounded-full bg-white/30"></div>
-            <span>ISO ----</span>
+            <div className="w-1 h-1 rounded-full bg-white/30" />
+            <span style={{ textTransform: 'uppercase', fontStyle: 'italic', letterSpacing: '0.1em' }}>ISO coming soon</span>
           </div>
         </div>
       </div>
@@ -256,7 +455,7 @@ const Login = () => {
       <div className="flex-1 flex items-center justify-center p-5 lg:p-12 relative z-10">
         <div className="w-full max-w-sm border border-border/60 rounded-2xl p-8 bg-white shadow-sm lg:border-0 lg:shadow-none lg:bg-transparent lg:p-0">
 
-          {/* Mobile logo + app name (Banner Style) */}
+          {/* Mobile logo banner */}
           <div className="lg:hidden -mx-8 -mt-8 mb-8 bg-primary p-6 rounded-t-2xl flex items-center space-x-4 border-b border-white/10">
             <div className="w-20 h-11 rounded-xl overflow-hidden shrink-0 bg-white/10 p-0.5">
               <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-cover object-center" />
@@ -276,20 +475,19 @@ const Login = () => {
 
             {error && (
               <div className="bg-destructive/10 border border-destructive/20 text-destructive text-xs px-4 py-3 rounded-xl mb-5 flex items-center space-x-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
                 <span>{error}</span>
               </div>
             )}
 
             <form onSubmit={handleLogin} className="space-y-5">
-              {/* ── Dept / Sub-Unit selector ── */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                   {loginType === 'subunit' ? 'Sub-Unit' : 'Department / Unit'}
                 </label>
                 <div className="flex gap-2">
 
-                  {/* DEPARTMENT / UNIT button */}
+                  {/* DEPARTMENT dropdown */}
                   <div ref={deptDropRef} className="relative flex-1">
                     <button
                       type="button"
@@ -330,7 +528,7 @@ const Login = () => {
                     )}
                   </div>
 
-                  {/* SUB-UNITS button */}
+                  {/* SUB-UNITS dropdown */}
                   <div ref={subDropRef} className="relative flex-1">
                     <button
                       type="button"
@@ -461,19 +659,14 @@ const Login = () => {
             >
               <X size={16} />
             </button>
-
             <div className="flex flex-col items-center text-center space-y-5">
               <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                 <PhoneCall size={28} className="text-primary" />
               </div>
-
               <div className="space-y-1.5">
                 <h3 className="text-lg font-bold text-foreground tracking-tight">Need Help With Your Code?</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Contact the ICT Department to reset your access code.
-                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Contact the ICT Department to reset your access code.</p>
               </div>
-
               <div className="w-full bg-primary/5 border border-primary/15 rounded-2xl p-5 text-left">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -493,16 +686,12 @@ const Login = () => {
                     Call {ictPhone}
                   </a>
                 ) : (
-                  <p className="text-xs text-muted-foreground italic text-center">
-                    Please contact the ICT Department directly.
-                  </p>
+                  <p className="text-xs text-muted-foreground italic text-center">Please contact the ICT Department directly.</p>
                 )}
               </div>
-
               <p className="text-[10px] text-muted-foreground/70 leading-relaxed italic">
                 They will verify your identity and issue a new code promptly.
               </p>
-
               <button
                 onClick={() => setShowForgotCode(false)}
                 className="w-full py-3 rounded-xl border border-border/50 text-muted-foreground text-sm font-semibold hover:bg-muted/40 transition-all active:scale-[0.98]"
@@ -514,7 +703,7 @@ const Login = () => {
         </div>
       )}
 
-      {/* ── PWA Floating Install Button ── */}
+      {/* ── PWA Install Button ── */}
       {!isStandalone && (
         <button
           onClick={handleInstallApp}
