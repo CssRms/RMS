@@ -4457,18 +4457,26 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
       }
     });
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
-    // Fetch extra columns not in Prisma schema — safe fallback if columns don't exist yet
+    // Fetch extra columns not in Prisma schema — split into two independent queries so that
+    // a missing column in one set never silently drops access-control fields from the other.
     let ext = {};
     try {
       const extRows = await prisma.$queryRaw`
         SELECT "finalApprovalStatus", "finalApprovedByDeptId", "finalApprovedAt",
                "finalApprovedNote", "currentVettingDeptId", "treatedByDeptId", "treatedAt",
-               "hasAuditOverride", "auditContent", "auditAmount", "auditDeptId", "auditDeptName",
-               "iccFrozen", "iccFreezeNote", "iccFreezeAt", "iccFreezeBy"
+               "hasAuditOverride", "auditContent", "auditAmount", "auditDeptId", "auditDeptName"
         FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
       `;
       ext = extRows?.[0] || {};
     } catch (_) { /* columns not yet migrated — ignore */ }
+    // ICC freeze fields — separate try/catch so a missing column never breaks access control above
+    try {
+      const iccRows = await prisma.$queryRaw`
+        SELECT "iccFrozen", "iccFreezeNote", "iccFreezeAt", "iccFreezeBy"
+        FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
+      `;
+      Object.assign(ext, iccRows?.[0] || {});
+    } catch (_) { /* ICC columns not yet migrated — default: not frozen */ }
 
     if (!(await canReadRequisition({ ...requisition, ...ext }, req.user))) {
       return res.status(403).json({ error: 'You do not have permission to view this requisition.' });
