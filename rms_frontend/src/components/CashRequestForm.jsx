@@ -45,7 +45,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   // Privileged depts that regular creators cannot address directly at creation time.
   // They are only reachable after the request has passed through HR.
   const isPrivilegedDept = (name = '') =>
-    /general\s*manager|\bgm\b|ceo|chairman|\bicc\b|integrity|compliance|audit|account/i.test(name);
+    /general\s*manager|\bgm\b|ceo|chairman|\bicc\b|internal.*control|control.*compliance|audit|account/i.test(name);
 
   // Allowed targets when creating:
   // • Chairman / HR / GM → anywhere (no restrictions)

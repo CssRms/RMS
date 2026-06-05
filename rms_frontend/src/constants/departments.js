@@ -2,7 +2,7 @@ export const CORPORATE_HIERARCHY = {
   strategic: [
     "CEO (Chairman)",
     "General Manager (GM)",
-    "Internal consult and control (ICC)",
+    "Internal Control & Compliance (ICC)",
     "Audit",
     "Account",
     "ISAC",

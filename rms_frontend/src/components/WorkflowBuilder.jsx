@@ -100,7 +100,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const loadRecordAccess = async (allDepts = []) => {
     // Only HR, GM, Audit, ICC are configurable — Account/Chairman always have access
     const configurable = allDepts.filter(d =>
-      /\bhr\b|human\s*resource|general\s*manager|\bgm\b|\bicc\b|integrity|compliance|audit/i.test(d.name)
+      /\bhr\b|human\s*resource|general\s*manager|\bgm\b|\bicc\b|internal.*control|control.*compliance|audit/i.test(d.name)
     );
     setRecordDeptOptions(configurable);
     try {
