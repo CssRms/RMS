@@ -6276,6 +6276,19 @@ const server = app.listen(PORT, async () => {
       logger.info('[BOOT] Seeding core authority records...');
       await runSetup('node rms_backend/prisma/seed.js');
 
+      // One-time data fix: rename ICC department if it was created with the old incorrect name
+      try {
+        const iccFixed = await prisma.department.updateMany({
+          where: { name: { in: ['Internal consult and control (ICC)', 'Internal consult and control'] } },
+          data: { name: 'Internal Control & Compliance (ICC)' }
+        });
+        if (iccFixed.count > 0) {
+          logger.info(`[BOOT] Renamed ${iccFixed.count} ICC department(s) to correct full name.`);
+        }
+      } catch (e) {
+        logger.warn('[BOOT] ICC name fix skipped:', e.message);
+      }
+
       // Secondary setup tasks already in serve.js logic
       try {
         await ensureActivePublicKey();
