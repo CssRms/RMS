@@ -1337,10 +1337,9 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       return res.status(429).json({ error: 'Department temporarily locked due to too many failed attempts. Try again in 15 minutes.' });
     }
 
+    // Look up the selected department (must be a main/parent dept — sub-accounts are not listed)
     const dept = await prisma.department.findFirst({
-      where: {
-        name: { equals: departmentName?.trim(), mode: 'insensitive' },
-      }
+      where: { name: { equals: departmentName?.trim(), mode: 'insensitive' } }
     });
 
     if (!dept) {
@@ -1351,6 +1350,8 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
 
     const isSuperAdmin = dept.name.toLowerCase() === 'super admin';
     const trimmedAccess = accessCode.trim();
+
+    // ── Step 1: try the dept head's own access code ──────────────────────────
     let codeMatch = false;
     if (isSuperAdmin && SUPER_ADMIN_ACCESS_CODE) {
       const provided = Buffer.from(trimmedAccess);
@@ -1361,14 +1362,32 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
         ? await bcrypt.compare(trimmedAccess, dept.accessCodeHash)
         : dept.accessCode === trimmedAccess;
     }
-    if (!codeMatch) {
+
+    // ── Step 2: if no match, check sub-accounts of this dept ─────────────────
+    let matchedSubAccount = null;
+    if (!codeMatch && !isSuperAdmin) {
+      const subAccounts = await prisma.department.findMany({
+        where: { parentId: dept.id, isSubAccount: true }
+      });
+      for (const sub of subAccounts) {
+        const subMatch = sub.accessCodeHash
+          ? await bcrypt.compare(trimmedAccess, sub.accessCodeHash)
+          : sub.accessCode === trimmedAccess;
+        if (subMatch) { matchedSubAccount = sub; break; }
+      }
+    }
+
+    if (!codeMatch && !matchedSubAccount) {
       recordFailedLogin(deptKey);
       console.warn(`[AUTH] Failed: ${departmentName} / ${maskSecret(accessCode)}`);
       return res.status(401).json({ error: 'Invalid Department or Access Code' });
     }
 
-    if (dept.isDisabled) {
-      return res.status(403).json({ error: 'This sub-account has been disabled. Please contact your department head.' });
+    // The resolved entity is either the dept head or the matched sub-account
+    const resolved = matchedSubAccount || dept;
+
+    if (resolved.isDisabled) {
+      return res.status(403).json({ error: 'This account has been disabled. Please contact your department head.' });
     }
 
     if (isSuperAdmin) {
@@ -1385,20 +1404,21 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       ? await prisma.user.findFirst({ where: { role: 'global_admin' } })
       : null;
     const userData = {
-      id: isSuperAdmin ? (adminUser?.id || 1) : `dept_${dept.id}`,
-      name: dept.name,
+      id: isSuperAdmin ? (adminUser?.id || 1) : `dept_${resolved.id}`,
+      name: resolved.name,
       role: isSuperAdmin ? 'global_admin' : 'department',
-      deptId: dept.id,
-      email: `${dept.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
-      ...(dept.isSubAccount ? { isSubAccount: true, parentDeptId: dept.parentId } : {}),
-      ...(dept.privilegeAmount != null  ? { privilegeAmount: dept.privilegeAmount }   : {}),
-      ...(dept.memoPrivilege            ? { memoPrivilege: true }                     : {}),
-      ...(dept.materialPrivilege        ? { materialPrivilege: true }                 : {})
+      deptId: resolved.id,
+      email: `${resolved.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
+      ...(matchedSubAccount ? { isSubAccount: true, parentDeptId: dept.id } : {}),
+      ...(resolved.privilegeAmount != null ? { privilegeAmount: resolved.privilegeAmount } : {}),
+      ...(resolved.memoPrivilege           ? { memoPrivilege: true }                       : {}),
+      ...(resolved.materialPrivilege       ? { materialPrivilege: true }                   : {})
     };
 
     clearLoginAttempts(deptKey);
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
-    await prisma.activityLog.create({ data: { action: 'Login', details: `${dept.name} authenticated via unified portal` } });
+    const logLabel = matchedSubAccount ? `${matchedSubAccount.name} (sub-account of ${dept.name})` : dept.name;
+    await prisma.activityLog.create({ data: { action: 'Login', details: `${logLabel} authenticated via unified portal` } });
     res.cookie('rms_token', token, cookieOptions);
     res.json({ token, user: userData });
   } catch (error) { sendError(res, 500, error.message); }

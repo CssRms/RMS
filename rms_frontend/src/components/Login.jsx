@@ -380,21 +380,16 @@ const Login = () => {
   const [showForgotCode, setShowForgotCode] = useState(false);
   const [ictPhone, setIctPhone] = useState('');
   const [deptDropOpen, setDeptDropOpen] = useState(false);
-  const [subDropOpen, setSubDropOpen] = useState(false);
-  const [loginType, setLoginType] = useState('');
   const deptDropRef = useRef(null);
-  const subDropRef = useRef(null);
   const { deptLogin } = useAuth();
 
-  const mainDepts = departments.filter(d => d.type !== 'Sub-Account');
-  const subUnits  = departments.filter(d => d.type === 'Sub-Account');
+  const mainDepts = departments.filter(d => d.type !== 'Sub-Account' && !d.isSubAccount);
 
   useEffect(() => {
     getDepartments().then(setDepartments);
     fetch('/api/public/support-phone').then(r=>r.json()).then(d=>{if(d?.value) setIctPhone(d.value);}).catch(()=>{});
     const handleOutside = e => {
       if (deptDropRef.current && !deptDropRef.current.contains(e.target)) setDeptDropOpen(false);
-      if (subDropRef.current && !subDropRef.current.contains(e.target)) setSubDropOpen(false);
     };
     document.addEventListener('mousedown', handleOutside);
     const handleBIP = e => { e.preventDefault(); setDeferredPrompt(e); };
@@ -415,7 +410,7 @@ const Login = () => {
     setError('');
     setIsSubmitting(true);
     try {
-      if (!selectedDept) throw new Error("Please select a department or sub-unit");
+      if (!selectedDept) throw new Error("Please select a department");
       await deptLogin(selectedDept, accessCode, mfaCode);
     } catch (err) {
       const s = err.response?.status;
@@ -553,68 +548,33 @@ const Login = () => {
 
               <form onSubmit={handleLogin} className="space-y-5">
 
-                {/* Dept selector */}
+                {/* Dept selector — single dropdown; access code determines head vs sub-account */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
-                    {loginType === 'subunit' ? 'Sub-Unit' : 'Department / Unit'}
-                  </label>
-                  <div className="flex gap-3">
-
-                    <div ref={deptDropRef} className="relative flex-1">
-                      <button type="button" disabled={isSubmitting}
-                        onClick={() => { setDeptDropOpen(v=>!v); setSubDropOpen(false); }}
-                        className={`w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border text-sm transition-all disabled:opacity-50 ${loginType==='dept'&&selectedDept ? 'border-primary bg-primary/5 text-foreground font-semibold' : 'border-border/70 bg-white/80 text-muted-foreground hover:border-primary/40 hover:bg-primary/2'}`}>
-                        <Building2 size={16} className={loginType==='dept'&&selectedDept?'text-primary shrink-0':'text-muted-foreground/40 shrink-0'}/>
-                        <span className="flex-1 text-left truncate text-[13px]">{loginType==='dept'&&selectedDept?selectedDept:'Dept / Unit'}</span>
-                        {loginType==='dept'&&selectedDept
-                          ? <X size={13} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={e=>{e.stopPropagation();setSelectedDept('');setLoginType('');}}/>
-                          : <ChevronDown size={14} className={`shrink-0 transition-transform ${deptDropOpen?'rotate-180':''}`}/>}
-                      </button>
-                      {deptDropOpen && mainDepts.length > 0 && (
-                        <div className="absolute top-full left-0 w-full mt-1.5 z-50 bg-white border border-border/60 rounded-2xl shadow-2xl overflow-hidden">
-                          <div className="max-h-52 overflow-y-auto">
-                            {mainDepts.map(d=>(
-                              <button key={d.id} type="button"
-                                onClick={()=>{setSelectedDept(d.name);setLoginType('dept');setDeptDropOpen(false);}}
-                                className={`w-full text-left px-4 py-3 text-sm flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${selectedDept===d.name&&loginType==='dept'?'bg-primary/8 text-primary font-semibold':'text-foreground'}`}>
-                                <Building2 size={13} className="text-muted-foreground/40 shrink-0"/>
-                                <span className="truncate">{d.name}</span>
-                              </button>
-                            ))}
-                          </div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">Department</label>
+                  <div ref={deptDropRef} className="relative">
+                    <button type="button" disabled={isSubmitting}
+                      onClick={() => setDeptDropOpen(v => !v)}
+                      className={`w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border text-sm transition-all disabled:opacity-50 ${selectedDept ? 'border-primary bg-primary/5 text-foreground font-semibold' : 'border-border/70 bg-white/80 text-muted-foreground hover:border-primary/40 hover:bg-primary/2'}`}>
+                      <Building2 size={16} className={selectedDept ? 'text-primary shrink-0' : 'text-muted-foreground/40 shrink-0'}/>
+                      <span className="flex-1 text-left truncate text-[13px]">{selectedDept || 'Select your department…'}</span>
+                      {selectedDept
+                        ? <X size={13} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={e => { e.stopPropagation(); setSelectedDept(''); }}/>
+                        : <ChevronDown size={14} className={`shrink-0 transition-transform ${deptDropOpen ? 'rotate-180' : ''}`}/>}
+                    </button>
+                    {deptDropOpen && mainDepts.length > 0 && (
+                      <div className="absolute top-full left-0 w-full mt-1.5 z-50 bg-white border border-border/60 rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="max-h-52 overflow-y-auto">
+                          {mainDepts.map(d => (
+                            <button key={d.id} type="button"
+                              onClick={() => { setSelectedDept(d.name); setDeptDropOpen(false); }}
+                              className={`w-full text-left px-4 py-3 text-sm flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${selectedDept === d.name ? 'bg-primary/8 text-primary font-semibold' : 'text-foreground'}`}>
+                              <Building2 size={13} className="text-muted-foreground/40 shrink-0"/>
+                              <span className="truncate">{d.name}</span>
+                            </button>
+                          ))}
                         </div>
-                      )}
-                    </div>
-
-                    <div ref={subDropRef} className="relative flex-1">
-                      <button type="button" disabled={isSubmitting}
-                        onClick={()=>{setSubDropOpen(v=>!v);setDeptDropOpen(false);}}
-                        className={`w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border text-sm transition-all disabled:opacity-50 ${loginType==='subunit'&&selectedDept?'border-violet-400 bg-violet-50 text-foreground font-semibold':'border-border/70 bg-white/80 text-muted-foreground hover:border-violet-300'}`}>
-                        <GitBranch size={16} className={loginType==='subunit'&&selectedDept?'text-violet-600 shrink-0':'text-muted-foreground/40 shrink-0'}/>
-                        <span className="flex-1 text-left truncate text-[13px]">{loginType==='subunit'&&selectedDept?selectedDept:'Sub-Units'}</span>
-                        {loginType==='subunit'&&selectedDept
-                          ? <X size={13} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={e=>{e.stopPropagation();setSelectedDept('');setLoginType('');}}/>
-                          : <ChevronDown size={14} className={`shrink-0 transition-transform ${subDropOpen?'rotate-180':''}`}/>}
-                      </button>
-                      {subDropOpen && (
-                        <div className="absolute top-full left-0 w-full mt-1.5 z-50 bg-white border border-border/60 rounded-2xl shadow-2xl overflow-hidden">
-                          {subUnits.length === 0
-                            ? <p className="text-xs text-muted-foreground text-center py-4 px-3 italic">No sub-units available.</p>
-                            : <div className="max-h-52 overflow-y-auto">
-                                {subUnits.map(d=>(
-                                  <button key={d.id} type="button"
-                                    onClick={()=>{setSelectedDept(d.name);setLoginType('subunit');setSubDropOpen(false);}}
-                                    className={`w-full text-left px-4 py-3 text-sm flex items-center gap-2.5 hover:bg-violet-50 transition-colors ${selectedDept===d.name&&loginType==='subunit'?'bg-violet-50 text-violet-700 font-semibold':'text-foreground'}`}>
-                                    <GitBranch size={13} className="text-violet-400 shrink-0"/>
-                                    <span className="truncate">{d.name}</span>
-                                  </button>
-                                ))}
-                              </div>
-                          }
-                        </div>
-                      )}
-                    </div>
-
+                      </div>
+                    )}
                   </div>
                 </div>
 
