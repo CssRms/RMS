@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
   Check, Loader2, Copy, UserPlus, UserMinus,
-  ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck
+  ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2
 } from 'lucide-react';
 import { subAccountAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -125,6 +125,97 @@ const UserManager = ({ sub, availableUsers, onRefresh }) => {
           >
             {assigning ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
           </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Privilege amount editor for one sub-account ───────────────────────────────
+const PrivilegeEditor = ({ sub, onRefresh }) => {
+  const current = sub.privilegeAmount != null ? sub.privilegeAmount : '';
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(String(current));
+  const [saving, setSaving] = useState(false);
+
+  const fmt = (n) => n != null ? `₦${Number(n).toLocaleString()}` : null;
+
+  const save = async () => {
+    const trimmed = inputVal.trim();
+    const amount = trimmed === '' ? null : parseFloat(trimmed.replace(/,/g, ''));
+    if (trimmed !== '' && (isNaN(amount) || amount < 0)) {
+      toast.error('Enter a valid positive amount or leave blank to remove privilege.'); return;
+    }
+    setSaving(true);
+    try {
+      await subAccountAPI.setPrivilege(sub.id, amount);
+      toast.success(amount == null ? 'Privilege removed.' : `Privilege set to ₦${amount.toLocaleString()}.`);
+      setEditing(false);
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to update privilege.');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="mt-3 border-t border-border/20 pt-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+          <Award size={10} className="text-amber-500" /> Cash Privilege Limit
+        </span>
+        {!editing && (
+          <button onClick={() => { setInputVal(String(current)); setEditing(true); }}
+            className="text-[10px] font-bold text-primary hover:underline">
+            {sub.privilegeAmount != null ? 'Edit' : 'Set Privilege'}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="flex items-center gap-2">
+          {sub.privilegeAmount != null ? (
+            <>
+              <span className="text-sm font-black text-amber-700">≤ {fmt(sub.privilegeAmount)}</span>
+              <span className="text-[9px] text-muted-foreground/60 italic">max visible amount</span>
+            </>
+          ) : (
+            <span className="text-[11px] text-muted-foreground/60 italic">No privilege set — sub-account cannot see parent dept's requests</span>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
+            This sub-account will see incoming Cash requests at your department where the amount is <strong>≤ this limit</strong>. Leave blank to remove.
+          </p>
+          <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 text-sm font-bold">₦</span>
+              <input
+                type="number" min="0" step="any"
+                value={inputVal}
+                onChange={e => setInputVal(e.target.value)}
+                placeholder="e.g. 50000"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+                className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <button onClick={save} disabled={saving}
+              className="p-2 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            </button>
+            {sub.privilegeAmount != null && (
+              <button onClick={() => { setInputVal(''); save(); }} disabled={saving}
+                title="Remove privilege"
+                className="p-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
+                <Trash2 size={14} />
+              </button>
+            )}
+            <button onClick={() => setEditing(false)}
+              className="p-2 rounded-xl border border-border/40 text-muted-foreground hover:text-foreground">
+              <X size={14} />
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -256,11 +347,15 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
         </div>
       )}
 
-      {/* Expanded user management */}
+      {/* Expanded: privilege + user management */}
       {expanded && (
-        <div className="px-4 pb-4 border-t border-border/30 pt-3">
-          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-2">Staff Members</p>
-          <UserManager sub={sub} availableUsers={availableUsers} onRefresh={onRefresh} />
+        <div className="px-4 pb-4 border-t border-border/30 pt-3 space-y-4">
+          {/* Privilege editor — shown to parent dept head (non-admin) and admin */}
+          <PrivilegeEditor sub={sub} onRefresh={onRefresh} />
+          <div>
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-2">Staff Members</p>
+            <UserManager sub={sub} availableUsers={availableUsers} onRefresh={onRefresh} />
+          </div>
         </div>
       )}
     </div>

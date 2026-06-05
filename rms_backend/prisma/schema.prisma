@@ -127,6 +127,11 @@ model Requisition {
   // Sub-account visibility — dept head can share their requests with their sub-units
   visibleToSubAccounts Boolean @default(false)
 
+  // Sub-account privilege delegation — max cash amount this sub-account can see/act on
+  // when the request is at the parent threshold department (HR / Audit / Account).
+  // Null = no privilege assigned. Set by parent dept head or Super Admin.
+  privilegeAmount Float?
+
   // ICC Global Observer — freeze blocks ALL actions on the request until lifted
   iccFrozen     Boolean   @default(false)
   iccFreezeNote String?   @db.Text

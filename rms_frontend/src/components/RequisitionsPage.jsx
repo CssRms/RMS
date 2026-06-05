@@ -1105,15 +1105,30 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
     }).catch(() => {});
   }, []);
 
-  const deptName   = user?.name || '';
-  const amount     = parseFloat(req.amount || 0);
-  const isChairman = /ceo|chairman/i.test(deptName);
-  const isGM       = /general\s*manager|\bgm\b/i.test(deptName);
-  const isHR       = /\bhr\b|human\s*resource/i.test(deptName);
+  const deptName = user?.name || '';
+  // Effective amount — uses audit-overridden value if present
+  const effectiveAmount = (detail?.hasAuditOverride && detail?.auditAmount != null)
+    ? parseFloat(detail.auditAmount)
+    : parseFloat(req.amount || 0);
+  const amount = effectiveAmount;
+
+  // For privileged sub-accounts use parent dept name for authority checks
+  const isPrivSub = user?.isSubAccount && user?.parentDeptId && user?.privilegeAmount != null;
+  const parentDept = isPrivSub ? departments.find(d => d.id === parseInt(user.parentDeptId)) : null;
+  const checkDeptName = (isPrivSub && parentDept) ? parentDept.name : deptName;
+
+  const isChairman = /ceo|chairman/i.test(checkDeptName);
+  const isGM       = /general\s*manager|\bgm\b/i.test(checkDeptName);
+  const isHR       = /\bhr\b|human\s*resource/i.test(checkDeptName);
 
   if (/^memo/i.test(req.type || '')) return null;
 
-  const isAtMyDesk = detail?.targetDepartmentId === user?.deptId;
+  // isAtMyDesk: request is at my dept, OR I'm a privileged sub-account of the dept holding it
+  const parentDeptId = user?.parentDeptId ? parseInt(user.parentDeptId) : null;
+  const privLimit = user?.privilegeAmount != null ? parseFloat(user.privilegeAmount) : null;
+  const isAtMyDesk = detail?.targetDepartmentId === user?.deptId
+    || (isPrivSub && parentDeptId && detail?.targetDepartmentId === parentDeptId
+        && privLimit != null && effectiveAmount <= privLimit);
   if (!isAtMyDesk) return null;
 
   const { hr_ceiling, chairman_min } = thresholds;
@@ -1921,22 +1936,42 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const _isAccountDept = /\baccount\b/i.test(user?.name || '');
   const _fas = detail?.finalApprovalStatus;
   const _isMaterialReq = /^material/i.test(req?.type || '');
+
+  // Privileged sub-account of Audit or Account — compute BEFORE _accountHoldsMaterial
+  const _privSub = user?.isSubAccount && user?.parentDeptId && user?.privilegeAmount != null;
+  const _privLimit = _privSub ? parseFloat(user.privilegeAmount) : null;
+  const _effAmt = (detail?.hasAuditOverride && detail?.auditAmount != null)
+    ? parseFloat(detail.auditAmount) : parseFloat(req?.amount || 0);
+  const _privCovers = _privSub && _privLimit != null && _effAmt <= _privLimit;
+  const _parentId = _privSub ? parseInt(user.parentDeptId) : null;
+  const _parentDept = _privSub ? departments?.find(d => d.id === _parentId) : null;
+  const _isAuditSub = _privCovers && /\baudit\b/i.test(_parentDept?.name || '');
+  const _isAccountSub = _privCovers && /\baccount\b/i.test(_parentDept?.name || '');
+
   // Account holds the request and it is a Material request — they can treat even when
   // finalApprovalStatus is 'none' (request arrived via direct forwarding, not vetting chain)
-  const _accountHoldsMaterial = _isAccountDept && _isMaterialReq
-    && detail?.targetDepartmentId === user.deptId;
+  const _accountHoldsMaterial = _isMaterialReq && (
+    (_isAccountDept && detail?.targetDepartmentId === user.deptId) ||
+    (_isAccountSub && detail?.targetDepartmentId === _parentId)
+  );
 
   const isCurrentVetter = user?.deptId && (
     currentVettingDeptId === user.deptId ||
     (_isAccountDept && detail?.targetDepartmentId === user.deptId &&
       (_fas === 'approved' || _fas === 'vetting' || _fas === 'partial')) ||
-    _accountHoldsMaterial
+    _accountHoldsMaterial ||
+    // Privileged Audit sub-account — parent dept is current vetter
+    (_isAuditSub && currentVettingDeptId === _parentId) ||
+    // Privileged Account sub-account — parent Account holds the request
+    (_isAccountSub && detail?.targetDepartmentId === _parentId &&
+      (_fas === 'approved' || _fas === 'vetting' || _fas === 'partial')) ||
+    (_isAccountSub && _isMaterialReq && detail?.targetDepartmentId === _parentId)
   );
   const finalApprovalStatus    = detail?.finalApprovalStatus;
 
   const isICC      = /\bicc\b|integrity|compliance/i.test(deptName);
-  const isAudit    = /\baudit\b/i.test(deptName);
-  const isAccount  = /\baccount\b/i.test(deptName);
+  const isAudit    = /\baudit\b/i.test(deptName) || _isAuditSub;
+  const isAccount  = /\baccount\b/i.test(deptName) || _isAccountSub;
   const isChairman = /ceo|chairman/i.test(deptName);
 
   // Only the active vetting dept sees this panel
@@ -3073,12 +3108,13 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Vetting Panel — Account only for post-approval treatment.
-                  Also shown when Account holds a Material request regardless of finalApprovalStatus. */}
+              {/* Vetting Panel — Account (and privileged Audit/Account sub-accounts) for post-approval treatment. */}
               {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isFrozen &&
-               /\baccount\b/i.test(user?.name || '') &&
+               (/\baccount\b/i.test(user?.name || '') || /\baudit\b/i.test(user?.name || '')
+                || (user?.isSubAccount && user?.parentDeptId && user?.privilegeAmount != null)) &&
                ((detail.finalApprovalStatus && !['none', 'treated'].includes(detail.finalApprovalStatus))
-                || (/^material/i.test(req?.type || '') && detail.targetDepartmentId === user?.deptId)) && (
+                || (/^material/i.test(req?.type || '') && (detail.targetDepartmentId === user?.deptId
+                    || detail.targetDepartmentId === (user?.parentDeptId ? parseInt(user.parentDeptId) : -1)))) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <VettingPanel
                     req={req}

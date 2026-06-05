@@ -163,6 +163,29 @@ const checkFinalApproveAuthority = (deptName, amount, isMaterial = false) => {
   return null; // Amount outside this department's authorised band
 };
 
+// ── Sub-account privilege helpers ─────────────────────────────────────────────
+// Returns the amount that should be compared against privilege limits.
+// Uses audit-overridden amount when Audit has verified the table, otherwise original.
+const getEffectiveReqAmount = (req) => {
+  if (req?.hasAuditOverride && req?.auditAmount != null) return parseFloat(req.auditAmount);
+  return parseFloat(req?.amount || 0);
+};
+
+// Fetch a sub-account's privilegeAmount from DB (falls back to null)
+async function getSubPrivilege(deptId) {
+  try {
+    const d = await prisma.department.findUnique({ where: { id: deptId }, select: { privilegeAmount: true } });
+    return d?.privilegeAmount ?? null;
+  } catch { return null; }
+}
+
+// Returns true if the sub-account's JWT privilege covers the effective amount
+function subPrivilegeCoversCash(user, effectiveAmount) {
+  if (!user?.isSubAccount) return false;
+  const limit = parseFloat(user.privilegeAmount);
+  return !isNaN(limit) && effectiveAmount <= limit;
+}
+
 // ── ICC helpers ───────────────────────────────────────────────────────────────
 const isIccDept = (name) => /\bicc\b|integrity.*compliance|compliance.*integrity/i.test(name || '');
 
@@ -646,6 +669,16 @@ async function canReadRequisition(requisition, user) {
   const deptId = toIntOrNull(user?.deptId);
   const reqId = toIntOrNull(requisition?.id);
   if (!deptId || !reqId) return false;
+
+  // Privileged sub-account: can read cash requests at parent dept within their limit
+  if (user?.isSubAccount && user?.parentDeptId) {
+    const parentDeptId = toIntOrNull(user.parentDeptId);
+    if (toIntOrNull(requisition.targetDepartmentId) === parentDeptId) {
+      const effectiveAmount = getEffectiveReqAmount(requisition);
+      const privilege = user.privilegeAmount != null ? parseFloat(user.privilegeAmount) : await getSubPrivilege(deptId);
+      if (privilege != null && effectiveAmount <= privilege) return true;
+    }
+  }
 
   const directDeptIds = [
     requisition.departmentId,
@@ -1333,7 +1366,8 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       role: isSuperAdmin ? 'global_admin' : 'department',
       deptId: dept.id,
       email: `${dept.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
-      ...(dept.isSubAccount ? { isSubAccount: true, parentDeptId: dept.parentId } : {})
+      ...(dept.isSubAccount ? { isSubAccount: true, parentDeptId: dept.parentId } : {}),
+      ...(dept.privilegeAmount != null ? { privilegeAmount: dept.privilegeAmount } : {})
     };
 
     clearLoginAttempts(deptKey);
@@ -2327,7 +2361,8 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
       userCount: s.users.length, users: s.users, reqCount: s._count.requisitions,
       // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
       ...(isAdmin ? { accessCodeLabel: s.accessCodeLabel } : {}),
-      parentDept: s.parent ? { id: s.parent.id, name: s.parent.name } : null
+      parentDept: s.parent ? { id: s.parent.id, name: s.parent.name } : null,
+      privilegeAmount: s.privilegeAmount ?? null
     })));
   } catch (err) { sendError(res, 500, err.message); }
 });
@@ -2495,6 +2530,48 @@ app.get('/api/sub-accounts/available-users', authenticateToken, requireSubAccoun
     });
     res.json(users);
   } catch (err) { sendError(res, 500, err.message); }
+});
+
+// ── Sub-account privilege amount — set by parent dept head or Super Admin ─────
+app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const sub = await prisma.department.findFirst({
+      where: { id: subId, isSubAccount: true },
+      select: { id: true, parentId: true, name: true }
+    });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
+
+    // Only the parent dept head or admin can set the privilege
+    if (!isAdmin && userDeptId !== sub.parentId) {
+      return res.status(403).json({ error: 'Only the parent department head can set privileges for their sub-accounts.' });
+    }
+
+    const parsed = z.object({
+      maxAmount: z.union([z.number().min(0), z.null()]).optional()
+    }).safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'maxAmount must be a non-negative number or null.' });
+
+    const maxAmount = parsed.data.maxAmount === undefined ? undefined : (parsed.data.maxAmount === null ? null : parseFloat(parsed.data.maxAmount));
+
+    await prisma.department.update({
+      where: { id: subId },
+      data: { privilegeAmount: maxAmount === undefined ? undefined : maxAmount }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'Sub-Account Privilege Updated',
+        details: `Privilege for ${sub.name} set to: ${maxAmount == null ? 'removed' : `₦${maxAmount.toLocaleString()}`}`
+      }
+    });
+
+    res.json({ success: true, privilegeAmount: maxAmount ?? null });
+  } catch (error) { sendError(res, 500, error.message); }
 });
 
 // User Signature Upload (User or Admin)
@@ -3374,16 +3451,25 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
 
-    // Load dept name to check authority
+    // Load dept name to check authority — for sub-accounts, use parent dept name
     let deptName = req.user.deptName || req.user.name || '';
     if (!deptName && userDeptId) {
       const d = await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true } });
       deptName = d?.name || '';
     }
+    let authorityDeptName = deptName;
+    let isPrivilegedSubAccount = false;
+    if (req.user.isSubAccount && req.user.parentDeptId) {
+      const parentDept = await prisma.department.findUnique({
+        where: { id: parseInt(req.user.parentDeptId) },
+        select: { name: true }
+      });
+      if (parentDept) authorityDeptName = parentDept.name;
+    }
 
     const requisition = await prisma.requisition.findUnique({
       where: { id: reqId },
-      select: { id: true, amount: true, type: true, finalApprovalStatus: true }
+      select: { id: true, amount: true, type: true, finalApprovalStatus: true, hasAuditOverride: true, auditAmount: true }
     });
 
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
@@ -3393,9 +3479,21 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
     }
 
     const isMaterial = /^material/i.test(requisition.type || '');
-    const authority = isAdmin ? 'chairman' : checkFinalApproveAuthority(deptName, requisition.amount || 0, isMaterial);
-    if (!authority) {
+    const effectiveAmount = getEffectiveReqAmount(requisition);
+
+    // Check if sub-account has privilege covering this amount
+    if (req.user.isSubAccount && req.user.parentDeptId) {
+      const privLimit = req.user.privilegeAmount != null ? parseFloat(req.user.privilegeAmount) : await getSubPrivilege(userDeptId);
+      if (privLimit != null && effectiveAmount <= privLimit) isPrivilegedSubAccount = true;
+    }
+
+    const authority = isAdmin ? 'chairman' : checkFinalApproveAuthority(authorityDeptName, isMaterial ? 0 : effectiveAmount, isMaterial);
+    if (!authority && !isPrivilegedSubAccount) {
       return res.status(403).json({ error: `Your department does not have authority to final-approve this amount.` });
+    }
+    // Sub-account must have privilege AND parent dept must have authority
+    if (isPrivilegedSubAccount && !isAdmin && !checkFinalApproveAuthority(authorityDeptName, isMaterial ? 0 : effectiveAmount, isMaterial)) {
+      return res.status(403).json({ error: `Your parent department does not have authority to final-approve this amount.` });
     }
 
     const updated = await prisma.requisition.update({
@@ -3449,7 +3547,10 @@ app.post('/api/requisitions/:id/send-to-vetting', authenticateToken, async (req,
     if (requisition.finalApprovalStatus !== 'approved') {
       return res.status(400).json({ error: 'Requisition must be finally approved before sending to vetting.' });
     }
-    if (!isAdmin && userDeptId !== requisition.finalApprovedByDeptId) {
+    // Allow: the approving dept itself OR a privileged sub-account of that dept
+    const isApproverSub = req.user.isSubAccount && req.user.parentDeptId
+      && parseInt(req.user.parentDeptId) === requisition.finalApprovedByDeptId;
+    if (!isAdmin && userDeptId !== requisition.finalApprovedByDeptId && !isApproverSub) {
       return res.status(403).json({ error: 'Only the final-approving department can send to vetting.' });
     }
 
@@ -3536,23 +3637,47 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
 
-    // Resolve acting dept name for Account check
+    // Resolve acting dept name — for sub-accounts also resolve parent dept
     const actingDeptRecord = userDeptId
-      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true } })
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true, privilegeAmount: true } })
       : null;
     const isAccountDept = actingDeptRecord && /\baccount\b/i.test(actingDeptRecord.name);
 
+    // Sub-account parent resolution
+    let parentDeptRecord = null;
+    let isPrivilegedVettingSub = false;
+    if (req.user.isSubAccount && req.user.parentDeptId) {
+      parentDeptRecord = await prisma.department.findUnique({
+        where: { id: parseInt(req.user.parentDeptId) },
+        select: { id: true, name: true }
+      });
+      const effectiveAmt = getEffectiveReqAmount(requisition);
+      const privLimit = req.user.privilegeAmount != null ? parseFloat(req.user.privilegeAmount)
+        : (actingDeptRecord?.privilegeAmount ?? null);
+      if (privLimit != null && effectiveAmt <= privLimit) isPrivilegedVettingSub = true;
+    }
+    const isParentAccountDept = parentDeptRecord && /\baccount\b/i.test(parentDeptRecord.name);
+    const isParentAuditDept = parentDeptRecord && /\baudit\b/i.test(parentDeptRecord.name);
+    const parentId = parentDeptRecord ? parseInt(parentDeptRecord.id) : null;
+
     // Allow: current vetting dept, final approving dept (Chairman), admin,
     // OR Account dept whenever they hold the request on an approved/vetting requisition,
-    // OR Account dept holding a Material request — Material requests can arrive via direct
-    // forwarding without going through the vetting/final-approve chain.
+    // OR Account dept holding a Material request,
+    // OR privileged sub-account of current vetting dept (Audit/Account sub-accounts)
     const isMaterialReq = /^material/i.test(requisition.type || '');
     const canAct = isAdmin
       || (requisition.currentVettingDeptId === userDeptId)
       || (requisition.finalApprovedByDeptId === userDeptId)
       || (isAccountDept && requisition.targetDepartmentId === userDeptId
           && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus))
-      || (isAccountDept && isMaterialReq && requisition.targetDepartmentId === userDeptId);
+      || (isAccountDept && isMaterialReq && requisition.targetDepartmentId === userDeptId)
+      // Privileged Audit sub-account — parent is current vetting dept
+      || (isPrivilegedVettingSub && isParentAuditDept && requisition.currentVettingDeptId === parentId)
+      // Privileged Account sub-account — parent Account holds the request
+      || (isPrivilegedVettingSub && isParentAccountDept
+          && requisition.targetDepartmentId === parentId
+          && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus))
+      || (isPrivilegedVettingSub && isParentAccountDept && isMaterialReq && requisition.targetDepartmentId === parentId);
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });
@@ -4270,10 +4395,6 @@ app.put('/api/department/profile', authenticateToken, async (req, res) => {
 app.post('/api/department/signature', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     if (req.user.role !== 'department' || !req.user.deptId) return res.status(403).json({ error: 'Forbidden' });
-    // Sub-accounts are bound to the parent department's signature — they cannot set their own
-    if (req.user.isSubAccount) {
-      return res.status(403).json({ error: 'Sub-accounts cannot upload a signature. Your department head\'s signature is used automatically.' });
-    }
     if (!req.file) return res.status(400).json({ error: 'No signature file uploaded' });
 
     const dept = await prisma.department.findUnique({ where: { id: req.user.deptId } });
@@ -5388,6 +5509,26 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
       const parentVisibleClause = (req.user.isSubAccount && req.user.parentDeptId)
         ? [{ departmentId: parseInt(req.user.parentDeptId), visibleToSubAccounts: true }]
         : [];
+
+      // Privileged sub-account: also sees cash requests currently AT parent dept within their limit
+      let privilegeClause = [];
+      if (req.user.isSubAccount && req.user.parentDeptId) {
+        const privLimit = req.user.privilegeAmount != null
+          ? parseFloat(req.user.privilegeAmount)
+          : await getSubPrivilege(deptId);
+        if (privLimit != null && !isNaN(privLimit)) {
+          const cashTypes = ['Cash', 'cash', 'Cash Requisition', 'cash requisition'];
+          privilegeClause = [{
+            targetDepartmentId: parseInt(req.user.parentDeptId),
+            type: { in: cashTypes },
+            OR: [
+              { hasAuditOverride: false, amount: { lte: privLimit } },
+              { hasAuditOverride: true, auditAmount: { lte: privLimit } }
+            ]
+          }];
+        }
+      }
+
       const accessWhere = {
         OR: [
           { departmentId: deptId },
@@ -5395,7 +5536,8 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
           ...(subDeptIds.length > 0 ? [{ departmentId: { in: subDeptIds } }] : []),
           ...(linkedReqIds.length > 0 ? [{ id: { in: linkedReqIds } }] : []),
           ...(taggedReqIds.length > 0 ? [{ id: { in: taggedReqIds } }] : []),
-          ...parentVisibleClause
+          ...parentVisibleClause,
+          ...privilegeClause
         ]
       };
       where = typeValues.length > 0 ? { AND: [accessWhere, typeScopeWhere] } : accessWhere;

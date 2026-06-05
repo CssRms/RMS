@@ -210,53 +210,46 @@ const DeptProfileContent = ({ user: _user }) => {
 
         {/* RIGHT — signature + checklist (1/3 width) */}
         <div className="space-y-5">
-          {/* Signature Upload — blocked for sub-accounts */}
-          <Card title="Official Signature" subtitle="Used on all PDF documents" icon={PenTool}>
-            {_user?.isSubAccount ? (
-              <div className="flex flex-col items-center justify-center gap-3 p-6 bg-amber-50/60 border border-amber-200 rounded-xl text-center">
-                <Lock size={22} className="text-amber-500" />
-                <p className="text-xs font-black text-amber-800 uppercase tracking-wider">Bound to Department Head</p>
-                <p className="text-[10px] text-amber-700/80 leading-relaxed">
-                  Sub-units automatically use the parent department's official signature on all documents. Only the department head can set or change the signature.
-                </p>
+          {/* Signature Upload — available to all depts including privileged sub-accounts */}
+          <Card title="Official Signature" subtitle={_user?.isSubAccount ? 'Your own signature for documents you approve' : 'Used on all PDF documents'} icon={PenTool}>
+            {_user?.isSubAccount && (
+              <div className="mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-700 font-medium">
+                As a sub-account, your signature will appear alongside your parent department head's signature on any documents you approve.
               </div>
-            ) : (
-              <>
-                <div className={`w-full rounded-xl border-2 border-dashed overflow-hidden transition-all ${
-                  profile.hasSignature ? 'border-emerald-200 bg-emerald-50/40' : 'bg-muted/20 border-border hover:border-primary/40'
-                }`}>
-                  {profile.hasSignature ? (
-                    <div className="relative group">
-                      <img
-                        src={`/api/department/signature/image?t=${sigTs}`}
-                        alt="Official Signature"
-                        className="w-full max-h-40 object-contain p-3"
-                        onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                      />
-                      <div style={{ display: 'none' }} className="flex-col items-center justify-center gap-2 p-6">
-                        <CheckCircle2 size={20} className="text-emerald-500" />
-                        <p className="text-xs font-bold text-emerald-700">Signature Active</p>
-                      </div>
-                      <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest bg-white/80 px-2 py-1 rounded-lg">Click below to replace</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center gap-3 p-8">
-                      <Upload size={28} className="text-muted-foreground/30" />
-                      <p className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-wider">No Signature</p>
-                    </div>
-                  )}
-                </div>
-                <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-                  className="mt-3 w-full py-2.5 rounded-xl border border-primary/30 text-primary font-bold text-xs uppercase tracking-wider hover:bg-primary/5 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50">
-                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  {uploading ? 'Uploading…' : profile.hasSignature ? 'Replace Signature' : 'Upload Signature'}
-                </button>
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleSignatureUpload} />
-                <p className="text-[10px] text-muted-foreground/50 mt-2 text-center">PNG or JPEG · Max 2MB</p>
-              </>
             )}
+            <div className={`w-full rounded-xl border-2 border-dashed overflow-hidden transition-all ${
+              profile.hasSignature ? 'border-emerald-200 bg-emerald-50/40' : 'bg-muted/20 border-border hover:border-primary/40'
+            }`}>
+              {profile.hasSignature ? (
+                <div className="relative group">
+                  <img
+                    src={`/api/department/signature/image?t=${sigTs}`}
+                    alt="Official Signature"
+                    className="w-full max-h-40 object-contain p-3"
+                    onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                  />
+                  <div style={{ display: 'none' }} className="flex-col items-center justify-center gap-2 p-6">
+                    <CheckCircle2 size={20} className="text-emerald-500" />
+                    <p className="text-xs font-bold text-emerald-700">Signature Active</p>
+                  </div>
+                  <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest bg-white/80 px-2 py-1 rounded-lg">Click below to replace</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-3 p-8">
+                  <Upload size={28} className="text-muted-foreground/30" />
+                  <p className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-wider">No Signature</p>
+                </div>
+              )}
+            </div>
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              className="mt-3 w-full py-2.5 rounded-xl border border-primary/30 text-primary font-bold text-xs uppercase tracking-wider hover:bg-primary/5 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50">
+              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {uploading ? 'Uploading…' : profile.hasSignature ? 'Replace Signature' : 'Upload Signature'}
+            </button>
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleSignatureUpload} />
+            <p className="text-[10px] text-muted-foreground/50 mt-2 text-center">PNG or JPEG · Max 2MB</p>
           </Card>
 
           {/* Profile Checklist */}

@@ -471,6 +471,7 @@ export const subAccountAPI = {
   assignUser: (id, userId) => api.post(`/sub-accounts/${id}/users`, { userId }),
   removeUser: (id, userId) => api.delete(`/sub-accounts/${id}/users/${userId}`),
   availableUsers: (parentId) => api.get('/sub-accounts/available-users', { params: parentId ? { parentId } : {} }),
+  setPrivilege: (id, maxAmount) => api.put(`/sub-accounts/${id}/privilege`, { maxAmount }),
 };
 
 export default api;
