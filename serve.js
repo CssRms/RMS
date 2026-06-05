@@ -198,7 +198,7 @@ function subPrivilegeCoversCash(user, effectiveAmount) {
 }
 
 // ── ICC helpers ───────────────────────────────────────────────────────────────
-const isIccDept = (name) => /\bicc\b|integrity.*compliance|compliance.*integrity/i.test(name || '');
+const isIccDept = (name) => /\bicc\b|internal.*control|control.*compliance/i.test(name || '');
 
 // Blocks any mutating action on a frozen request. Returns true (and sends 403) if frozen.
 async function blockIfIccFrozen(reqId, res) {
@@ -207,7 +207,7 @@ async function blockIfIccFrozen(reqId, res) {
     const r = rows?.[0];
     if (r?.iccFrozen) {
       res.status(403).json({
-        error: `This request has been frozen by ICC (Integrity & Compliance). No actions are permitted until ICC lifts the freeze.`,
+        error: `This request has been frozen by ICC (Internal Control & Compliance). No actions are permitted until ICC lifts the freeze.`,
         iccFrozen: true,
         iccFreezeBy: r.iccFreezeBy || 'ICC',
         iccFreezeNote: r.iccFreezeNote || ''

@@ -1459,7 +1459,7 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
       ? 'Direct to Account — no further forwarding needed'
       : isAuditDirect
         ? 'ICC skipped — flow will be: Audit → Account'
-        : 'Full chain — flow will be: ICC → Audit → Account';
+        : 'Full chain — flow will be: ICC → Audit → Account'; // ICC = Internal Control & Compliance
 
   const handleSend = async () => {
     if (!selectedId) { toast.error('Please select a department.'); return; }
@@ -1591,7 +1591,7 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
           <div className="flex items-center gap-2">
             <ShieldAlert size={14} className={frozen ? 'text-red-700' : 'text-indigo-700'} />
             <p className={`text-[10px] font-black uppercase tracking-widest ${frozen ? 'text-red-800' : 'text-indigo-800'}`}>
-              ICC Observer Panel
+              ICC — Internal Control & Compliance
             </p>
             {frozen && (
               <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-100 border border-red-300 text-red-700 uppercase flex items-center gap-1">
@@ -1667,7 +1667,7 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
                   <Lock size={10}/> Freeze Request — Mandatory Reason
                 </p>
                 <p className="text-[11px] text-red-700/80 leading-relaxed">
-                  This will block ALL actions on this request by every department until ICC lifts the freeze. All involved parties will see your reason.
+                  This will block ALL actions on this request by every department until ICC (Internal Control & Compliance) lifts the freeze. All involved parties will see your reason.
                 </p>
                 <textarea
                   value={freezeNote}
@@ -1979,7 +1979,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   );
   const finalApprovalStatus    = detail?.finalApprovalStatus;
 
-  const isICC      = /\bicc\b|integrity|compliance/i.test(deptName);
+  const isICC      = /\bicc\b|internal.*control|control.*compliance/i.test(deptName);
   const isAudit    = /\baudit\b/i.test(deptName) || _isAuditSub;
   const isAccount  = /\baccount\b/i.test(deptName) || _isAccountSub;
   const isChairman = /ceo|chairman/i.test(deptName);
@@ -2561,7 +2561,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const isTaggedObserver = !!(detail?.isTagged) && !wasTaggedNowActive;
 
   // ICC globals
-  const isIccUser = user?.role === 'department' && /\bicc\b|integrity.*compliance|compliance.*integrity/i.test(user?.name || '');
+  const isIccUser = user?.role === 'department' && /\bicc\b|internal.*control|control.*compliance/i.test(user?.name || '');
   const isOwnRequest = req.departmentId === user?.deptId; // ICC created this request themselves
   const showIccPanel = isIccUser && !isOwnRequest; // ICC panel only on other depts' requests
   const isFrozen = !!detail?.iccFrozen; // frozen by ICC — blocks all actions for non-ICC
@@ -2939,11 +2939,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             <Lock size={20} className="text-red-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-black text-red-800 uppercase tracking-wide flex items-center gap-2">
-                Request Frozen by ICC
+                Request Frozen by ICC (Internal Control & Compliance)
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-100 border border-red-300 text-red-700 uppercase">All Actions Blocked</span>
               </p>
               <p className="text-sm text-red-700 mt-1 leading-relaxed font-medium">
-                {detail.iccFreezeNote || 'ICC has placed a hold on this request. No actions may be taken until ICC lifts the freeze.'}
+                {detail.iccFreezeNote || 'ICC (Internal Control & Compliance) has placed a hold on this request. No actions may be taken until ICC lifts the freeze.'}
               </p>
               {detail.iccFreezeBy && (
                 <p className="text-[10px] text-red-600/70 mt-1 font-bold">Frozen by: {detail.iccFreezeBy}</p>
@@ -3054,10 +3054,10 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                   <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500" />
                   <div className="flex items-center gap-2 pl-1 mb-1">
                     <Lock size={14} className="text-red-700" />
-                    <p className="text-[10px] font-black text-red-800 uppercase tracking-widest">Actions Blocked by ICC</p>
+                    <p className="text-[10px] font-black text-red-800 uppercase tracking-widest">Actions Blocked by ICC (Internal Control & Compliance)</p>
                   </div>
                   <p className="text-xs text-red-700/85 leading-relaxed pl-1">
-                    ICC has frozen this request. You cannot forward, approve, return, or take any action until the freeze is lifted by ICC.
+                    ICC (Internal Control & Compliance) has frozen this request. You cannot forward, approve, return, or take any action until the freeze is lifted by ICC.
                   </p>
                 </div>
               )}
