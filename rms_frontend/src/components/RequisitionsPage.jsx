@@ -1126,14 +1126,19 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
   // isAtMyDesk: request is at my dept, OR I'm a privileged sub-account of the dept holding it
   const parentDeptId = user?.parentDeptId ? parseInt(user.parentDeptId) : null;
   const privLimit = user?.privilegeAmount != null ? parseFloat(user.privilegeAmount) : null;
+  const isMaterial = /^material/i.test(req.type || '');
+  const isCash = !isMaterial && !/^memo/i.test(req.type || '');
+  const subHasTypePriv = isMaterial
+    ? !!(user?.materialPrivilege)
+    : (isCash ? (privLimit != null && effectiveAmount <= privLimit) : false);
+
   const isAtMyDesk = detail?.targetDepartmentId === user?.deptId
-    || (isPrivSub && parentDeptId && detail?.targetDepartmentId === parentDeptId
-        && privLimit != null && effectiveAmount <= privLimit);
+    || (isPrivSub && parentDeptId && detail?.targetDepartmentId === parentDeptId && subHasTypePriv);
   if (!isAtMyDesk) return null;
 
   const { hr_ceiling, chairman_min } = thresholds;
   const fmt = (n) => `₦${Number(n).toLocaleString()}`;
-  const isMaterial = /^material/i.test(req.type || '');
+  // isMaterial already declared above
 
   // Hierarchical authority: Chairman > GM > HR
   // Chairman approves any amount; GM covers HR + GM bands; HR covers HR band only
@@ -1945,8 +1950,13 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const _privCovers = _privSub && _privLimit != null && _effAmt <= _privLimit;
   const _parentId = _privSub ? parseInt(user.parentDeptId) : null;
   const _parentDept = _privSub ? departments?.find(d => d.id === _parentId) : null;
-  const _isAuditSub = _privCovers && /\baudit\b/i.test(_parentDept?.name || '');
-  const _isAccountSub = _privCovers && /\baccount\b/i.test(_parentDept?.name || '');
+  // Determine if sub-account has privilege for this specific request type
+  const _reqIsCash = !_isMaterialReq && !/^memo/i.test(req?.type || '');
+  const _privCoversThisType = _reqIsCash
+    ? _privCovers   // cash: amount-based
+    : (_isMaterialReq ? !!(user?.materialPrivilege) : !!(user?.memoPrivilege)); // material/memo: toggle-based
+  const _isAuditSub   = _privCoversThisType && /\baudit\b/i.test(_parentDept?.name || '');
+  const _isAccountSub = _privCoversThisType && /\baccount\b/i.test(_parentDept?.name || '');
 
   // Account holds the request and it is a Material request — they can treat even when
   // finalApprovalStatus is 'none' (request arrived via direct forwarding, not vetting chain)

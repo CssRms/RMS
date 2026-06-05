@@ -171,12 +171,23 @@ const getEffectiveReqAmount = (req) => {
   return parseFloat(req?.amount || 0);
 };
 
-// Fetch a sub-account's privilegeAmount from DB (falls back to null)
+// Fetch a sub-account's privilege settings from DB
 async function getSubPrivilege(deptId) {
   try {
-    const d = await prisma.department.findUnique({ where: { id: deptId }, select: { privilegeAmount: true } });
-    return d?.privilegeAmount ?? null;
-  } catch { return null; }
+    const d = await prisma.department.findUnique({
+      where: { id: deptId },
+      select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
+    });
+    return {
+      privilegeAmount:   d?.privilegeAmount ?? null,
+      memoPrivilege:     d?.memoPrivilege   ?? false,
+      materialPrivilege: d?.materialPrivilege ?? false,
+    };
+  } catch { return { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false }; }
+}
+// Legacy compat — returns just the amount
+async function getSubPrivilegeAmount(deptId) {
+  return (await getSubPrivilege(deptId)).privilegeAmount;
 }
 
 // Returns true if the sub-account's JWT privilege covers the effective amount
@@ -670,13 +681,26 @@ async function canReadRequisition(requisition, user) {
   const reqId = toIntOrNull(requisition?.id);
   if (!deptId || !reqId) return false;
 
-  // Privileged sub-account: can read cash requests at parent dept within their limit
+  // Privileged sub-account: can read requests at parent dept based on type-specific privilege
   if (user?.isSubAccount && user?.parentDeptId) {
     const parentDeptId = toIntOrNull(user.parentDeptId);
     if (toIntOrNull(requisition.targetDepartmentId) === parentDeptId) {
-      const effectiveAmount = getEffectiveReqAmount(requisition);
-      const privilege = user.privilegeAmount != null ? parseFloat(user.privilegeAmount) : await getSubPrivilege(deptId);
-      if (privilege != null && effectiveAmount <= privilege) return true;
+      const reqType = (requisition.type || '').toLowerCase();
+      const isCash     = !reqType.startsWith('memo') && !reqType.startsWith('material');
+      const isMemo     = reqType.startsWith('memo');
+      const isMaterial = reqType.startsWith('material');
+
+      const subPriv = await getSubPrivilege(deptId);
+
+      if (isCash) {
+        const effectiveAmount = getEffectiveReqAmount(requisition);
+        const privilege = user.privilegeAmount != null ? parseFloat(user.privilegeAmount) : subPriv.privilegeAmount;
+        if (privilege != null && effectiveAmount <= privilege) return true;
+      } else if (isMemo && (user.memoPrivilege || subPriv.memoPrivilege)) {
+        return true;
+      } else if (isMaterial && (user.materialPrivilege || subPriv.materialPrivilege)) {
+        return true;
+      }
     }
   }
 
@@ -1367,7 +1391,9 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       deptId: dept.id,
       email: `${dept.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
       ...(dept.isSubAccount ? { isSubAccount: true, parentDeptId: dept.parentId } : {}),
-      ...(dept.privilegeAmount != null ? { privilegeAmount: dept.privilegeAmount } : {})
+      ...(dept.privilegeAmount != null  ? { privilegeAmount: dept.privilegeAmount }   : {}),
+      ...(dept.memoPrivilege            ? { memoPrivilege: true }                     : {}),
+      ...(dept.materialPrivilege        ? { materialPrivilege: true }                 : {})
     };
 
     clearLoginAttempts(deptKey);
@@ -2362,7 +2388,9 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
       // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
       ...(isAdmin ? { accessCodeLabel: s.accessCodeLabel } : {}),
       parentDept: s.parent ? { id: s.parent.id, name: s.parent.name } : null,
-      privilegeAmount: s.privilegeAmount ?? null
+      privilegeAmount:   s.privilegeAmount   ?? null,
+      memoPrivilege:     s.memoPrivilege     ?? false,
+      materialPrivilege: s.materialPrivilege ?? false
     })));
   } catch (err) { sendError(res, 500, err.message); }
 });
@@ -2551,26 +2579,35 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     }
 
     const parsed = z.object({
-      maxAmount: z.union([z.number().min(0), z.null()]).optional()
+      maxAmount:         z.union([z.number().min(0), z.null()]).optional(),
+      memoPrivilege:     z.boolean().optional(),
+      materialPrivilege: z.boolean().optional(),
     }).safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'maxAmount must be a non-negative number or null.' });
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid privilege payload.' });
 
-    const maxAmount = parsed.data.maxAmount === undefined ? undefined : (parsed.data.maxAmount === null ? null : parseFloat(parsed.data.maxAmount));
+    const { maxAmount, memoPrivilege, materialPrivilege } = parsed.data;
+    const updateData = {};
+    if (maxAmount !== undefined) updateData.privilegeAmount = maxAmount === null ? null : parseFloat(maxAmount);
+    if (memoPrivilege !== undefined) updateData.memoPrivilege = memoPrivilege;
+    if (materialPrivilege !== undefined) updateData.materialPrivilege = materialPrivilege;
 
-    await prisma.department.update({
-      where: { id: subId },
-      data: { privilegeAmount: maxAmount === undefined ? undefined : maxAmount }
-    });
+    if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'No privilege fields provided.' });
+
+    await prisma.department.update({ where: { id: subId }, data: updateData });
 
     await prisma.activityLog.create({
       data: {
         userId: getNumericUserId(req.user) || null,
         action: 'Sub-Account Privilege Updated',
-        details: `Privilege for ${sub.name} set to: ${maxAmount == null ? 'removed' : `₦${maxAmount.toLocaleString()}`}`
+        details: `Privilege for ${sub.name}: ${JSON.stringify(updateData)}`
       }
     });
 
-    res.json({ success: true, privilegeAmount: maxAmount ?? null });
+    const updated = await prisma.department.findUnique({
+      where: { id: subId },
+      select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
+    });
+    res.json({ success: true, ...updated });
   } catch (error) { sendError(res, 500, error.message); }
 });
 
@@ -2636,6 +2673,8 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
 
       const recordType = data.type || 'Cash';
       const isMemoPayload = /memo/i.test(recordType) || /memorandum/i.test(recordType);
+      const isMaterialPayload = /^material/i.test(recordType);
+      const isCashPayload = !isMemoPayload && !isMaterialPayload;
       const amount = parseFloat(data.amount || 0) || 0;
       const eligibleStages = await getEligibleStages(amount);
       const firstStage = eligibleStages[0] || null;
@@ -2644,6 +2683,33 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
       if (req.user.role === 'department' && req.user.deptId && originDeptId !== parseInt(req.user.deptId)) {
         return res.status(403).json({ error: 'Department users can only create for their own department' });
       }
+
+      // ── Sub-account creation privilege checks ─────────────────────────────
+      if (req.user.isSubAccount && req.user.role === 'department') {
+        const subPriv = await getSubPrivilege(originDeptId);
+
+        // Cash: enforce creation limit for non-threshold dept sub-accounts
+        if (isCashPayload && !isDraft && subPriv.privilegeAmount != null) {
+          const creationLimit = parseFloat(subPriv.privilegeAmount);
+          if (!isNaN(creationLimit) && amount > creationLimit) {
+            return res.status(403).json({
+              error: `Your sub-account can only create cash requests up to ₦${creationLimit.toLocaleString()}. This request is ₦${amount.toLocaleString()}.`
+            });
+          }
+          // If no privilege set at all (null) for cash → allow (no restriction)
+        }
+
+        // Memo: check toggle
+        if (isMemoPayload && !isDraft && !subPriv.memoPrivilege && !(req.user.memoPrivilege)) {
+          return res.status(403).json({ error: 'Your sub-account does not have permission to create memo requests. Ask your department head to enable Memo Privilege.' });
+        }
+
+        // Material: check toggle
+        if (isMaterialPayload && !isDraft && !subPriv.materialPrivilege && !(req.user.materialPrivilege)) {
+          return res.status(403).json({ error: 'Your sub-account does not have permission to create material requests. Ask your department head to enable Material Privilege.' });
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
 
       // Validate target department if supplied
       let targetDepartmentId = data.targetDepartmentId ? parseInt(data.targetDepartmentId) : null;
@@ -3481,10 +3547,18 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
     const isMaterial = /^material/i.test(requisition.type || '');
     const effectiveAmount = getEffectiveReqAmount(requisition);
 
-    // Check if sub-account has privilege covering this amount
+    // Check if sub-account has privilege for this request type
     if (req.user.isSubAccount && req.user.parentDeptId) {
-      const privLimit = req.user.privilegeAmount != null ? parseFloat(req.user.privilegeAmount) : await getSubPrivilege(userDeptId);
-      if (privLimit != null && effectiveAmount <= privLimit) isPrivilegedSubAccount = true;
+      const subPriv = await getSubPrivilege(userDeptId);
+      if (isMaterial) {
+        if (subPriv.materialPrivilege || req.user.materialPrivilege) isPrivilegedSubAccount = true;
+      } else if (/^memo/i.test(requisition.type || '')) {
+        if (subPriv.memoPrivilege || req.user.memoPrivilege) isPrivilegedSubAccount = true;
+      } else {
+        // Cash
+        const privLimit = req.user.privilegeAmount != null ? parseFloat(req.user.privilegeAmount) : subPriv.privilegeAmount;
+        if (privLimit != null && effectiveAmount <= privLimit) isPrivilegedSubAccount = true;
+      }
     }
 
     const authority = isAdmin ? 'chairman' : checkFinalApproveAuthority(authorityDeptName, isMaterial ? 0 : effectiveAmount, isMaterial);
@@ -3651,10 +3725,20 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         where: { id: parseInt(req.user.parentDeptId) },
         select: { id: true, name: true }
       });
+      const subPriv = await getSubPrivilege(userDeptId);
       const effectiveAmt = getEffectiveReqAmount(requisition);
-      const privLimit = req.user.privilegeAmount != null ? parseFloat(req.user.privilegeAmount)
-        : (actingDeptRecord?.privilegeAmount ?? null);
-      if (privLimit != null && effectiveAmt <= privLimit) isPrivilegedVettingSub = true;
+      const isCashReq = /^cash/i.test(requisition.type || '');
+      const isMaterialR = /^material/i.test(requisition.type || '');
+      const isMemoR = /^memo/i.test(requisition.type || '');
+
+      if (isCashReq) {
+        const privLimit = req.user.privilegeAmount != null ? parseFloat(req.user.privilegeAmount) : subPriv.privilegeAmount;
+        if (privLimit != null && effectiveAmt <= privLimit) isPrivilegedVettingSub = true;
+      } else if (isMaterialR) {
+        if (subPriv.materialPrivilege || req.user.materialPrivilege) isPrivilegedVettingSub = true;
+      } else if (isMemoR) {
+        if (subPriv.memoPrivilege || req.user.memoPrivilege) isPrivilegedVettingSub = true;
+      }
     }
     const isParentAccountDept = parentDeptRecord && /\baccount\b/i.test(parentDeptRecord.name);
     const isParentAuditDept = parentDeptRecord && /\baudit\b/i.test(parentDeptRecord.name);
@@ -5510,22 +5594,40 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
         ? [{ departmentId: parseInt(req.user.parentDeptId), visibleToSubAccounts: true }]
         : [];
 
-      // Privileged sub-account: also sees cash requests currently AT parent dept within their limit
+      // Privileged sub-account: additional visibility based on privilege settings
       let privilegeClause = [];
       if (req.user.isSubAccount && req.user.parentDeptId) {
-        const privLimit = req.user.privilegeAmount != null
+        const subPriv = await getSubPrivilege(deptId);
+        const parentId = parseInt(req.user.parentDeptId);
+
+        // Cash: see requests at parent dept within amount limit
+        const cashPrivLimit = req.user.privilegeAmount != null
           ? parseFloat(req.user.privilegeAmount)
-          : await getSubPrivilege(deptId);
-        if (privLimit != null && !isNaN(privLimit)) {
+          : subPriv.privilegeAmount;
+        if (cashPrivLimit != null && !isNaN(cashPrivLimit)) {
           const cashTypes = ['Cash', 'cash', 'Cash Requisition', 'cash requisition'];
-          privilegeClause = [{
-            targetDepartmentId: parseInt(req.user.parentDeptId),
+          privilegeClause.push({
+            targetDepartmentId: parentId,
             type: { in: cashTypes },
             OR: [
-              { hasAuditOverride: false, amount: { lte: privLimit } },
-              { hasAuditOverride: true, auditAmount: { lte: privLimit } }
+              { hasAuditOverride: false, amount: { lte: cashPrivLimit } },
+              { hasAuditOverride: true, auditAmount: { lte: cashPrivLimit } }
             ]
-          }];
+          });
+        }
+
+        // Memo: see memo requests at parent dept when toggle is on
+        const memoOn = req.user.memoPrivilege || subPriv.memoPrivilege;
+        if (memoOn) {
+          const memoTypes = ['Memo', 'memo', 'Memorandum', 'memorandum'];
+          privilegeClause.push({ targetDepartmentId: parentId, type: { in: memoTypes } });
+        }
+
+        // Material: see material requests at parent dept when toggle is on
+        const materialOn = req.user.materialPrivilege || subPriv.materialPrivilege;
+        if (materialOn) {
+          const materialTypes = ['Material', 'material', 'Material Request', 'material request'];
+          privilegeClause.push({ targetDepartmentId: parentId, type: { in: materialTypes } });
         }
       }
 

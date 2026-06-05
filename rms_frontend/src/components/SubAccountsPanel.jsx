@@ -131,93 +131,129 @@ const UserManager = ({ sub, availableUsers, onRefresh }) => {
   );
 };
 
-// ── Privilege amount editor for one sub-account ───────────────────────────────
+// ── Toggle switch ─────────────────────────────────────────────────────────────
+const Toggle = ({ on, onChange, disabled }) => (
+  <button
+    type="button"
+    onClick={() => !disabled && onChange(!on)}
+    disabled={disabled}
+    className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 disabled:opacity-40 ${on ? 'bg-primary' : 'bg-border/60'}`}
+    style={{ height: '22px', width: '40px' }}
+  >
+    <span className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[20px]' : 'translate-x-[3px]'}`} />
+  </button>
+);
+
+// ── Privilege editor for one sub-account ─────────────────────────────────────
 const PrivilegeEditor = ({ sub, onRefresh }) => {
-  const current = sub.privilegeAmount != null ? sub.privilegeAmount : '';
-  const [editing, setEditing] = useState(false);
-  const [inputVal, setInputVal] = useState(String(current));
-  const [saving, setSaving] = useState(false);
+  const [cashInput, setCashInput]       = useState(sub.privilegeAmount != null ? String(sub.privilegeAmount) : '');
+  const [editingCash, setEditingCash]   = useState(false);
+  const [memoOn, setMemoOn]             = useState(!!sub.memoPrivilege);
+  const [materialOn, setMaterialOn]     = useState(!!sub.materialPrivilege);
+  const [savingCash, setSavingCash]     = useState(false);
+  const [savingToggles, setSavingToggles] = useState(false);
 
-  const fmt = (n) => n != null ? `₦${Number(n).toLocaleString()}` : null;
+  const fmt = n => n != null ? `₦${Number(n).toLocaleString()}` : null;
 
-  const save = async () => {
-    const trimmed = inputVal.trim();
+  const saveCash = async () => {
+    const trimmed = cashInput.trim();
     const amount = trimmed === '' ? null : parseFloat(trimmed.replace(/,/g, ''));
     if (trimmed !== '' && (isNaN(amount) || amount < 0)) {
-      toast.error('Enter a valid positive amount or leave blank to remove privilege.'); return;
+      toast.error('Enter a valid positive amount, or leave blank to remove.'); return;
     }
-    setSaving(true);
+    setSavingCash(true);
     try {
-      await subAccountAPI.setPrivilege(sub.id, amount);
-      toast.success(amount == null ? 'Privilege removed.' : `Privilege set to ₦${amount.toLocaleString()}.`);
-      setEditing(false);
+      await subAccountAPI.setPrivilege(sub.id, { maxAmount: amount });
+      toast.success(amount == null ? 'Cash privilege removed.' : `Cash limit set to ₦${amount.toLocaleString()}.`);
+      setEditingCash(false);
       onRefresh();
     } catch (err) {
-      toast.error(err?.response?.data?.error || 'Failed to update privilege.');
-    } finally { setSaving(false); }
+      toast.error(err?.response?.data?.error || 'Failed to update.');
+    } finally { setSavingCash(false); }
   };
 
-  return (
-    <div className="mt-3 border-t border-border/20 pt-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1">
-          <Award size={10} className="text-amber-500" /> Cash Privilege Limit
-        </span>
-        {!editing && (
-          <button onClick={() => { setInputVal(String(current)); setEditing(true); }}
-            className="text-[10px] font-bold text-primary hover:underline">
-            {sub.privilegeAmount != null ? 'Edit' : 'Set Privilege'}
-          </button>
-        )}
-      </div>
+  const saveToggle = async (field, value) => {
+    setSavingToggles(true);
+    try {
+      await subAccountAPI.setPrivilege(sub.id, { [field]: value });
+      toast.success(`${field === 'memoPrivilege' ? 'Memo' : 'Material'} privilege ${value ? 'enabled' : 'disabled'}.`);
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to update.');
+    } finally { setSavingToggles(false); }
+  };
 
-      {!editing ? (
-        <div className="flex items-center gap-2">
-          {sub.privilegeAmount != null ? (
-            <>
-              <span className="text-sm font-black text-amber-700">≤ {fmt(sub.privilegeAmount)}</span>
-              <span className="text-[9px] text-muted-foreground/60 italic">max visible amount</span>
-            </>
-          ) : (
-            <span className="text-[11px] text-muted-foreground/60 italic">No privilege set — sub-account cannot see parent dept's requests</span>
+  const handleMemoToggle = (v) => { setMemoOn(v); saveToggle('memoPrivilege', v); };
+  const handleMaterialToggle = (v) => { setMaterialOn(v); saveToggle('materialPrivilege', v); };
+
+  return (
+    <div className="mt-3 border-t border-border/20 pt-3 space-y-3">
+      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+        <Award size={10} className="text-amber-500" /> Privilege Settings
+      </p>
+
+      {/* Cash limit */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-foreground">Cash Request Limit</span>
+          {!editingCash && (
+            <button onClick={() => setEditingCash(true)}
+              className="text-[10px] font-bold text-primary hover:underline">
+              {sub.privilegeAmount != null ? 'Edit' : 'Set'}
+            </button>
           )}
         </div>
-      ) : (
-        <div className="space-y-1.5">
-          <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
-            This sub-account will see incoming Cash requests at your department where the amount is <strong>≤ this limit</strong>. Leave blank to remove.
+        {!editingCash ? (
+          <p className="text-[11px] text-muted-foreground/70">
+            {sub.privilegeAmount != null
+              ? <><span className="font-black text-amber-700">≤ {fmt(sub.privilegeAmount)}</span> <span className="italic">— max amount</span></>
+              : <span className="italic">No limit set</span>}
           </p>
+        ) : (
           <div className="flex gap-2 items-center">
             <div className="relative flex-1">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 text-sm font-bold">₦</span>
-              <input
-                type="number" min="0" step="any"
-                value={inputVal}
-                onChange={e => setInputVal(e.target.value)}
+              <input type="number" min="0" step="any" value={cashInput}
+                onChange={e => setCashInput(e.target.value)} autoFocus
                 placeholder="e.g. 50000"
-                autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
-                className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
-              />
+                onKeyDown={e => { if (e.key === 'Enter') saveCash(); if (e.key === 'Escape') setEditingCash(false); }}
+                className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20" />
             </div>
-            <button onClick={save} disabled={saving}
+            <button onClick={saveCash} disabled={savingCash}
               className="p-2 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {savingCash ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
             </button>
             {sub.privilegeAmount != null && (
-              <button onClick={() => { setInputVal(''); save(); }} disabled={saving}
-                title="Remove privilege"
-                className="p-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
-                <Trash2 size={14} />
+              <button onClick={() => { setCashInput(''); saveCash(); }} disabled={savingCash}
+                title="Remove" className="p-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
+                <Trash2 size={13} />
               </button>
             )}
-            <button onClick={() => setEditing(false)}
-              className="p-2 rounded-xl border border-border/40 text-muted-foreground hover:text-foreground">
-              <X size={14} />
+            <button onClick={() => setEditingCash(false)}
+              className="p-2 rounded-xl border border-border/40 text-muted-foreground">
+              <X size={13} />
             </button>
           </div>
+        )}
+      </div>
+
+      {/* Memo toggle */}
+      <div className="flex items-center justify-between py-1 border-t border-border/10">
+        <div>
+          <p className="text-[11px] font-semibold text-foreground">Memo Requests</p>
+          <p className="text-[9px] text-muted-foreground/60">Can create &amp; handle memo requests</p>
         </div>
-      )}
+        <Toggle on={memoOn} onChange={handleMemoToggle} disabled={savingToggles} />
+      </div>
+
+      {/* Material toggle */}
+      <div className="flex items-center justify-between py-1 border-t border-border/10">
+        <div>
+          <p className="text-[11px] font-semibold text-foreground">Material Requests</p>
+          <p className="text-[9px] text-muted-foreground/60">Can create &amp; handle material requests</p>
+        </div>
+        <Toggle on={materialOn} onChange={handleMaterialToggle} disabled={savingToggles} />
+      </div>
     </div>
   );
 };

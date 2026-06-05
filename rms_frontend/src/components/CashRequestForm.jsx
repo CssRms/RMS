@@ -210,6 +210,22 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
       toast.error('Please select a department to send this request to'); return;
     }
 
+    // Sub-account privilege checks (client-side pre-flight — backend also validates)
+    if (user?.isSubAccount && !isDraft) {
+      if (type === 'Memo' && !user?.memoPrivilege) {
+        toast.error('Your sub-account does not have permission to create memo requests. Contact your department head.'); return;
+      }
+      if (type === 'Material' && !user?.materialPrivilege) {
+        toast.error('Your sub-account does not have permission to create material requests. Contact your department head.'); return;
+      }
+      if (type === 'Cash' && user?.privilegeAmount != null) {
+        const limit = parseFloat(user.privilegeAmount);
+        if (!isNaN(limit) && total > limit) {
+          toast.error(`Your sub-account can only submit cash requests up to ₦${limit.toLocaleString()}. This request totals ₦${total.toLocaleString()}.`); return;
+        }
+      }
+    }
+
     setSubmitting(true);
     setSlowWarning(false);
     setUploadProgress(0);
