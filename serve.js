@@ -5117,6 +5117,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       y -= 20;
     } else {
       // Requisition Voucher header
+      const creatorName = sanitizeText(requisition.department?.headName || '');
       const leftFields = [
         { label: 'Voucher No:', value: `#${id}` },
         { label: 'From:', value: sanitizeText(requisition.department?.name || 'Origin Department') },
@@ -5124,6 +5125,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         { label: 'Title:', value: sanitizeText(requisition.title || 'Untitled') },
         { label: 'Type:', value: sanitizeText(requisition.type || 'General') },
         { label: 'Urgency:', value: (requisition.urgency || 'normal').toUpperCase() },
+        ...(creatorName ? [{ label: 'Created by:', value: creatorName }] : []),
       ];
       // Right side: Date + Amount
       page.drawText(`Date: ${createdDate}`, { x: A4_W - margin - 200, y, size: 10, font: boldFont });
