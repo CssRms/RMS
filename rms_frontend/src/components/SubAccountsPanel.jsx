@@ -153,7 +153,7 @@ const Toggle = ({ on, onChange, disabled }) => (
 );
 
 // ── Privilege editor for one sub-account ─────────────────────────────────────
-const PrivilegeEditor = ({ sub, onRefresh }) => {
+const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   const [cashOn, setCashOn]             = useState(!!sub.cashPrivilege || sub.privilegeAmount != null);
   const [cashInput, setCashInput]       = useState(sub.privilegeAmount != null ? String(sub.privilegeAmount) : '');
   const [editingCash, setEditingCash]   = useState(false);
@@ -175,28 +175,48 @@ const PrivilegeEditor = ({ sub, onRefresh }) => {
       await subAccountAPI.setPrivilege(sub.id, { maxAmount: amount });
       toast.success(amount == null ? 'Cash limit removed.' : `Cash limit set to ₦${amount.toLocaleString()}.`);
       setEditingCash(false);
-      onRefresh();
+      onUpdatePrivilege({ privilegeAmount: amount });
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to update.');
     } finally { setSavingCash(false); }
   };
 
-  const saveToggle = async (field, value) => {
+  const saveToggle = async (field, value, extraPayload = {}) => {
     setSavingToggles(true);
     const labels = { cashPrivilege: 'Cash', memoPrivilege: 'Memo', materialPrivilege: 'Material' };
     try {
-      await subAccountAPI.setPrivilege(sub.id, { [field]: value });
+      await subAccountAPI.setPrivilege(sub.id, { [field]: value, ...extraPayload });
       toast.success(`${labels[field] || field} requests ${value ? 'enabled' : 'disabled'}.`);
-      onRefresh();
+      onUpdatePrivilege({ [field]: value, ...extraPayload });
     } catch (err) {
+      // Revert optimistic toggle on failure
+      if (field === 'cashPrivilege') setCashOn(!value);
+      if (field === 'memoPrivilege') setMemoOn(!value);
+      if (field === 'materialPrivilege') setMaterialOn(!value);
       toast.error(err?.response?.data?.error || 'Failed to update.');
     } finally { setSavingToggles(false); }
   };
 
   const handleCashToggle = (v) => {
     setCashOn(v);
-    saveToggle('cashPrivilege', v);
-    if (!v) { setEditingCash(false); }
+    if (!v) {
+      setCashInput('');
+      setEditingCash(false);
+      setSavingToggles(true);
+      // API uses maxAmount; state uses privilegeAmount — must map separately
+      subAccountAPI.setPrivilege(sub.id, { cashPrivilege: false, maxAmount: null })
+        .then(() => {
+          toast.success('Cash requests disabled.');
+          onUpdatePrivilege({ cashPrivilege: false, privilegeAmount: null });
+        })
+        .catch(err => {
+          setCashOn(true);
+          toast.error(err?.response?.data?.error || 'Failed to disable cash requests.');
+        })
+        .finally(() => setSavingToggles(false));
+    } else {
+      saveToggle('cashPrivilege', true);
+    }
   };
   const handleMemoToggle = (v) => { setMemoOn(v); saveToggle('memoPrivilege', v); };
   const handleMaterialToggle = (v) => { setMaterialOn(v); saveToggle('materialPrivilege', v); };
@@ -287,7 +307,7 @@ const PrivilegeEditor = ({ sub, onRefresh }) => {
 };
 
 // ── Single sub-account card ──────────────────────────────────────────────────
-const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, isAdmin = false }) => {
+const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, showParent = false, isAdmin = false }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
@@ -509,7 +529,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
 
           {/* ── Privilege editor ── */}
           <div className="px-4 pb-4 border-t border-border/20 pt-3">
-            <PrivilegeEditor sub={sub} onRefresh={onRefresh} />
+            <PrivilegeEditor sub={sub} onUpdatePrivilege={onUpdatePrivilege} />
           </div>
         </div>
       )}
@@ -707,6 +727,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
               sub={sub}
               availableUsers={availableUsers}
               onRefresh={load}
+              onUpdatePrivilege={updates => setSubs(prev => prev.map(s => s.id === sub.id ? { ...s, ...updates } : s))}
               showParent={isAdmin && !selectedDeptId}
               isAdmin={isAdmin}
             />
