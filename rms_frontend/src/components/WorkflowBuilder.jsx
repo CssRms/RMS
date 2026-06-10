@@ -82,10 +82,11 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [savingRecord, setSavingRecord]     = useState(false);
 
   // ── Feature flags ──────────────────────────────────────────────────────────
-  const [studioEnabled, setStudioEnabled]     = useState(true);
-  const [hrPortalEnabled, setHrPortalEnabled] = useState(true);
-  const [loginStyle, setLoginStyle]           = useState('standard');
-  const [savingFeatures, setSavingFeatures]   = useState(false);
+  const [studioEnabled, setStudioEnabled]           = useState(true);
+  const [hrPortalEnabled, setHrPortalEnabled]       = useState(true);
+  const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(true);
+  const [loginStyle, setLoginStyle]                 = useState('standard');
+  const [savingFeatures, setSavingFeatures]         = useState(false);
 
   const loadData = async () => {
     const [workflowData, typeData] = await Promise.all([
@@ -127,10 +128,11 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
   const loadFeatureFlags = async () => {
     try {
-      const [studioRes, hrRes, loginRes] = await Promise.allSettled([
+      const [studioRes, hrRes, loginRes, storeRes] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
         settingsAPI.get('login_style'),
+        settingsAPI.get('store_records_enabled'),
       ]);
       if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
         setStudioEnabled(studioRes.value.value !== 'false');
@@ -138,6 +140,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setHrPortalEnabled(hrRes.value.value !== 'false');
       if (loginRes.status === 'fulfilled' && loginRes.value?.value)
         setLoginStyle(loginRes.value.value);
+      if (storeRes.status === 'fulfilled' && storeRes.value?.value !== undefined)
+        setStoreRecordsEnabled(storeRes.value.value !== 'false');
     } catch {}
   };
 
@@ -147,6 +151,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
       await Promise.all([
         settingsAPI.set('document_studio_enabled', String(studioEnabled)),
         settingsAPI.set('hr_portal_enabled', String(hrPortalEnabled)),
+        settingsAPI.set('store_records_enabled', String(storeRecordsEnabled)),
         settingsAPI.set('login_style', loginStyle),
       ]);
       toast.success('Feature settings saved.');
@@ -525,6 +530,23 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   </button>
                 </div>
 
+                {/* Store Records toggle */}
+                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-black text-foreground">Store Records</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Gives the Store department and all its sub-accounts access to the stock ledger (store records) module.
+                      When disabled the Store Records button is hidden from the sidebar.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setStoreRecordsEnabled(v => !v)}
+                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${storeRecordsEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${storeRecordsEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
                 {/* Login Screen Style */}
                 <div className="p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
                   <div className="flex items-center gap-3">
@@ -570,6 +592,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   <div className={`w-2 h-2 rounded-full ${hrPortalEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
                   <p className="text-xs text-muted-foreground font-medium">
                     HR Portal is currently <strong className={hrPortalEnabled ? 'text-emerald-600' : 'text-red-500'}>{hrPortalEnabled ? 'enabled' : 'disabled'}</strong>
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${storeRecordsEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Store Records is currently <strong className={storeRecordsEnabled ? 'text-emerald-600' : 'text-red-500'}>{storeRecordsEnabled ? 'enabled' : 'disabled'}</strong>
                   </p>
                 </div>
                 <div className="flex items-center gap-3">

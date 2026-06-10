@@ -739,6 +739,21 @@ async function canReadRequisition(requisition, user) {
     if (tag) return true;
   } catch (_) {}
 
+  // Sub-account visibility: parent dept head shared this request with all or specific sub-accounts
+  if (user?.isSubAccount && user?.parentDeptId) {
+    const parentDeptId = toIntOrNull(user.parentDeptId);
+    if (toIntOrNull(requisition.departmentId) === parentDeptId) {
+      if (requisition.visibleToSubAccounts) return true;
+      try {
+        const specificVis = await prisma.requisitionSubVisibility.findFirst({
+          where: { requisitionId: reqId, subAccountId: deptId },
+          select: { requisitionId: true }
+        });
+        if (specificVis) return true;
+      } catch (_) {}
+    }
+  }
+
   return false;
 }
 
@@ -2626,6 +2641,21 @@ app.get('/api/sub-accounts/available-users', authenticateToken, requireSubAccoun
 });
 
 // ── Sub-account privilege amount — set by parent dept head or Super Admin ─────
+app.get('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({
+      where: { id: subId, isSubAccount: true },
+      select: { id: true, privilegeAmount: true, memoPrivilege: true, materialPrivilege: true, parentId: true }
+    });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const deptId  = req.user.deptId ? parseInt(req.user.deptId) : null;
+    if (!isAdmin && deptId !== sub.parentId) return res.status(403).json({ error: 'Access denied.' });
+    res.json({ privilegeAmount: sub.privilegeAmount ?? null, memoPrivilege: sub.memoPrivilege ?? false, materialPrivilege: sub.materialPrivilege ?? false });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
 app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
@@ -3411,6 +3441,42 @@ app.post('/api/requisitions/:id/un-kiv', authenticateToken, async (req, res) => 
 });
 
 // Toggle sub-account visibility — dept head only, on their own (non-sub-account) department's requests
+// Get current sub-account visibility state for a request (which sub-accounts can see it)
+app.get('/api/requisitions/:id/sub-visibility', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'department' || req.user?.isSubAccount) {
+      return res.status(403).json({ error: 'Only department heads can view sub-account visibility.' });
+    }
+    const deptId = parseInt(req.user.deptId);
+    const existing = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { departmentId: true, visibleToSubAccounts: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Requisition not found.' });
+    if (existing.departmentId !== deptId) return res.status(403).json({ error: 'Access denied.' });
+    let specificIds = [];
+    try {
+      const rows = await prisma.requisitionSubVisibility.findMany({
+        where: { requisitionId: reqId },
+        select: { subAccountId: true }
+      });
+      specificIds = rows.map(r => r.subAccountId);
+    } catch (_) { /* table not yet migrated */ }
+    const subAccounts = await prisma.department.findMany({
+      where: { parentId: deptId, isSubAccount: true, isDeleted: false },
+      select: { id: true, name: true, headName: true }
+    });
+    res.json({
+      visibleToAll: existing.visibleToSubAccounts,
+      specificIds,
+      subAccounts
+    });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Set sub-account visibility: selectAll=true → all sub-units; selectAll=false + subAccountIds → specific ones; empty → hidden
 app.patch('/api/requisitions/:id/sub-account-visibility', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
@@ -3419,16 +3485,46 @@ app.patch('/api/requisitions/:id/sub-account-visibility', authenticateToken, asy
       return res.status(403).json({ error: 'Only department heads can control sub-account visibility.' });
     }
     const deptId = parseInt(req.user.deptId);
-    const existing = await prisma.requisition.findUnique({ where: { id: reqId }, include: { department: { select: { isSubAccount: true } } } });
+    const existing = await prisma.requisition.findUnique({ where: { id: reqId }, select: { departmentId: true, department: { select: { isSubAccount: true } } } });
     if (!existing) return res.status(404).json({ error: 'Requisition not found.' });
     if (existing.departmentId !== deptId) return res.status(403).json({ error: 'You can only control visibility of your own department\'s requests.' });
-    if (existing.department?.isSubAccount) return res.status(400).json({ error: 'Sub-account requests cannot use this toggle.' });
-    const updated = await prisma.requisition.update({
-      where: { id: reqId },
-      data: { visibleToSubAccounts: !existing.visibleToSubAccounts }
+    if (existing.department?.isSubAccount) return res.status(400).json({ error: 'Sub-account requests cannot use this feature.' });
+
+    const { selectAll, subAccountIds = [] } = req.body;
+    const ids = Array.isArray(subAccountIds) ? subAccountIds.map(Number).filter(n => !isNaN(n)) : [];
+
+    if (selectAll) {
+      // Visible to ALL sub-accounts — set boolean flag, clear junction records
+      await prisma.requisition.update({ where: { id: reqId }, data: { visibleToSubAccounts: true } });
+      try { await prisma.requisitionSubVisibility.deleteMany({ where: { requisitionId: reqId } }); } catch (_) {}
+    } else if (ids.length > 0) {
+      // Visible to specific sub-accounts only — clear boolean flag, write junction records
+      await prisma.requisition.update({ where: { id: reqId }, data: { visibleToSubAccounts: false } });
+      try {
+        await prisma.requisitionSubVisibility.deleteMany({ where: { requisitionId: reqId } });
+        await prisma.requisitionSubVisibility.createMany({
+          data: ids.map(subAccountId => ({ requisitionId: reqId, subAccountId })),
+          skipDuplicates: true
+        });
+      } catch (_) {}
+    } else {
+      // Hidden from all sub-accounts
+      await prisma.requisition.update({ where: { id: reqId }, data: { visibleToSubAccounts: false } });
+      try { await prisma.requisitionSubVisibility.deleteMany({ where: { requisitionId: reqId } }); } catch (_) {}
+    }
+
+    const updated = await prisma.requisition.findUnique({ where: { id: reqId }, select: { visibleToSubAccounts: true } });
+    let updatedSpecificIds = [];
+    try {
+      const rows = await prisma.requisitionSubVisibility.findMany({ where: { requisitionId: reqId }, select: { subAccountId: true } });
+      updatedSpecificIds = rows.map(r => r.subAccountId);
+    } catch (_) {}
+    broadcastUpdate(reqId, { action: 'visibility-updated' });
+    res.json({
+      id: reqId,
+      visibleToSubAccounts: updated.visibleToSubAccounts,
+      specificIds: updatedSpecificIds
     });
-    broadcastUpdate(reqId, { action: 'visibility-toggled', visibleToSubAccounts: updated.visibleToSubAccounts });
-    res.json({ id: updated.id, visibleToSubAccounts: updated.visibleToSubAccounts });
   } catch (err) { sendError(res, 500, err.message); }
 });
 
@@ -5656,10 +5752,20 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
           subDeptIds = subDepts.map(d => d.id);
         } catch (_) {}
       }
-      // Sub-accounts also see their parent dept head's requests that were made visible
-      const parentVisibleClause = (req.user.isSubAccount && req.user.parentDeptId)
-        ? [{ departmentId: parseInt(req.user.parentDeptId), visibleToSubAccounts: true }]
-        : [];
+      // Sub-accounts see parent dept requests made visible to all, or specifically to them
+      let parentVisibleClause = [];
+      if (req.user.isSubAccount && req.user.parentDeptId) {
+        parentVisibleClause = [{ departmentId: parseInt(req.user.parentDeptId), visibleToSubAccounts: true }];
+        // Also include requests where this sub-account has specific visibility (junction table — may not exist yet)
+        try {
+          const specificVis = await prisma.requisitionSubVisibility.findMany({
+            where: { subAccountId: deptId },
+            select: { requisitionId: true }
+          });
+          const specificReqIds = specificVis.map(v => v.requisitionId);
+          if (specificReqIds.length > 0) parentVisibleClause.push({ id: { in: specificReqIds } });
+        } catch (_) { /* table not yet migrated — safe to skip */ }
+      }
 
       // Privileged sub-account: additional visibility based on privilege settings
       let privilegeClause = [];
@@ -5938,7 +6044,202 @@ app.post('/api/test-email', authenticateToken, requireRoles(['global_admin']), a
   }
 });
 
-// Requisition Attachments List
+// ── Store Records ─────────────────────────────────────────────────────────────
+function isStoreDept(name) { return /\bstore\b/i.test(name || ''); }
+
+// List store records — sub-account: own; head: own + all sub-accounts; admin: all store records
+app.get('/api/store-records', authenticateToken, async (req, res) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    const isAdmin = role === 'global_admin';
+    const deptId = parseInt(req.user.deptId);
+    const { subAccountId, startDate, endDate, search, page = 1, limit = 30 } = req.query;
+
+    let where = {};
+    if (!isAdmin) {
+      if (req.user.isSubAccount) {
+        where.departmentId = deptId;
+      } else {
+        const subDepts = await prisma.department.findMany({
+          where: { parentId: deptId, isSubAccount: true, isDeleted: false },
+          select: { id: true }
+        });
+        const subIds = subDepts.map(d => d.id);
+        where.departmentId = { in: [deptId, ...subIds] };
+      }
+    }
+    if (subAccountId && !req.user.isSubAccount) where.departmentId = parseInt(subAccountId);
+    if (startDate || endDate) {
+      const df = {};
+      if (startDate) df.gte = new Date(startDate);
+      if (endDate)   df.lte = new Date(endDate + 'T23:59:59.999Z');
+      where.createdAt = df;
+    }
+    if (search) where.OR = [{ code: { contains: search, mode: 'insensitive' } }, { description: { contains: search, mode: 'insensitive' } }];
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [records, total] = await Promise.all([
+      prisma.storeRecord.findMany({
+        where,
+        include: {
+          department: { select: { name: true, isSubAccount: true, headName: true, parentId: true } },
+          entries: { orderBy: { sequence: 'asc' } }
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip, take: parseInt(limit)
+      }),
+      prisma.storeRecord.count({ where })
+    ]);
+    res.json({ data: records, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Get carried-forward value for a dept (last stock balance from most recent record's last entry)
+app.get('/api/store-records/carried-forward', authenticateToken, async (req, res) => {
+  try {
+    const deptId = req.query.deptId ? parseInt(req.query.deptId) : parseInt(req.user.deptId);
+    const last = await prisma.storeRecord.findFirst({
+      where: { departmentId: deptId },
+      orderBy: { updatedAt: 'desc' },
+      include: { entries: { orderBy: { sequence: 'desc' }, take: 1 } }
+    });
+    res.json({ carriedForward: last?.entries?.[0]?.stockBalance ?? 0 });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Get sub-accounts for a store dept (used by head to populate the filter dropdown)
+app.get('/api/store-records/sub-accounts', authenticateToken, async (req, res) => {
+  try {
+    const role = normalizeRole(req.user?.role);
+    const isAdmin = role === 'global_admin';
+    let parentId = parseInt(req.user.deptId);
+    if (isAdmin && req.query.parentId) parentId = parseInt(req.query.parentId);
+    const subs = await prisma.department.findMany({
+      where: { parentId, isSubAccount: true, isDeleted: false },
+      select: { id: true, name: true, headName: true }
+    });
+    res.json(subs);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Create store record
+app.post('/api/store-records', authenticateToken, async (req, res) => {
+  try {
+    const deptId = parseInt(req.user.deptId);
+    const { code, description, location, carriedForward = 0, entries = [] } = req.body;
+    if (!code?.trim() || !description?.trim()) return res.status(400).json({ error: 'Code and description are required.' });
+    const record = await prisma.storeRecord.create({
+      data: {
+        code: code.trim(), description: description.trim(),
+        location: location?.trim() || null,
+        carriedForward: parseFloat(carriedForward) || 0,
+        departmentId: deptId,
+        entries: {
+          create: entries.map((e, i) => ({
+            sequence: i,
+            date: e.date || null,
+            openingBalance: parseFloat(e.openingBalance) || 0,
+            qtyReceived: parseFloat(e.qtyReceived) || 0,
+            quantityIssued: parseFloat(e.quantityIssued) || 0,
+            requisitionSlipNo: e.requisitionSlipNo || null,
+            stockBalance: parseFloat(e.stockBalance) || 0,
+            materialsTaken: e.materialsTaken || null,
+            remarks: e.remarks || null,
+          }))
+        }
+      },
+      include: { department: { select: { name: true, isSubAccount: true, headName: true } }, entries: { orderBy: { sequence: 'asc' } } }
+    });
+    res.status(201).json(record);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Get single store record
+app.get('/api/store-records/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const record = await prisma.storeRecord.findUnique({
+      where: { id },
+      include: { department: { select: { name: true, isSubAccount: true, headName: true, parentId: true } }, entries: { orderBy: { sequence: 'asc' } } }
+    });
+    if (!record) return res.status(404).json({ error: 'Record not found.' });
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'global_admin') {
+      const deptId = parseInt(req.user.deptId);
+      if (record.departmentId !== deptId) {
+        if (req.user.isSubAccount) return res.status(403).json({ error: 'Access denied.' });
+        const sub = await prisma.department.findFirst({ where: { id: record.departmentId, parentId: deptId, isDeleted: false } });
+        if (!sub) return res.status(403).json({ error: 'Access denied.' });
+      }
+    }
+    res.json(record);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Update store record (replaces all entries in one transaction)
+app.put('/api/store-records/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await prisma.storeRecord.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Record not found.' });
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'global_admin') {
+      const deptId = parseInt(req.user.deptId);
+      if (existing.departmentId !== deptId) return res.status(403).json({ error: 'Access denied.' });
+    }
+    const { code, description, location, carriedForward, entries = [] } = req.body;
+    await prisma.$transaction(async (tx) => {
+      await tx.storeRecordEntry.deleteMany({ where: { storeRecordId: id } });
+      await tx.storeRecord.update({
+        where: { id },
+        data: {
+          code: code?.trim() ?? existing.code,
+          description: description?.trim() ?? existing.description,
+          location: location != null ? (location.trim() || null) : existing.location,
+          carriedForward: carriedForward != null ? (parseFloat(carriedForward) || 0) : existing.carriedForward,
+        }
+      });
+      if (entries.length > 0) {
+        await tx.storeRecordEntry.createMany({
+          data: entries.map((e, i) => ({
+            storeRecordId: id, sequence: i,
+            date: e.date || null,
+            openingBalance: parseFloat(e.openingBalance) || 0,
+            qtyReceived: parseFloat(e.qtyReceived) || 0,
+            quantityIssued: parseFloat(e.quantityIssued) || 0,
+            requisitionSlipNo: e.requisitionSlipNo || null,
+            stockBalance: parseFloat(e.stockBalance) || 0,
+            materialsTaken: e.materialsTaken || null,
+            remarks: e.remarks || null,
+          }))
+        });
+      }
+    });
+    const updated = await prisma.storeRecord.findUnique({
+      where: { id },
+      include: { department: { select: { name: true, isSubAccount: true, headName: true } }, entries: { orderBy: { sequence: 'asc' } } }
+    });
+    res.json(updated);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Delete store record
+app.delete('/api/store-records/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await prisma.storeRecord.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Record not found.' });
+    const role = normalizeRole(req.user?.role);
+    if (role !== 'global_admin') {
+      const deptId = parseInt(req.user.deptId);
+      if (existing.departmentId !== deptId) return res.status(403).json({ error: 'Access denied.' });
+    }
+    await prisma.storeRecord.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// ── Requisition Attachments List
 app.get('/api/requisitions/:id/attachments', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;

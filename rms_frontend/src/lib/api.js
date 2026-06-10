@@ -273,9 +273,22 @@ export const reqAPI = {
   async tagRequisitionDepts(id, deptIds) {
     return api.post(`/requisitions/${id}/tag`, { deptIds });
   },
-  async toggleSubAccountVisibility(id) {
-    return api.patch(`/requisitions/${id}/sub-account-visibility`);
+  async setSubAccountVisibility(id, payload) {
+    return api.patch(`/requisitions/${id}/sub-account-visibility`, payload);
+  },
+  async getSubVisibility(id) {
+    return api.get(`/requisitions/${id}/sub-visibility`);
   }
+};
+
+export const storeAPI = {
+  async list(params = {})          { return api.get('/store-records', { params }); },
+  async carriedForward(deptId)     { return api.get('/store-records/carried-forward', { params: { deptId } }); },
+  async subAccounts(params = {})   { return api.get('/store-records/sub-accounts', { params }); },
+  async create(data)               { return api.post('/store-records', data); },
+  async get(id)                    { return api.get(`/store-records/${id}`); },
+  async update(id, data)           { return api.put(`/store-records/${id}`, data); },
+  async remove(id)                 { return api.delete(`/store-records/${id}`); },
 };
 
 export const userAPI = {

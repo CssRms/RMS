@@ -67,8 +67,19 @@ model Department {
   forwardEventsTo      ForwardEvent[]   @relation("ForwardTo")
   finalApprovedRequisitions Requisition[] @relation("FinalApprover")
   canPrint             Boolean          @default(true)
+  subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
+  storeRecords         StoreRecord[]
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
+}
+
+// Per-sub-account visibility: dept head can share a specific request with selected sub-units only
+model RequisitionSubVisibility {
+  requisitionId Int
+  subAccountId  Int
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  subAccount    Department  @relation("SubVisibility", fields: [subAccountId], references: [id], onDelete: Cascade)
+  @@id([requisitionId, subAccountId])
 }
 
 model Requisition {
@@ -125,8 +136,9 @@ model Requisition {
   kivAt      DateTime?
   kivByName  String?
 
-  // Sub-account visibility — dept head can share their requests with their sub-units
+  // Sub-account visibility — dept head can share with all or selected sub-units
   visibleToSubAccounts Boolean @default(false)
+  subVisibilities      RequisitionSubVisibility[]
 
   // Sub-account privilege delegation (set by parent dept head or Super Admin):
   //   privilegeAmount — max cash (₦) this sub-account can CREATE (creator depts)
@@ -381,6 +393,36 @@ model ChatMessage {
   editedAt    DateTime?
   reqRef      String?       @db.Text
   createdAt   DateTime    @default(now())
+}
+
+// ── Store Records — stock ledger for Store department and its sub-accounts ──
+model StoreRecord {
+  id             Int                @id @default(autoincrement())
+  code           String
+  description    String
+  location       String?
+  carriedForward Float              @default(0)
+  departmentId   Int
+  department     Department         @relation(fields: [departmentId], references: [id])
+  entries        StoreRecordEntry[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model StoreRecordEntry {
+  id                Int         @id @default(autoincrement())
+  storeRecordId     Int
+  storeRecord       StoreRecord @relation(fields: [storeRecordId], references: [id], onDelete: Cascade)
+  sequence          Int
+  date              String?
+  openingBalance    Float       @default(0)
+  qtyReceived       Float       @default(0)
+  quantityIssued    Float       @default(0)
+  requisitionSlipNo String?
+  stockBalance      Float       @default(0)
+  materialsTaken    String?
+  remarks           String?
+  createdAt         DateTime    @default(now())
 }
 
 model DeletedRecord {

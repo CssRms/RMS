@@ -6,7 +6,8 @@ import {
   LogOut, Bell, Briefcase, Activity, User as UserIcon, PenTool,
   ChevronLeft, ChevronRight, ChevronDown, Menu, Inbox, Clock, WifiOff, RefreshCcw,
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
-  HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch
+  HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch,
+  Package
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
@@ -754,6 +755,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [syncing, setSyncing] = useState(false);
   const [actionAlert, setActionAlert] = useState(null);
   const [showOversightMenu, setShowOversightMenu] = useState(false);
+  const [showDeptMoreMenu, setShowDeptMoreMenu] = useState(false);
 
   useEffect(() => {
     const fetchNotifs = async () => {
@@ -943,27 +945,35 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [hrPortalOpen, setHrPortalOpen] = useState(false);
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
+  const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(null);
   const [chatDeepLink, setChatDeepLink] = useState(null);
 
   useEffect(() => {
     const loadFeatureFlags = async () => {
       try {
-        const [hrRes, studioRes] = await Promise.allSettled([
+        const [hrRes, studioRes, storeRes] = await Promise.allSettled([
           settingsAPI.get('hr_portal_enabled'),
           settingsAPI.get('document_studio_enabled'),
+          settingsAPI.get('store_records_enabled'),
         ]);
         if (hrRes.status === 'fulfilled' && hrRes.value?.value !== undefined)
           setHrPortalEnabled(hrRes.value.value !== 'false');
         if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
           setStudioEnabled(studioRes.value.value !== 'false');
+        if (storeRes.status === 'fulfilled' && storeRes.value?.value !== undefined)
+          setStoreRecordsEnabled(storeRes.value.value !== 'false');
+        else
+          setStoreRecordsEnabled(true); // default enabled if setting not yet saved
       } catch {}
     };
     loadFeatureFlags();
   }, []);
 
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
-  const isHRDept = /\bhr\b|human\s*resource/i.test(user?.name || '');
-  const showHRPortal = (user?.role === 'hr' || user?.role === 'global_admin' || isHRDept) && hrPortalEnabled;
+  const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
+  const isStoreDept = /\bstore\b/i.test(user?.name || '');
+  const showHRPortal     = (user?.role === 'hr' || user?.role === 'global_admin' || isHRDept) && hrPortalEnabled;
+  const showStoreRecords = (user?.role === 'global_admin' || isStoreDept || user?.isSubAccount) && storeRecordsEnabled;
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-foreground selection:bg-primary/30 font-sans antialiased overflow-x-hidden">
@@ -1057,6 +1067,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               {studioEnabled && (
                 <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} isCollapsed={isCollapsed} />
               )}
+              {showStoreRecords && (
+                <SidebarItem icon={Package} label="Store Records" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} isCollapsed={isCollapsed} />
+              )}
             </div>
 
             {showHRPortal && (
@@ -1116,6 +1129,32 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
 
       {/* Modern Floating Mobile App-Bar Navigation (Glassmorphism) */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md lg:hidden z-[100] animate-in slide-in-from-bottom-5 duration-500">
+        {/* Dept "More" slide-up tray — Profile (when store/studio active), Sub-Accounts, Activity */}
+        {showDeptMoreMenu && user?.role === 'department' && !user?.isSubAccount && (
+          <div className="mb-3 bg-white/90 backdrop-blur-2xl border border-white/40 rounded-[1.5rem] shadow-2xl shadow-primary/10 overflow-hidden animate-in slide-in-from-bottom-3 duration-200">
+            <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] px-4 pt-3 pb-1">More Options</p>
+            <div className={`grid ${(showStoreRecords || studioEnabled) ? 'grid-cols-3' : 'grid-cols-2'} divide-x divide-border/20`}>
+              <button onClick={() => { onViewChange('activity'); setShowDeptMoreMenu(false); }}
+                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'activity' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
+                <History size={18} />
+                Activity
+              </button>
+              <button onClick={() => { onViewChange('sub_accounts'); setShowDeptMoreMenu(false); }}
+                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'sub_accounts' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
+                <GitBranch size={18} />
+                Sub-Accounts
+              </button>
+              {(showStoreRecords || studioEnabled) && (
+                <button onClick={() => { onViewChange('dept_profile'); setShowDeptMoreMenu(false); }}
+                  className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'dept_profile' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
+                  <UserIcon size={18} />
+                  Profile
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Admin Oversight slide-up tray */}
         {showOversightMenu && user?.role !== 'department' && (
           <div className="mb-3 glass bg-white/80 backdrop-blur-2xl border border-white/40 rounded-[1.5rem] shadow-2xl shadow-primary/10 overflow-hidden animate-in slide-in-from-bottom-3 duration-200">
@@ -1144,13 +1183,40 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
             <>
               <SidebarItem icon={LayoutDashboard} label="Dashboard" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
-              {studioEnabled && (
+              {/* Center floating button: Store Records → Studio → Profile (always rendered) */}
+              {showStoreRecords ? (
+                <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-amber-600 shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('store_records')}>
+                  <Package size={20} />
+                </div>
+              ) : studioEnabled ? (
                 <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#206e33] shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('document_studio')}>
                   <PenTool size={20} />
                 </div>
+              ) : (
+                <div
+                  className={`w-12 h-12 rounded-full shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer flex items-center justify-center ${currentView === 'dept_profile' ? 'bg-[#f97316] text-white' : 'bg-white text-[#206e33]'}`}
+                  onClick={() => onViewChange('dept_profile')}
+                  title="Profile"
+                >
+                  {deptStatus.isReady ? <Building2 size={20} /> : <ShieldAlert size={20} />}
+                </div>
               )}
               <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
-              <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
+              {/* Sub-accounts: Activity only. Non-sub-account dept heads: "More" tray (Activity + Sub-Accounts + Profile if needed) */}
+              {user?.isSubAccount ? (
+                <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
+              ) : (
+                <button
+                  onClick={() => setShowDeptMoreMenu(v => !v)}
+                  className={`flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none ${
+                    ['activity', 'sub_accounts', ...(showStoreRecords || studioEnabled ? ['dept_profile'] : [])].includes(currentView) || showDeptMoreMenu
+                      ? 'text-[#f97316]' : 'text-white/60'
+                  }`}
+                >
+                  <Menu size={20} />
+                  <span className="text-[9px] font-black mt-1.5 uppercase tracking-tighter">More</span>
+                </button>
+              )}
             </>
           ) : showHRPortal ? (
             <>

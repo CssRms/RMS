@@ -168,8 +168,8 @@ const DeptProfileContent = ({ user: _user }) => {
             </form>
           </Card>
 
-          {/* Change Access Code — hidden for sub-accounts; head resets their code via Sub-Accounts panel */}
-          {!_user?.isSubAccount && <Card title="Change Access Code" subtitle="Update your department login credentials"
+          {/* Change Access Code — available to all dept accounts including sub-accounts */}
+          {<Card title="Change Access Code" subtitle="Update your login credentials"
             icon={KeyRound} iconBg="bg-amber-50" iconColor="text-amber-600">
             <form onSubmit={handleChangeCode} className="space-y-3">
               {[
@@ -207,6 +207,7 @@ const DeptProfileContent = ({ user: _user }) => {
             </form>
           </Card>}
         </div>
+
 
         {/* RIGHT — signature + checklist (1/3 width) */}
         <div className="space-y-5">

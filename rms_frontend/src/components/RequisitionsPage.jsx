@@ -16,7 +16,7 @@ import {
   Building2, ArrowRight, ArrowLeft, History, Download, AlertTriangle,
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
   CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked, Users,
-  Lock, Unlock, ShieldAlert, MessageCircle
+  Lock, Unlock, ShieldAlert, MessageCircle, Check
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
 
@@ -1721,7 +1721,8 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
   const [comment, setComment] = useState(existingOverride?.comment || '');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [showForm, setShowForm] = useState(!detail?.hasAuditOverride);
+  // Start collapsed — override table is optional; only auto-open if an override already exists
+  const [showForm, setShowForm] = useState(!!detail?.hasAuditOverride);
 
   const calcLineTotal = (row) => {
     const qty = parseFloat(row.qty) || 0;
@@ -1775,14 +1776,34 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
           <div className="flex items-center gap-2">
             <Gavel size={14} className="text-purple-700" />
             <p className="text-[10px] font-black text-purple-800 uppercase tracking-widest">Audit Price Override</p>
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-50 border border-purple-200 text-purple-500 uppercase">Optional</span>
             {detail?.hasAuditOverride && (
               <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Override Active</span>
             )}
           </div>
-          {detail?.hasAuditOverride && !showForm && (
-            <button onClick={() => setShowForm(true)} className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline">Edit</button>
+          {!showForm && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline"
+            >
+              {detail?.hasAuditOverride ? 'Edit' : '+ Create Override'}
+            </button>
+          )}
+          {showForm && !detail?.hasAuditOverride && (
+            <button
+              onClick={() => setShowForm(false)}
+              className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline"
+            >
+              Cancel
+            </button>
           )}
         </div>
+
+        {!detail?.hasAuditOverride && !showForm && (
+          <p className="text-[11px] text-purple-600/60 pl-1 italic">
+            You can vet and forward this request without an override. Use "+ Create Override" above only if the amounts need correction.
+          </p>
+        )}
 
         {detail?.hasAuditOverride && !showForm && existingOverride && (
           <div className="mb-3 space-y-2">
@@ -2475,33 +2496,126 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   );
 };
 
-// ── Sub-account visibility toggle button ──────────────────────────────────────
-const SubVisibilityToggle = ({ req, onAction }) => {
-  const [toggling, setToggling] = useState(false);
-  const [visible, setVisible]   = useState(req.visibleToSubAccounts ?? false);
-  const toggle = async () => {
-    setToggling(true);
+// ── Sub-account visibility selector — per-unit dropdown with checkboxes ───────
+const SubVisibilitySelector = ({ req, onAction }) => {
+  const [open, setOpen]         = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [loaded, setLoaded]     = useState(false);
+  const [visibleToAll, setVisibleToAll] = useState(req.visibleToSubAccounts ?? false);
+  const [subAccounts, setSubAccounts]   = useState([]);
+  const [specificIds, setSpecificIds]   = useState([]);
+  const dropRef = React.useRef(null);
+
+  const loadState = async () => {
+    if (loaded) return;
     try {
-      const res = await reqAPI.toggleSubAccountVisibility(req.id);
-      setVisible(res.visibleToSubAccounts);
-      onAction?.('refreshed', { ...req, visibleToSubAccounts: res.visibleToSubAccounts });
-      toast.success(res.visibleToSubAccounts ? 'Now visible to sub-units.' : 'Hidden from sub-units.');
-    } catch { toast.error('Failed to update visibility.'); }
-    finally { setToggling(false); }
+      const data = await reqAPI.getSubVisibility(req.id);
+      setVisibleToAll(data.visibleToAll);
+      setSpecificIds(data.specificIds || []);
+      setSubAccounts(data.subAccounts || []);
+      setLoaded(true);
+    } catch { toast.error('Failed to load unit list.'); }
   };
+
+  const handleOpen = () => { setOpen(v => !v); loadState(); };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const save = async (payload) => {
+    setSaving(true);
+    try {
+      const res = await reqAPI.setSubAccountVisibility(req.id, payload);
+      setVisibleToAll(res.visibleToSubAccounts);
+      setSpecificIds(res.specificIds || []);
+      onAction?.('refreshed', { ...req, visibleToSubAccounts: res.visibleToSubAccounts });
+      toast.success('Visibility updated.');
+    } catch { toast.error('Failed to save visibility.'); }
+    finally { setSaving(false); }
+  };
+
+  const toggleSelectAll = () => {
+    if (visibleToAll) save({ selectAll: false, subAccountIds: [] });
+    else save({ selectAll: true });
+  };
+
+  const toggleSpecific = (id) => {
+    if (visibleToAll) return;
+    const next = specificIds.includes(id) ? specificIds.filter(i => i !== id) : [...specificIds, id];
+    save({ selectAll: false, subAccountIds: next });
+  };
+
+  const label = visibleToAll ? 'All Units'
+    : specificIds.length > 0 ? `${specificIds.length} Unit${specificIds.length !== 1 ? 's' : ''}`
+    : 'Hidden from Units';
+
+  const btnColor = visibleToAll
+    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+    : specificIds.length > 0
+      ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+      : 'bg-muted/40 border-border/50 text-muted-foreground hover:bg-muted/70';
+
   return (
-    <button
-      onClick={toggle}
-      disabled={toggling}
-      title={visible ? 'Click to hide from sub-units' : 'Click to share with sub-units'}
-      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-50
-        ${visible
-          ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
-          : 'bg-muted/40 border-border/50 text-muted-foreground hover:bg-muted/70'}`}
-    >
-      {toggling ? <Loader2 size={9} className="animate-spin"/> : visible ? <Eye size={9}/> : <EyeOff size={9}/>}
-      {visible ? 'Visible to Units' : 'Hidden from Units'}
-    </button>
+    <div className="relative" ref={dropRef}>
+      <button
+        onClick={handleOpen}
+        disabled={saving}
+        title="Control which sub-units can see this request"
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-50 ${btnColor}`}
+      >
+        {saving ? <Loader2 size={9} className="animate-spin"/> : (visibleToAll || specificIds.length > 0) ? <Eye size={9}/> : <EyeOff size={9}/>}
+        {label}
+        <ChevronDown size={9} className={`transition-transform ${open ? 'rotate-180' : ''}`}/>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-background border border-border rounded-xl shadow-xl w-52 p-2">
+          {!loaded ? (
+            <div className="flex items-center justify-center py-3"><Loader2 size={14} className="animate-spin text-muted-foreground"/></div>
+          ) : (
+            <>
+              <button
+                onClick={toggleSelectAll}
+                disabled={saving}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors mb-1
+                  ${visibleToAll ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-muted/50 text-foreground/70'}`}
+              >
+                <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                  ${visibleToAll ? 'bg-emerald-500 border-emerald-500' : 'border-border/70'}`}>
+                  {visibleToAll && <Check size={10} className="text-white"/>}
+                </span>
+                Select All Units
+              </button>
+              <div className="border-t border-border/30 my-1"/>
+              {subAccounts.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground px-2 py-1.5 italic">No sub-units found.</p>
+              ) : subAccounts.map(sub => {
+                const checked = visibleToAll || specificIds.includes(sub.id);
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => toggleSpecific(sub.id)}
+                    disabled={saving || visibleToAll}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors
+                      ${checked && !visibleToAll ? 'bg-blue-50/60 text-blue-700' : ''}
+                      ${visibleToAll ? 'opacity-60 cursor-default' : 'hover:bg-muted/50 text-foreground/70'}`}
+                  >
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                      ${checked ? (visibleToAll ? 'bg-emerald-500 border-emerald-500' : 'bg-blue-500 border-blue-500') : 'border-border/70'}`}>
+                      {checked && <Check size={10} className="text-white"/>}
+                    </span>
+                    <span className="truncate text-left">{sub.name}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -2898,8 +3012,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                    <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest">UNIT</span>
                  )}
                </span>
-               {/* Creator indicator — shows for sub-accounts viewing parent's shared request */}
-               {req.visibleToSubAccounts && user?.isSubAccount && (
+               {/* Shared-by badge — shows to sub-accounts viewing their parent dept's shared request */}
+               {user?.isSubAccount && user?.parentDeptId && Number(req.departmentId) === Number(user.parentDeptId) && (
                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[9px] font-black uppercase tracking-wider">
                    <Users size={9}/> {req.deptHeadName || req.department} (Dept Head)
                  </span>
@@ -2909,9 +3023,9 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                )}
                <span className="px-2 py-0.5 rounded-md bg-muted font-mono text-[10px] tracking-widest">#{req.id}</span>
 
-               {/* Sub-account visibility toggle — dept head only, own dept, non-sub-account requests */}
-               {user?.role === 'department' && !user?.isSubAccount && !req.isFromSubAccount && req.departmentId === user?.deptId && (
-                 <SubVisibilityToggle req={req} onAction={onAction} />
+               {/* Sub-account visibility — dept head only, own dept, non-sub-account requests */}
+               {user?.role === 'department' && !user?.isSubAccount && !req.isFromSubAccount && Number(req.departmentId) === Number(user?.deptId) && (
+                 <SubVisibilitySelector req={req} onAction={onAction} />
                )}
             </div>
           </div>
@@ -4072,6 +4186,8 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     if (r.currentVettingDeptId && Number(r.currentVettingDeptId) === deptId) return true; // vetting
     // Sub-unit requests — backend already filters to only send our sub-unit records, always show
     if (r.isFromSubAccount && !user?.isSubAccount) return true;
+    // Parent dept shared this request with this sub-account (backend already enforced visibility)
+    if (user?.isSubAccount && user?.parentDeptId && Number(r.departmentId) === Number(user.parentDeptId)) return true;
     return false;
   };
 

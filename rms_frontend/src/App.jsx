@@ -60,6 +60,9 @@ const DepartmentProfile = React.lazy(() => import('./components/DepartmentProfil
 const SubAccountsPage = React.lazy(() => import('./components/SubAccountsPanel'))
 const MyActivity = React.lazy(() => import('./components/MyActivity'))
 
+// ── Store Records ──────────────────────────────────────────────────────────────
+const StoreRecordsPage = React.lazy(() => import('./components/StoreRecordsPage'))
+
 // ── HR Portal modules ──────────────────────────────────────────────────────────
 const HRDashboard = React.lazy(() => import('./components/HRDashboard'))
 const EmployeeDirectory = React.lazy(() => import('./components/EmployeeDirectory'))
@@ -193,7 +196,9 @@ const VALID_VIEWS = [
   'workflow_builder', 'department_manager', 'audit_logs',
   'document_studio', 'dept_profile', 'sub_accounts',
   // HR Portal views
-  'hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment'
+  'hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment',
+  // Store Records
+  'store_records'
 ];
 
 const getViewFromHash = () => {
@@ -300,11 +305,14 @@ const AppContent = () => {
   const isAdminView = ['workflow_builder', 'department_manager', 'audit_logs'].includes(currentView);
   const isHRView = ['hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment'].includes(currentView);
   // HR department users log in with role='department' — detect them by name
-  const isHRDept = /\bhr\b|human\s*resource/i.test(user?.name || '');
+  const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
+  const isStoreDept = /\bstore\b/i.test(user?.name || '');
   const canAccessHR    = user.role === 'hr' || user.role === 'global_admin' || isHRDept;
   const canAccessAdmin = user.role === 'global_admin';
+  const canAccessStore = user.role === 'global_admin' || isStoreDept || user?.isSubAccount;
   const activeView = (isAdminView && !canAccessAdmin) ? 'dashboard'
     : (isHRView && !canAccessHR) ? 'dashboard'
+    : (currentView === 'store_records' && !canAccessStore) ? 'dashboard'
     : currentView;
 
   const views = {
@@ -324,6 +332,8 @@ const AppContent = () => {
         </div>
       </div>
     ),
+    // Store Records
+    store_records: <StoreRecordsPage onViewChange={navigate} />,
     // HR Portal
     hr_dashboard:   <HRDashboard onViewChange={navigate} />,
     hr_employees:   <EmployeeDirectory onViewChange={navigate} />,
