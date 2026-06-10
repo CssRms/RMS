@@ -2646,13 +2646,21 @@ app.get('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({
       where: { id: subId, isSubAccount: true },
-      select: { id: true, privilegeAmount: true, memoPrivilege: true, materialPrivilege: true, parentId: true }
+      select: { id: true, parentId: true }
     });
     if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
     const deptId  = req.user.deptId ? parseInt(req.user.deptId) : null;
     if (!isAdmin && deptId !== sub.parentId) return res.status(403).json({ error: 'Access denied.' });
-    res.json({ privilegeAmount: sub.privilegeAmount ?? null, memoPrivilege: sub.memoPrivilege ?? false, materialPrivilege: sub.materialPrivilege ?? false });
+    let priv = { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false };
+    try {
+      const row = await prisma.department.findUnique({
+        where: { id: subId },
+        select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
+      });
+      if (row) priv = { privilegeAmount: row.privilegeAmount ?? null, memoPrivilege: row.memoPrivilege ?? false, materialPrivilege: row.materialPrivilege ?? false };
+    } catch (_) {}
+    res.json(priv);
   } catch (err) { sendError(res, 500, err.message); }
 });
 
@@ -2688,20 +2696,32 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
 
     if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'No privilege fields provided.' });
 
+    // Ensure privilege columns exist (safe to run if already present)
+    try {
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "privilegeAmount" DOUBLE PRECISION`;
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "memoPrivilege" BOOLEAN NOT NULL DEFAULT false`;
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "materialPrivilege" BOOLEAN NOT NULL DEFAULT false`;
+    } catch (_) {}
+
     await prisma.department.update({ where: { id: subId }, data: updateData });
 
-    await prisma.activityLog.create({
-      data: {
-        userId: getNumericUserId(req.user) || null,
-        action: 'Sub-Account Privilege Updated',
-        details: `Privilege for ${sub.name}: ${JSON.stringify(updateData)}`
-      }
-    });
+    try {
+      await prisma.activityLog.create({
+        data: {
+          userId: getNumericUserId(req.user) || null,
+          action: 'Sub-Account Privilege Updated',
+          details: `Privilege for ${sub.name}: ${JSON.stringify(updateData)}`
+        }
+      });
+    } catch (_) {}
 
-    const updated = await prisma.department.findUnique({
-      where: { id: subId },
-      select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
-    });
+    let updated = {};
+    try {
+      updated = await prisma.department.findUnique({
+        where: { id: subId },
+        select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
+      }) || {};
+    } catch (_) {}
     res.json({ success: true, ...updated });
   } catch (error) { sendError(res, 500, error.message); }
 });
