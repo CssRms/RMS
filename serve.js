@@ -171,16 +171,17 @@ const getEffectiveReqAmount = (req) => {
   return parseFloat(req?.amount || 0);
 };
 
-// Fetch a sub-account's privilege settings from DB
+// Fetch a sub-account's privilege settings from DB (raw SQL — these columns may not be in the generated Prisma client)
 async function getSubPrivilege(deptId) {
   try {
-    const d = await prisma.department.findUnique({
-      where: { id: deptId },
-      select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
-    });
+    const rows = await prisma.$queryRaw`
+      SELECT "privilegeAmount", "memoPrivilege", "materialPrivilege"
+      FROM "Department" WHERE id = ${parseInt(deptId)} LIMIT 1
+    `;
+    const d = rows?.[0];
     return {
-      privilegeAmount:   d?.privilegeAmount ?? null,
-      memoPrivilege:     d?.memoPrivilege   ?? false,
+      privilegeAmount:   d?.privilegeAmount   ?? null,
+      memoPrivilege:     d?.memoPrivilege     ?? false,
       materialPrivilege: d?.materialPrivilege ?? false,
     };
   } catch { return { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false }; }
@@ -2654,11 +2655,14 @@ app.get('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     if (!isAdmin && deptId !== sub.parentId) return res.status(403).json({ error: 'Access denied.' });
     let priv = { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false };
     try {
-      const row = await prisma.department.findUnique({
-        where: { id: subId },
-        select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
-      });
-      if (row) priv = { privilegeAmount: row.privilegeAmount ?? null, memoPrivilege: row.memoPrivilege ?? false, materialPrivilege: row.materialPrivilege ?? false };
+      const rows = await prisma.$queryRaw`
+        SELECT "privilegeAmount", "memoPrivilege", "materialPrivilege"
+        FROM "Department" WHERE id = ${subId} LIMIT 1
+      `;
+      if (rows?.[0]) {
+        const r = rows[0];
+        priv = { privilegeAmount: r.privilegeAmount ?? null, memoPrivilege: r.memoPrivilege ?? false, materialPrivilege: r.materialPrivilege ?? false };
+      }
     } catch (_) {}
     res.json(priv);
   } catch (err) { sendError(res, 500, err.message); }
@@ -2676,7 +2680,6 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     });
     if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
 
-    // Only the parent dept head or admin can set the privilege
     if (!isAdmin && userDeptId !== sub.parentId) {
       return res.status(403).json({ error: 'Only the parent department head can set privileges for their sub-accounts.' });
     }
@@ -2689,38 +2692,45 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     if (!parsed.success) return res.status(400).json({ error: 'Invalid privilege payload.' });
 
     const { maxAmount, memoPrivilege, materialPrivilege } = parsed.data;
-    const updateData = {};
-    if (maxAmount !== undefined) updateData.privilegeAmount = maxAmount === null ? null : parseFloat(maxAmount);
-    if (memoPrivilege !== undefined) updateData.memoPrivilege = memoPrivilege;
-    if (materialPrivilege !== undefined) updateData.materialPrivilege = materialPrivilege;
+    if (maxAmount === undefined && memoPrivilege === undefined && materialPrivilege === undefined)
+      return res.status(400).json({ error: 'No privilege fields provided.' });
 
-    if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'No privilege fields provided.' });
-
-    // Ensure privilege columns exist (safe to run if already present)
+    // Ensure columns exist in DB regardless of Prisma client schema version
     try {
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "privilegeAmount" DOUBLE PRECISION`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "memoPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "materialPrivilege" BOOLEAN NOT NULL DEFAULT false`;
     } catch (_) {}
 
-    await prisma.department.update({ where: { id: subId }, data: updateData });
+    // Build and run raw UPDATE to bypass Prisma client field validation
+    const setClauses = [];
+    const values = [];
+    if (maxAmount !== undefined) { setClauses.push(`"privilegeAmount" = $${setClauses.length + 1}`); values.push(maxAmount === null ? null : parseFloat(maxAmount)); }
+    if (memoPrivilege !== undefined) { setClauses.push(`"memoPrivilege" = $${setClauses.length + 1}`); values.push(memoPrivilege); }
+    if (materialPrivilege !== undefined) { setClauses.push(`"materialPrivilege" = $${setClauses.length + 1}`); values.push(materialPrivilege); }
+    values.push(subId);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Department" SET ${setClauses.join(', ')} WHERE id = $${values.length}`,
+      ...values
+    );
 
     try {
       await prisma.activityLog.create({
         data: {
           userId: getNumericUserId(req.user) || null,
           action: 'Sub-Account Privilege Updated',
-          details: `Privilege for ${sub.name}: ${JSON.stringify(updateData)}`
+          details: `Privilege for ${sub.name}: maxAmount=${maxAmount}, memoPrivilege=${memoPrivilege}, materialPrivilege=${materialPrivilege}`
         }
       });
     } catch (_) {}
 
-    let updated = {};
+    let updated = { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false };
     try {
-      updated = await prisma.department.findUnique({
-        where: { id: subId },
-        select: { privilegeAmount: true, memoPrivilege: true, materialPrivilege: true }
-      }) || {};
+      const rows = await prisma.$queryRaw`
+        SELECT "privilegeAmount", "memoPrivilege", "materialPrivilege"
+        FROM "Department" WHERE id = ${subId} LIMIT 1
+      `;
+      if (rows?.[0]) updated = rows[0];
     } catch (_) {}
     res.json({ success: true, ...updated });
   } catch (error) { sendError(res, 500, error.message); }
@@ -3894,7 +3904,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 
     // Resolve acting dept name — for sub-accounts also resolve parent dept
     const actingDeptRecord = userDeptId
-      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true, privilegeAmount: true } })
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true } })
       : null;
     const isAccountDept = actingDeptRecord && /\baccount\b/i.test(actingDeptRecord.name);
 
