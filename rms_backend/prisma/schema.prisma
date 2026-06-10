@@ -69,6 +69,10 @@ model Department {
   canPrint             Boolean          @default(true)
   subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
   storeRecords         StoreRecord[]
+  // Sub-account privilege delegation (set by parent dept head or admin)
+  privilegeAmount      Float?
+  memoPrivilege        Boolean          @default(false)
+  materialPrivilege    Boolean          @default(false)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 }
