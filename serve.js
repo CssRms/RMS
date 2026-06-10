@@ -2583,6 +2583,27 @@ app.delete('/api/sub-accounts/:id/users/:userId', authenticateToken, requireSubA
 });
 
 // List staff users available for assignment
+// Requisitions created by a specific sub-account — for the expanded panel view
+app.get('/api/sub-accounts/:id/requisitions', authenticateToken, requireSubAccountManager, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
+    const parentId = resolveParentId(req);
+    if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'Access denied.' });
+    const reqs = await prisma.requisition.findMany({
+      where: { departmentId: subId },
+      select: {
+        id: true, title: true, type: true, status: true, urgency: true,
+        amount: true, createdAt: true,
+        targetDepartment: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(reqs);
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
 app.get('/api/sub-accounts/available-users', authenticateToken, requireSubAccountManager, async (req, res) => {
   try {
     const parentId = resolveParentId(req);

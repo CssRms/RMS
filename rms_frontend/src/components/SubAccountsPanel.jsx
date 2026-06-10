@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
   Check, Loader2, Copy, UserPlus, UserMinus,
-  ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2
+  ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
+  FileText, User, Clock
 } from 'lucide-react';
 import { subAccountAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -269,6 +270,8 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
   const [newCode, setNewCode] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reqs, setReqs] = useState(null);
+  const [loadingReqs, setLoadingReqs] = useState(false);
 
   const saveEdit = async () => {
     if (!editName.trim() || editName.trim() === sub.name) { setEditing(false); return; }
@@ -349,12 +352,23 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
               <Badge color={sub.isDisabled ? 'red' : 'green'}>{sub.isDisabled ? 'Disabled' : 'Active'}</Badge>
             </div>
           )}
-          <p className="text-[10px] text-muted-foreground mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {showParent && sub.parentDept?.name && (
-              <span className="text-violet-600 font-semibold">{sub.parentDept.name} · </span>
+              <span className="text-[10px] text-violet-600 font-semibold">{sub.parentDept.name} ·</span>
             )}
-            {sub.userCount} user{sub.userCount !== 1 ? 's' : ''} · {sub.reqCount} request{sub.reqCount !== 1 ? 's' : ''}
-          </p>
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <User size={10} />
+              {sub.headName
+                ? <span className="font-semibold text-foreground/70">{sub.headName}</span>
+                : <span className="italic text-muted-foreground/60">Not set yet</span>}
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <FileText size={10} />
+              <span className={sub.reqCount > 0 ? 'font-bold text-primary' : ''}>
+                {sub.reqCount} request{sub.reqCount !== 1 ? 's' : ''}
+              </span>
+            </span>
+          </div>
         </div>
 
         {/* Actions */}
@@ -371,7 +385,16 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
           <button onClick={() => setConfirmDelete(true)} title="Delete sub-account" className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-all">
             <Trash2 size={13} />
           </button>
-          <button onClick={() => setExpanded(v => !v)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-all">
+          <button onClick={async () => {
+            const next = !expanded;
+            setExpanded(next);
+            if (next && reqs === null) {
+              setLoadingReqs(true);
+              try { setReqs(await subAccountAPI.getRequisitions(sub.id)); }
+              catch { setReqs([]); }
+              finally { setLoadingReqs(false); }
+            }
+          }} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-all">
             {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
         </div>
@@ -399,14 +422,67 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
         </div>
       )}
 
-      {/* Expanded: privilege + user management */}
+      {/* Expanded: requisitions + privileges */}
       {expanded && (
-        <div className="px-4 pb-4 border-t border-border/30 pt-3 space-y-4">
-          {/* Privilege editor — shown to parent dept head (non-admin) and admin */}
-          <PrivilegeEditor sub={sub} onRefresh={onRefresh} />
-          <div>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-2">Staff Members</p>
-            <UserManager sub={sub} availableUsers={availableUsers} onRefresh={onRefresh} />
+        <div className="border-t border-border/30">
+
+          {/* ── Requisitions list ── */}
+          <div className="px-4 pt-3 pb-3">
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <FileText size={11} /> Requests Created
+            </p>
+            {loadingReqs ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 size={16} className="animate-spin text-muted-foreground" />
+              </div>
+            ) : !reqs || reqs.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground/60 italic py-2 text-center">No requests created yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {reqs.map(r => {
+                  const statusColor = {
+                    draft: 'bg-gray-100 text-gray-500',
+                    pending: 'bg-blue-50 text-blue-600',
+                    approved: 'bg-green-50 text-green-700',
+                    rejected: 'bg-red-50 text-red-600',
+                    treated: 'bg-emerald-50 text-emerald-700',
+                    published: 'bg-violet-50 text-violet-700',
+                  }[r.status?.toLowerCase()] || 'bg-gray-100 text-gray-500';
+                  const typeColor = {
+                    Cash: 'bg-amber-50 text-amber-700 border-amber-200',
+                    Material: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                    Memo: 'bg-purple-50 text-purple-700 border-purple-200',
+                  }[r.type] || 'bg-gray-50 text-gray-600 border-gray-200';
+                  return (
+                    <div key={r.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/30 border border-border/30 hover:bg-muted/50 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-semibold text-foreground truncate">
+                          #{r.id} — {r.title || 'Untitled'}
+                        </p>
+                        {r.targetDepartment?.name && (
+                          <p className="text-[9px] text-muted-foreground/60">To: {r.targetDepartment.name}</p>
+                        )}
+                      </div>
+                      <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${typeColor} shrink-0`}>
+                        {r.type}
+                      </span>
+                      <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${statusColor} shrink-0`}>
+                        {r.status}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground/50 shrink-0 flex items-center gap-0.5">
+                        <Clock size={9} />
+                        {new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Privilege editor ── */}
+          <div className="px-4 pb-4 border-t border-border/20 pt-3">
+            <PrivilegeEditor sub={sub} onRefresh={onRefresh} />
           </div>
         </div>
       )}
