@@ -1940,7 +1940,8 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
 // ── Vetting Panel (ICC / Audit / Account — role-specific auto-routing) ─────────
 const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   const [comment, setComment]       = useState('');
-  const [vetChecked, setVetChecked] = useState(false);
+  // Audit dept: default vetChecked=true since their sole role here is vetting
+  const [vetChecked, setVetChecked] = useState(() => /\baudit\b/i.test(user?.name || ''));
   const [acting, setActing]         = useState(false);
   const fileRef                     = React.useRef(null);
   const [file, setFile]             = useState(null);
@@ -2305,15 +2306,15 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-300 min-h-[72px] resize-none shadow-inner"
           />
 
-          {/* Vetted checkbox */}
+          {/* Vetted checkbox — defaults true for Audit since vetting is their sole purpose here */}
           <label className="flex items-start gap-2.5 cursor-pointer select-none group">
             <input type="checkbox" checked={vetChecked} onChange={e => setVetChecked(e.target.checked)}
               className="mt-0.5 w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0" />
             <span className="text-[11px] text-blue-800 font-semibold leading-snug">
-              I have vetted this document
+              {isAudit ? 'Mark this as vetted by Audit' : 'I have vetted this document'}
               {vetChecked
                 ? <span className="ml-1 text-emerald-600 font-black">(Vetted ✓)</span>
-                : <span className="ml-1 text-muted-foreground font-normal italic">(optional)</span>}
+                : <span className="ml-1 text-rose-500 font-semibold italic">(will return as unvetted)</span>}
             </span>
           </label>
 
