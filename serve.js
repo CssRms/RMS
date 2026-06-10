@@ -1625,8 +1625,12 @@ const amountLine = (type, amount) => {
 };
 
 const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
+  const portalUrl = APP_BASE_URL ? APP_BASE_URL.replace(/\/$/, '') : '';
+  const logoUrl   = portalUrl ? `${portalUrl}/CSS_Group.png` : '';
+  const finalActionUrl = actionUrl || portalUrl || '';
+
   const safeLines = lines.filter(Boolean).map((line) => String(line));
-  const text = [title, '', ...safeLines, actionUrl ? `\nOpen: ${actionUrl}` : ''].filter(Boolean).join('\n');
+  const text = [title, '', ...safeLines, finalActionUrl ? `\nOpen Portal: ${finalActionUrl}` : ''].filter(Boolean).join('\n');
 
   // Split lines into key:value pairs vs plain sentences
   const rows = safeLines.map((line) => {
@@ -1646,38 +1650,46 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
       </tr>`;
   }).join('');
 
-  const button = actionUrl ? `
+  const button = finalActionUrl ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
       <tr>
         <td align="center">
-          <a href="${actionUrl}" style="display:inline-block;background-color:#1a7a3c;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 32px;border-radius:8px;letter-spacing:0.3px;">
-            ${escapeHtml(actionLabel || 'Open in RMS Portal')} &rarr;
+          <a href="${finalActionUrl}" style="display:inline-block;background-color:#1a7a3c;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:13px 32px;border-radius:8px;letter-spacing:0.3px;">
+            ${escapeHtml(actionLabel || 'Open RMS Portal')} &rarr;
           </a>
         </td>
       </tr>
     </table>` : '';
 
+  const logoImg = logoUrl
+    ? `<img src="${logoUrl}" alt="CSS Group" style="height:36px;max-width:160px;object-fit:contain;display:block;" />`
+    : `<p style="margin:0;font-size:20px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">CSS RMS</p>`;
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8;padding:32px 16px;">
+<body style="margin:0;padding:0;background-color:#f0f2f5;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5;padding:32px 16px;">
     <tr><td align="center">
-      <table width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+      <table width="100%" style="max-width:580px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
 
-        <!-- Header -->
+        <!-- Header with logo -->
         <tr>
-          <td style="background:linear-gradient(135deg,#1a7a3c 0%,#155f30 100%);padding:28px 32px;">
+          <td style="background:linear-gradient(135deg,#1a7a3c 0%,#0f5124 100%);padding:24px 32px 20px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td>
-                  <p style="margin:0;font-size:11px;font-weight:700;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase;">CSS Group of Companies</p>
-                  <p style="margin:4px 0 0;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.3px;">Requisition Management System</p>
+                <td style="vertical-align:middle;">
+                  ${logoImg}
                 </td>
                 <td align="right" style="vertical-align:middle;">
-                  <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 12px;display:inline-block;">
-                    <p style="margin:0;font-size:10px;font-weight:800;color:rgba(255,255,255,0.9);letter-spacing:2px;text-transform:uppercase;">RMS</p>
+                  <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:5px 14px;display:inline-block;">
+                    <span style="font-size:11px;font-weight:800;color:rgba(255,255,255,0.95);letter-spacing:2.5px;text-transform:uppercase;">RMS Portal</span>
                   </div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding-top:10px;">
+                  <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.55);letter-spacing:1.5px;text-transform:uppercase;">CSS Group of Companies — Requisition Management System</p>
                 </td>
               </tr>
             </table>
@@ -1686,9 +1698,9 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
 
         <!-- Title bar -->
         <tr>
-          <td style="background:#f8fffe;border-bottom:2px solid #e8f5ed;padding:20px 32px;">
-            <p style="margin:0;font-size:17px;font-weight:800;color:#111827;">${escapeHtml(title)}</p>
-            <p style="margin:4px 0 0;font-size:11px;color:#6b7280;">Automated notification &bull; ${new Date().toLocaleString('en-NG', { dateStyle: 'long', timeStyle: 'short' })}</p>
+          <td style="background:#f8fffe;border-bottom:2px solid #d1fae5;padding:20px 32px;">
+            <p style="margin:0;font-size:18px;font-weight:800;color:#111827;letter-spacing:-0.3px;">${escapeHtml(title)}</p>
+            <p style="margin:6px 0 0;font-size:11px;color:#6b7280;">Automated notification &bull; ${new Date().toLocaleString('en-NG', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Africa/Lagos' })}</p>
           </td>
         </tr>
 
@@ -1700,7 +1712,7 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
         </tr>
 
         <!-- Action button -->
-        <tr><td style="padding:0 32px 28px;">${button}</td></tr>
+        <tr><td style="padding:8px 32px 32px;">${button}</td></tr>
 
         <!-- Footer -->
         <tr>
@@ -1708,13 +1720,15 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
                 <td>
-                  <p style="margin:0;font-size:11px;color:#9ca3af;">This is an automated message from <strong style="color:#6b7280;">CSS RMS</strong>. Please do not reply to this email.</p>
+                  <p style="margin:0;font-size:11px;color:#9ca3af;">This is an automated message from <strong style="color:#6b7280;">CSS RMS</strong>. Please do not reply directly to this email.</p>
+                  ${portalUrl ? `<p style="margin:4px 0 0;font-size:11px;"><a href="${portalUrl}" style="color:#1a7a3c;text-decoration:none;font-weight:600;">Visit Portal &rarr;</a></p>` : ''}
                   <p style="margin:4px 0 0;font-size:10px;color:#d1d5db;">&copy; ${new Date().getFullYear()} CSS Group of Companies. All rights reserved.</p>
                 </td>
-                <td align="right" style="vertical-align:middle;">
-                  <div style="width:32px;height:32px;background:#1a7a3c;border-radius:6px;display:inline-block;line-height:32px;text-align:center;">
-                    <span style="color:#fff;font-size:13px;font-weight:900;">R</span>
-                  </div>
+                <td align="right" style="vertical-align:middle;padding-left:16px;">
+                  ${logoUrl
+                    ? `<img src="${logoUrl}" alt="CSS" style="height:28px;opacity:0.35;display:block;" />`
+                    : `<div style="width:32px;height:32px;background:#1a7a3c;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;"><span style="color:#fff;font-size:13px;font-weight:900;">R</span></div>`
+                  }
                 </td>
               </tr>
             </table>
