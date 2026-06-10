@@ -1367,7 +1367,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     let matchedSubAccount = null;
     if (!codeMatch && !isSuperAdmin) {
       const subAccounts = await prisma.department.findMany({
-        where: { parentId: dept.id, isSubAccount: true }
+        where: { parentId: dept.id, isSubAccount: true, isDeleted: false }
       });
       for (const sub of subAccounts) {
         const subMatch = sub.accessCodeHash
@@ -1386,6 +1386,9 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     // The resolved entity is either the dept head or the matched sub-account
     const resolved = matchedSubAccount || dept;
 
+    if (resolved.isDeleted) {
+      return res.status(403).json({ error: 'This sub-account has been deleted. Please contact your department head or system administrator.' });
+    }
     if (resolved.isDisabled) {
       return res.status(403).json({ error: 'This account has been disabled. Please contact your department head.' });
     }
@@ -2389,8 +2392,8 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
     const parentId = resolveParentId(req);
     // Admin with no parentId gets ALL sub-accounts across every dept
     const where = (role === 'global_admin' && !parentId)
-      ? { isSubAccount: true }
-      : { parentId: parentId || -1, isSubAccount: true };
+      ? { isSubAccount: true, isDeleted: false }
+      : { parentId: parentId || -1, isSubAccount: true, isDeleted: false };
     const subs = await prisma.department.findMany({
       where,
       include: {
@@ -2477,6 +2480,27 @@ app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireSubAccountMa
     if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'Access denied.' });
     const updated = await prisma.department.update({ where: { id: subId }, data: { isDisabled: !sub.isDisabled } });
     res.json({ id: updated.id, isDisabled: updated.isDisabled });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Soft-delete sub-account — marks isDeleted=true + isDisabled=true, preserves all data
+// Dept heads can only delete their own sub-accounts; admins can delete any
+app.delete('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
+    if (sub.isDeleted) return res.status(400).json({ error: 'Sub-account is already deleted.' });
+    const parentId = resolveParentId(req);
+    if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'You can only delete sub-accounts belonging to your department.' });
+    await prisma.department.update({
+      where: { id: subId },
+      data: { isDeleted: true, isDisabled: true }
+    });
+    await prisma.activityLog.create({
+      data: { action: 'SubAccountDeleted', details: `Sub-account "${sub.name}" soft-deleted by ${req.user.name || 'user'}. All records preserved.` }
+    });
+    res.json({ success: true, message: `"${sub.name}" has been deleted. All its records are preserved.` });
   } catch (err) { sendError(res, 500, err.message); }
 });
 

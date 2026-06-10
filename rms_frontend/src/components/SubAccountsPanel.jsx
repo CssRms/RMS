@@ -267,6 +267,8 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
   const [toggling, setToggling] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [newCode, setNewCode] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const saveEdit = async () => {
     if (!editName.trim() || editName.trim() === sub.name) { setEditing(false); return; }
@@ -303,6 +305,17 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to reset code.');
     } finally { setResetting(false); }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await subAccountAPI.delete(sub.id);
+      toast.success(`"${sub.name}" deleted. All its records are preserved.`);
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to delete sub-account.');
+    } finally { setDeleting(false); setConfirmDelete(false); }
   };
 
   return (
@@ -355,6 +368,9 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
           <button onClick={toggle} disabled={toggling} title={sub.isDisabled ? 'Enable' : 'Disable'} className="p-1.5 rounded-lg transition-all disabled:opacity-40 text-muted-foreground hover:text-foreground">
             {toggling ? <Loader2 size={13} className="animate-spin" /> : sub.isDisabled ? <ToggleLeft size={16} /> : <ToggleRight size={16} className="text-green-600" />}
           </button>
+          <button onClick={() => setConfirmDelete(true)} title="Delete sub-account" className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-all">
+            <Trash2 size={13} />
+          </button>
           <button onClick={() => setExpanded(v => !v)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-all">
             {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
@@ -391,6 +407,35 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
           <div>
             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-2">Staff Members</p>
             <UserManager sub={sub} availableUsers={availableUsers} onRefresh={onRefresh} />
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {confirmDelete && (
+        <div className="px-4 pb-4 pt-3 border-t-2 border-red-200 bg-red-50/60 space-y-3">
+          <div className="flex items-start gap-2">
+            <Trash2 size={15} className="text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-black text-red-800">Delete "{sub.name}"?</p>
+              <p className="text-[11px] text-red-700/80 mt-0.5 leading-relaxed">
+                This sub-account will be permanently removed from the system. It will no longer appear in any list and cannot log in.
+              </p>
+              <p className="text-[11px] text-green-700 font-semibold mt-1.5 leading-relaxed">
+                ✓ All {sub.reqCount} request{sub.reqCount !== 1 ? 's' : ''}, signatures, and history are fully preserved — nothing is lost.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleDelete} disabled={deleting}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black transition-all disabled:opacity-50">
+              {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+              {deleting ? 'Deleting…' : 'Yes, Delete'}
+            </button>
+            <button onClick={() => setConfirmDelete(false)} disabled={deleting}
+              className="flex-1 py-2 rounded-xl border border-border/60 text-xs font-bold text-muted-foreground hover:bg-muted/40 transition-all">
+              Cancel
+            </button>
           </div>
         </div>
       )}

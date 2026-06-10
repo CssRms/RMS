@@ -53,6 +53,7 @@ model Department {
   isSubAccount    Boolean          @default(false)
   createdByDeptId Int?
   isDisabled      Boolean          @default(false)
+  isDeleted       Boolean          @default(false)
   users           User[]
   requisitions    Requisition[]
   memos           Memo[]

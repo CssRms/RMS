@@ -472,6 +472,7 @@ export const subAccountAPI = {
   removeUser: (id, userId) => api.delete(`/sub-accounts/${id}/users/${userId}`),
   availableUsers: (parentId) => api.get('/sub-accounts/available-users', { params: parentId ? { parentId } : {} }),
   setPrivilege: (id, payload) => api.put(`/sub-accounts/${id}/privilege`, payload),
+  delete: (id) => api.delete(`/sub-accounts/${id}`),
 };
 
 export default api;
