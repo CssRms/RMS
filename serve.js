@@ -171,20 +171,21 @@ const getEffectiveReqAmount = (req) => {
   return parseFloat(req?.amount || 0);
 };
 
-// Fetch a sub-account's privilege settings from DB (raw SQL — these columns may not be in the generated Prisma client)
+// Fetch a sub-account's privilege settings from DB (raw SQL — columns may predate Prisma client regen)
 async function getSubPrivilege(deptId) {
   try {
     const rows = await prisma.$queryRaw`
-      SELECT "privilegeAmount", "memoPrivilege", "materialPrivilege"
+      SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege"
       FROM "Department" WHERE id = ${parseInt(deptId)} LIMIT 1
     `;
     const d = rows?.[0];
     return {
       privilegeAmount:   d?.privilegeAmount   ?? null,
+      cashPrivilege:     d?.cashPrivilege     ?? false,
       memoPrivilege:     d?.memoPrivilege     ?? false,
       materialPrivilege: d?.materialPrivilege ?? false,
     };
-  } catch { return { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false }; }
+  } catch { return { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false }; }
 }
 // Legacy compat — returns just the amount
 async function getSubPrivilegeAmount(deptId) {
@@ -695,8 +696,11 @@ async function canReadRequisition(requisition, user) {
 
       if (isCash) {
         const effectiveAmount = getEffectiveReqAmount(requisition);
-        const privilege = user.privilegeAmount != null ? parseFloat(user.privilegeAmount) : subPriv.privilegeAmount;
-        if (privilege != null && effectiveAmount <= privilege) return true;
+        const cashEnabled = user.cashPrivilege || subPriv.cashPrivilege || user.privilegeAmount != null || subPriv.privilegeAmount != null;
+        if (cashEnabled) {
+          const privilege = user.privilegeAmount != null ? parseFloat(user.privilegeAmount) : subPriv.privilegeAmount;
+          if (privilege == null || effectiveAmount <= privilege) return true;
+        }
       } else if (isMemo && (user.memoPrivilege || subPriv.memoPrivilege)) {
         return true;
       } else if (isMaterial && (user.materialPrivilege || subPriv.materialPrivilege)) {
@@ -2350,6 +2354,22 @@ app.put('/api/department/access-code', authenticateToken, async (req, res) => {
         details: `${dept.name} changed their own access code`
       }
     });
+
+    // Email only the account that changed its own password (use headEmail of the dept)
+    if (dept.headEmail && !dept.headEmail.endsWith('@cssgroup.local')) {
+      const { text, html } = buildEmailContent({
+        title: `Password Changed — ${dept.name}`,
+        lines: [
+          `Your login password has been successfully changed.`,
+          `Account: ${dept.name}`,
+          `Changed on: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`,
+          ``,
+          `If you did not make this change, contact your system administrator immediately.`
+        ]
+      });
+      sendEmail({ to: dept.headEmail, subject: `[RMS] Password Changed — ${dept.name}`, text, html }).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -2428,6 +2448,7 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
       ...(isAdmin ? { accessCodeLabel: s.accessCodeLabel } : {}),
       parentDept: s.parent ? { id: s.parent.id, name: s.parent.name } : null,
       privilegeAmount:   s.privilegeAmount   ?? null,
+      cashPrivilege:     s.cashPrivilege     ?? false,
       memoPrivilege:     s.memoPrivilege     ?? false,
       materialPrivilege: s.materialPrivilege ?? false
     })));
@@ -2456,6 +2477,26 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
       }
     });
     await prisma.activityLog.create({ data: { action: 'Sub-Account Created', details: `${name.trim()} created under ${parent.name}` } });
+
+    // Email parent dept head with creation details and password
+    if (parent.headEmail && !parent.headEmail.endsWith('@cssgroup.local')) {
+      const createdBy = req.user?.name || req.user?.email || 'Administrator';
+      const { text, html } = buildEmailContent({
+        title: `New Sub-Account Created — ${name.trim()}`,
+        lines: [
+          `A new sub-account has been created under your department.`,
+          `Unit Name: ${name.trim()}`,
+          `Parent Department: ${parent.name}`,
+          `Login Password: ${plainCode}`,
+          `Created by: ${createdBy}`,
+          `Date: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`,
+          ``,
+          `Please share the login password securely with the relevant unit staff. They can log in using the unit name and this password, and change it from their profile settings.`
+        ]
+      });
+      sendEmail({ to: parent.headEmail, subject: `[RMS] New Sub-Account Created — ${name.trim()}`, text, html }).catch(() => {});
+    }
+
     res.json({ id: sub.id, name: sub.name, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
   } catch (err) { sendError(res, 500, err.message); }
 });
@@ -2535,21 +2576,43 @@ app.post('/api/sub-accounts/:id/reset-code', authenticateToken, requireSubAccoun
     const hash = await bcrypt.hash(plainCode, 10);
     await prisma.department.update({ where: { id: subId }, data: { accessCodeHash: hash, accessCodeLabel: plainCode, codeChangedByDept: false } });
 
-    // Email the parent department head with the new code
-    const recipientEmail = sub.parent?.headEmail;
-    if (recipientEmail && !recipientEmail.endsWith('@cssgroup.local')) {
-      const resetBy = req.user?.name || req.user?.email || 'Administrator';
+    // Email parent dept head and sub-account (if it has headEmail) with the new password
+    const resetBy = req.user?.name || req.user?.email || 'Administrator';
+    const resetDate = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+    const parentEmail = sub.parent?.headEmail;
+    const subEmail = sub.headEmail;
+
+    if (parentEmail && !parentEmail.endsWith('@cssgroup.local')) {
       const { text, html } = buildEmailContent({
-        title: `Access Code Reset — ${sub.name}`,
+        title: `Sub-Account Password Reset — ${sub.name}`,
         lines: [
+          `The login password for one of your sub-accounts has been reset.`,
           `Unit: ${sub.name}`,
           `Parent Department: ${sub.parent?.name || '—'}`,
-          `New Access Code: ${plainCode}`,
+          `New Password: ${plainCode}`,
           `Reset by: ${resetBy}`,
-          `Please share this code securely with the relevant unit staff.`
+          `Date: ${resetDate}`,
+          ``,
+          `Please share this password securely with the unit staff. They can change it themselves from their profile settings.`
         ]
       });
-      sendEmail({ to: recipientEmail, subject: `[RMS] Access Code Reset — ${sub.name}`, text, html }).catch(() => {});
+      sendEmail({ to: parentEmail, subject: `[RMS] Sub-Account Password Reset — ${sub.name}`, text, html }).catch(() => {});
+    }
+
+    if (subEmail && !subEmail.endsWith('@cssgroup.local') && subEmail !== parentEmail) {
+      const { text, html } = buildEmailContent({
+        title: `Your Login Password Has Been Reset — ${sub.name}`,
+        lines: [
+          `Your sub-account login password has been reset by your department head.`,
+          `Account: ${sub.name}`,
+          `New Password: ${plainCode}`,
+          `Reset by: ${resetBy}`,
+          `Date: ${resetDate}`,
+          ``,
+          `You can log in with this new password. If you did not expect this reset, contact your department head immediately.`
+        ]
+      });
+      sendEmail({ to: subEmail, subject: `[RMS] Your Password Has Been Reset — ${sub.name}`, text, html }).catch(() => {});
     }
 
     res.json({ accessCode: plainCode });
@@ -2653,15 +2716,15 @@ app.get('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
     const deptId  = req.user.deptId ? parseInt(req.user.deptId) : null;
     if (!isAdmin && deptId !== sub.parentId) return res.status(403).json({ error: 'Access denied.' });
-    let priv = { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false };
+    let priv = { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false };
     try {
       const rows = await prisma.$queryRaw`
-        SELECT "privilegeAmount", "memoPrivilege", "materialPrivilege"
+        SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege"
         FROM "Department" WHERE id = ${subId} LIMIT 1
       `;
       if (rows?.[0]) {
         const r = rows[0];
-        priv = { privilegeAmount: r.privilegeAmount ?? null, memoPrivilege: r.memoPrivilege ?? false, materialPrivilege: r.materialPrivilege ?? false };
+        priv = { privilegeAmount: r.privilegeAmount ?? null, cashPrivilege: r.cashPrivilege ?? false, memoPrivilege: r.memoPrivilege ?? false, materialPrivilege: r.materialPrivilege ?? false };
       }
     } catch (_) {}
     res.json(priv);
@@ -2686,18 +2749,20 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
 
     const parsed = z.object({
       maxAmount:         z.union([z.number().min(0), z.null()]).optional(),
+      cashPrivilege:     z.boolean().optional(),
       memoPrivilege:     z.boolean().optional(),
       materialPrivilege: z.boolean().optional(),
     }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid privilege payload.' });
 
-    const { maxAmount, memoPrivilege, materialPrivilege } = parsed.data;
-    if (maxAmount === undefined && memoPrivilege === undefined && materialPrivilege === undefined)
+    const { maxAmount, cashPrivilege, memoPrivilege, materialPrivilege } = parsed.data;
+    if (maxAmount === undefined && cashPrivilege === undefined && memoPrivilege === undefined && materialPrivilege === undefined)
       return res.status(400).json({ error: 'No privilege fields provided.' });
 
     // Ensure columns exist in DB regardless of Prisma client schema version
     try {
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "privilegeAmount" DOUBLE PRECISION`;
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "cashPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "memoPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "materialPrivilege" BOOLEAN NOT NULL DEFAULT false`;
     } catch (_) {}
@@ -2706,6 +2771,7 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     const setClauses = [];
     const values = [];
     if (maxAmount !== undefined) { setClauses.push(`"privilegeAmount" = $${setClauses.length + 1}`); values.push(maxAmount === null ? null : parseFloat(maxAmount)); }
+    if (cashPrivilege !== undefined) { setClauses.push(`"cashPrivilege" = $${setClauses.length + 1}`); values.push(cashPrivilege); }
     if (memoPrivilege !== undefined) { setClauses.push(`"memoPrivilege" = $${setClauses.length + 1}`); values.push(memoPrivilege); }
     if (materialPrivilege !== undefined) { setClauses.push(`"materialPrivilege" = $${setClauses.length + 1}`); values.push(materialPrivilege); }
     values.push(subId);
@@ -2724,10 +2790,10 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
       });
     } catch (_) {}
 
-    let updated = { privilegeAmount: null, memoPrivilege: false, materialPrivilege: false };
+    let updated = { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false };
     try {
       const rows = await prisma.$queryRaw`
-        SELECT "privilegeAmount", "memoPrivilege", "materialPrivilege"
+        SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege"
         FROM "Department" WHERE id = ${subId} LIMIT 1
       `;
       if (rows?.[0]) updated = rows[0];
@@ -2813,15 +2879,20 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
       if (req.user.isSubAccount && req.user.role === 'department') {
         const subPriv = await getSubPrivilege(originDeptId);
 
-        // Cash: enforce creation limit for non-threshold dept sub-accounts
-        if (isCashPayload && !isDraft && subPriv.privilegeAmount != null) {
-          const creationLimit = parseFloat(subPriv.privilegeAmount);
-          if (!isNaN(creationLimit) && amount > creationLimit) {
-            return res.status(403).json({
-              error: `Your sub-account can only create cash requests up to ₦${creationLimit.toLocaleString()}. This request is ₦${amount.toLocaleString()}.`
-            });
+        // Cash: check toggle then enforce optional amount limit
+        if (isCashPayload && !isDraft) {
+          const cashAllowed = subPriv.cashPrivilege || req.user.cashPrivilege || subPriv.privilegeAmount != null;
+          if (!cashAllowed) {
+            return res.status(403).json({ error: 'Your sub-account does not have permission to create cash requests. Ask your department head to enable Cash Privilege.' });
           }
-          // If no privilege set at all (null) for cash → allow (no restriction)
+          if (subPriv.privilegeAmount != null) {
+            const creationLimit = parseFloat(subPriv.privilegeAmount);
+            if (!isNaN(creationLimit) && amount > creationLimit) {
+              return res.status(403).json({
+                error: `Your sub-account can only create cash requests up to ₦${creationLimit.toLocaleString()}. This request is ₦${amount.toLocaleString()}.`
+              });
+            }
+          }
         }
 
         // Memo: check toggle
@@ -5803,20 +5874,26 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
         const subPriv = await getSubPrivilege(deptId);
         const parentId = parseInt(req.user.parentDeptId);
 
-        // Cash: see requests at parent dept within amount limit
-        const cashPrivLimit = req.user.privilegeAmount != null
-          ? parseFloat(req.user.privilegeAmount)
-          : subPriv.privilegeAmount;
-        if (cashPrivLimit != null && !isNaN(cashPrivLimit)) {
+        // Cash: see requests at parent dept when cash privilege is enabled
+        const cashEnabled = req.user.cashPrivilege || subPriv.cashPrivilege || req.user.privilegeAmount != null || subPriv.privilegeAmount != null;
+        if (cashEnabled) {
+          const cashPrivLimit = req.user.privilegeAmount != null
+            ? parseFloat(req.user.privilegeAmount)
+            : subPriv.privilegeAmount;
           const cashTypes = ['Cash', 'cash', 'Cash Requisition', 'cash requisition'];
-          privilegeClause.push({
-            targetDepartmentId: parentId,
-            type: { in: cashTypes },
-            OR: [
-              { hasAuditOverride: false, amount: { lte: cashPrivLimit } },
-              { hasAuditOverride: true, auditAmount: { lte: cashPrivLimit } }
-            ]
-          });
+          if (cashPrivLimit != null && !isNaN(cashPrivLimit)) {
+            privilegeClause.push({
+              targetDepartmentId: parentId,
+              type: { in: cashTypes },
+              OR: [
+                { hasAuditOverride: false, amount: { lte: cashPrivLimit } },
+                { hasAuditOverride: true, auditAmount: { lte: cashPrivLimit } }
+              ]
+            });
+          } else {
+            // No amount limit — see all cash requests at parent dept
+            privilegeClause.push({ targetDepartmentId: parentId, type: { in: cashTypes } });
+          }
         }
 
         // Memo: see memo requests at parent dept when toggle is on

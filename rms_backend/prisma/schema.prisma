@@ -71,6 +71,7 @@ model Department {
   storeRecords         StoreRecord[]
   // Sub-account privilege delegation (set by parent dept head or admin)
   privilegeAmount      Float?
+  cashPrivilege        Boolean          @default(false)
   memoPrivilege        Boolean          @default(false)
   materialPrivilege    Boolean          @default(false)
   createdAt            DateTime         @default(now())

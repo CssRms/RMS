@@ -136,17 +136,25 @@ const UserManager = ({ sub, availableUsers, onRefresh }) => {
 const Toggle = ({ on, onChange, disabled }) => (
   <button
     type="button"
+    role="switch"
+    aria-checked={on}
     onClick={() => !disabled && onChange(!on)}
     disabled={disabled}
-    className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 disabled:opacity-40 ${on ? 'bg-primary' : 'bg-border/60'}`}
-    style={{ height: '22px', width: '40px' }}
+    className={`relative inline-flex items-center shrink-0 rounded-full border-2 border-transparent transition-all duration-200 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+      on
+        ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.15)]'
+        : 'bg-gray-200'
+    }`}
+    style={{ width: 44, height: 24 }}
   >
-    <span className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[20px]' : 'translate-x-[3px]'}`} />
+    <span className={`inline-block rounded-full bg-white shadow-sm transition-transform duration-200 ${on ? 'translate-x-[20px]' : 'translate-x-0'}`}
+      style={{ width: 20, height: 20 }} />
   </button>
 );
 
 // ── Privilege editor for one sub-account ─────────────────────────────────────
 const PrivilegeEditor = ({ sub, onRefresh }) => {
+  const [cashOn, setCashOn]             = useState(!!sub.cashPrivilege || sub.privilegeAmount != null);
   const [cashInput, setCashInput]       = useState(sub.privilegeAmount != null ? String(sub.privilegeAmount) : '');
   const [editingCash, setEditingCash]   = useState(false);
   const [memoOn, setMemoOn]             = useState(!!sub.memoPrivilege);
@@ -165,7 +173,7 @@ const PrivilegeEditor = ({ sub, onRefresh }) => {
     setSavingCash(true);
     try {
       await subAccountAPI.setPrivilege(sub.id, { maxAmount: amount });
-      toast.success(amount == null ? 'Cash privilege removed.' : `Cash limit set to ₦${amount.toLocaleString()}.`);
+      toast.success(amount == null ? 'Cash limit removed.' : `Cash limit set to ₦${amount.toLocaleString()}.`);
       setEditingCash(false);
       onRefresh();
     } catch (err) {
@@ -175,71 +183,90 @@ const PrivilegeEditor = ({ sub, onRefresh }) => {
 
   const saveToggle = async (field, value) => {
     setSavingToggles(true);
+    const labels = { cashPrivilege: 'Cash', memoPrivilege: 'Memo', materialPrivilege: 'Material' };
     try {
       await subAccountAPI.setPrivilege(sub.id, { [field]: value });
-      toast.success(`${field === 'memoPrivilege' ? 'Memo' : 'Material'} privilege ${value ? 'enabled' : 'disabled'}.`);
+      toast.success(`${labels[field] || field} requests ${value ? 'enabled' : 'disabled'}.`);
       onRefresh();
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to update.');
     } finally { setSavingToggles(false); }
   };
 
+  const handleCashToggle = (v) => {
+    setCashOn(v);
+    saveToggle('cashPrivilege', v);
+    if (!v) { setEditingCash(false); }
+  };
   const handleMemoToggle = (v) => { setMemoOn(v); saveToggle('memoPrivilege', v); };
   const handleMaterialToggle = (v) => { setMaterialOn(v); saveToggle('materialPrivilege', v); };
 
   return (
-    <div className="mt-3 border-t border-border/20 pt-3 space-y-3">
-      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+    <div className="mt-3 border-t border-border/20 pt-3 space-y-0">
+      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5 mb-2">
         <Award size={10} className="text-amber-500" /> Privilege Settings
       </p>
 
-      {/* Cash limit */}
-      <div className="space-y-1">
+      {/* Cash Requests toggle + optional limit */}
+      <div className="py-2 border-t border-border/10">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-foreground">Cash Request Limit</span>
-          {!editingCash && (
-            <button onClick={() => setEditingCash(true)}
-              className="text-[10px] font-bold text-primary hover:underline">
-              {sub.privilegeAmount != null ? 'Edit' : 'Set'}
-            </button>
-          )}
+          <div>
+            <p className="text-[11px] font-semibold text-foreground">Cash Requests</p>
+            <p className="text-[9px] text-muted-foreground/60">Can create &amp; handle cash requests</p>
+          </div>
+          <Toggle on={cashOn} onChange={handleCashToggle} disabled={savingToggles} />
         </div>
-        {!editingCash ? (
-          <p className="text-[11px] text-muted-foreground/70">
-            {sub.privilegeAmount != null
-              ? <><span className="font-black text-amber-700">≤ {fmt(sub.privilegeAmount)}</span> <span className="italic">— max amount</span></>
-              : <span className="italic">No limit set</span>}
-          </p>
-        ) : (
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 text-sm font-bold">₦</span>
-              <input type="number" min="0" step="any" value={cashInput}
-                onChange={e => setCashInput(e.target.value)} autoFocus
-                placeholder="e.g. 50000"
-                onKeyDown={e => { if (e.key === 'Enter') saveCash(); if (e.key === 'Escape') setEditingCash(false); }}
-                className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20" />
+
+        {/* Amount limit — only shown when cash is enabled */}
+        {cashOn && (
+          <div className="mt-2 pl-1 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground/70 italic">Amount limit <span className="text-muted-foreground/40">(optional)</span></span>
+              {!editingCash && (
+                <button onClick={() => setEditingCash(true)}
+                  className="text-[10px] font-bold text-primary hover:underline">
+                  {sub.privilegeAmount != null ? 'Edit limit' : 'Set limit'}
+                </button>
+              )}
             </div>
-            <button onClick={saveCash} disabled={savingCash}
-              className="p-2 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
-              {savingCash ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            </button>
-            {sub.privilegeAmount != null && (
-              <button onClick={() => { setCashInput(''); saveCash(); }} disabled={savingCash}
-                title="Remove" className="p-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
-                <Trash2 size={13} />
-              </button>
+            {!editingCash ? (
+              <p className="text-[11px] text-muted-foreground/70">
+                {sub.privilegeAmount != null
+                  ? <><span className="font-black text-amber-700">≤ {fmt(sub.privilegeAmount)}</span> <span className="italic">— max per request</span></>
+                  : <span className="italic text-muted-foreground/50">No limit — unlimited cash requests</span>}
+              </p>
+            ) : (
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 text-sm font-bold">₦</span>
+                  <input type="number" min="0" step="any" value={cashInput}
+                    onChange={e => setCashInput(e.target.value)} autoFocus
+                    placeholder="e.g. 50000"
+                    onKeyDown={e => { if (e.key === 'Enter') saveCash(); if (e.key === 'Escape') setEditingCash(false); }}
+                    className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <button onClick={saveCash} disabled={savingCash}
+                  className="p-2 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
+                  {savingCash ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                </button>
+                {sub.privilegeAmount != null && (
+                  <button onClick={() => { setCashInput(''); saveCash(); }} disabled={savingCash}
+                    title="Remove limit" className="p-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
+                    <Trash2 size={13} />
+                  </button>
+                )}
+                <button onClick={() => setEditingCash(false)}
+                  className="p-2 rounded-xl border border-border/40 text-muted-foreground">
+                  <X size={13} />
+                </button>
+              </div>
             )}
-            <button onClick={() => setEditingCash(false)}
-              className="p-2 rounded-xl border border-border/40 text-muted-foreground">
-              <X size={13} />
-            </button>
           </div>
         )}
       </div>
 
       {/* Memo toggle */}
-      <div className="flex items-center justify-between py-1 border-t border-border/10">
+      <div className="flex items-center justify-between py-2 border-t border-border/10">
         <div>
           <p className="text-[11px] font-semibold text-foreground">Memo Requests</p>
           <p className="text-[9px] text-muted-foreground/60">Can create &amp; handle memo requests</p>
@@ -248,7 +275,7 @@ const PrivilegeEditor = ({ sub, onRefresh }) => {
       </div>
 
       {/* Material toggle */}
-      <div className="flex items-center justify-between py-1 border-t border-border/10">
+      <div className="flex items-center justify-between py-2 border-t border-border/10">
         <div>
           <p className="text-[11px] font-semibold text-foreground">Material Requests</p>
           <p className="text-[9px] text-muted-foreground/60">Can create &amp; handle material requests</p>
