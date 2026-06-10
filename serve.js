@@ -1360,7 +1360,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     if (!dept) {
       recordFailedLogin(deptKey);
       console.warn(`[AUTH] Failed: ${departmentName} / ${maskSecret(accessCode)}`);
-      return res.status(401).json({ error: 'Invalid Department or Access Code' });
+      return res.status(401).json({ error: 'Invalid Department or Password' });
     }
 
     const isSuperAdmin = dept.name.toLowerCase() === 'super admin';
@@ -1395,7 +1395,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     if (!codeMatch && !matchedSubAccount) {
       recordFailedLogin(deptKey);
       console.warn(`[AUTH] Failed: ${departmentName} / ${maskSecret(accessCode)}`);
-      return res.status(401).json({ error: 'Invalid Department or Access Code' });
+      return res.status(401).json({ error: 'Invalid Department or Password' });
     }
 
     // The resolved entity is either the dept head or the matched sub-account
@@ -2326,17 +2326,17 @@ app.put('/api/departments/:id/access-code', authenticateToken, requireRoles(['gl
 app.put('/api/department/access-code', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'department' || !req.user.deptId)
-      return sendError(res, 403, 'Only department accounts can change their access code.');
+      return sendError(res, 403, 'Only department accounts can change their password.');
     const { currentCode, newCode, confirmCode } = req.body;
     if (!currentCode || !newCode) return sendError(res, 400, 'Both current and new codes are required.');
     if (newCode !== confirmCode) return sendError(res, 400, 'New codes do not match. Please re-enter.');
-    if (newCode.trim().length < 4) return sendError(res, 400, 'New access code must be at least 4 characters.');
+    if (newCode.trim().length < 4) return sendError(res, 400, 'New password must be at least 4 characters.');
     const dept = await prisma.department.findUnique({ where: { id: req.user.deptId } });
     if (!dept) return sendError(res, 404, 'Department not found.');
     const valid = dept.accessCodeHash
       ? await bcrypt.compare(currentCode.trim(), dept.accessCodeHash)
       : dept.accessCode === currentCode.trim();
-    if (!valid) return sendError(res, 401, 'The current access code you entered is incorrect.');
+    if (!valid) return sendError(res, 401, 'The current password you entered is incorrect.');
     const newHash = await bcrypt.hash(newCode.trim(), 10);
     await prisma.department.update({
       where: { id: req.user.deptId },

@@ -53,7 +53,7 @@ const LoginPagePremium = () => {
     } catch (err) {
       const status = err.response?.status;
       let msg;
-      if (status === 401) msg = err.response?.data?.error || 'Incorrect access code. Please try again.';
+      if (status === 401) msg = err.response?.data?.error || 'Incorrect password. Please try again.';
       else if (status === 429) msg = 'Too many attempts. Please wait a moment and try again.';
       else if (status >= 500) msg = 'The server is temporarily unavailable. Please try again in a few seconds.';
       else if (!navigator.onLine || err.code === 'ERR_NETWORK' || err.message === 'Network Error')
@@ -191,7 +191,7 @@ const LoginPagePremium = () => {
 
                 <div className="space-y-1 text-center">
                   <h2 className="text-2xl font-bold text-foreground tracking-tight">Sign In to Dashboard</h2>
-                  <p className="text-sm text-muted-foreground">Select your department and enter access code</p>
+                  <p className="text-sm text-muted-foreground">Select your department and enter your password</p>
                 </div>
 
                 {error && (
@@ -218,7 +218,7 @@ const LoginPagePremium = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Access Code</label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Password</label>
                     <div className="relative group">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" size={15} />
                       <input
@@ -261,7 +261,7 @@ const LoginPagePremium = () => {
                     <button type="button" onClick={() => setShowForgotCode(true)}
                       className="text-[11px] text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 group">
                       <HelpCircle size={12} className="group-hover:scale-110 transition-transform" />
-                      Forgot your access code?
+                      Forgot your password?
                     </button>
                   </div>
                 </form>
@@ -294,8 +294,8 @@ const LoginPagePremium = () => {
               <div className="w-full bg-primary/5 border border-primary/15 rounded-2xl p-5 space-y-3 text-left">
                 <p className="text-sm text-foreground font-semibold">Please reach out to 080********:</p>
                 <div className="space-y-2">
-                  {[['1','Your System Administrator — they can reset your access code immediately from the Department Manager.'],
-                    ['2','The ICT Department — they will verify your identity and issue a new code promptly.']
+                  {[['1','Your System Administrator — they can reset your password immediately from the Department Manager.'],
+                    ['2','The ICT Department — they will verify your identity and issue a new password promptly.']
                   ].map(([num, text]) => (
                     <div key={num} className="flex items-start gap-2.5">
                       <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">

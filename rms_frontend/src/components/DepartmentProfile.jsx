@@ -95,14 +95,14 @@ const DeptProfileContent = ({ user: _user }) => {
 
   const handleChangeCode = async (e) => {
     e.preventDefault();
-    if (codeForm.newCode !== codeForm.confirm) { toast.error('New codes do not match'); return; }
-    if (codeForm.newCode.length < 6) { toast.error('Code must be at least 6 characters'); return; }
+    if (codeForm.newCode !== codeForm.confirm) { toast.error('Passwords do not match'); return; }
+    if (codeForm.newCode.length < 6) { toast.error('Password must be at least 6 characters'); return; }
     setChangingCode(true);
     try {
       await deptAPI.changeDeptAccessCode(codeForm.current, codeForm.newCode, codeForm.confirm);
-      toast.success('Access code updated');
+      toast.success('Password updated');
       setCodeForm({ current: '', newCode: '', confirm: '' });
-    } catch (err) { toast.error(err.response?.data?.error || 'Failed to update code'); }
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to update password'); }
     finally { setChangingCode(false); }
   };
 
@@ -168,14 +168,14 @@ const DeptProfileContent = ({ user: _user }) => {
             </form>
           </Card>
 
-          {/* Change Access Code — available to all dept accounts including sub-accounts */}
-          {<Card title="Change Access Code" subtitle="Update your login credentials"
+          {/* Change Password — available to all dept accounts including sub-accounts */}
+          {<Card title="Change Password" subtitle="Update your login credentials"
             icon={KeyRound} iconBg="bg-amber-50" iconColor="text-amber-600">
             <form onSubmit={handleChangeCode} className="space-y-3">
               {[
-                { key: 'current', label: 'Current Code' },
-                { key: 'newCode', label: 'New Code' },
-                { key: 'confirm', label: 'Confirm New Code' },
+                { key: 'current', label: 'Current Password' },
+                { key: 'newCode', label: 'New Password' },
+                { key: 'confirm', label: 'Confirm New Password' },
               ].map(({ key, label }) => (
                 <div key={key} className="space-y-1.5">
                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</label>
@@ -202,7 +202,7 @@ const DeptProfileContent = ({ user: _user }) => {
               <button type="submit" disabled={changingCode}
                 className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-500/90 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50">
                 {changingCode ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />}
-                {changingCode ? 'Updating…' : 'Update Access Code'}
+                {changingCode ? 'Updating…' : 'Update Password'}
               </button>
             </form>
           </Card>}

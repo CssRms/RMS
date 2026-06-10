@@ -415,7 +415,7 @@ const Login = () => {
     } catch (err) {
       const s = err.response?.status;
       setError(
-        s === 401 ? (err.response?.data?.error || 'Incorrect access code. Please try again.') :
+        s === 401 ? (err.response?.data?.error || 'Incorrect password. Please try again.') :
         s === 429 ? 'Too many attempts. Please wait a moment and try again.' :
         s >= 500  ? 'Server temporarily unavailable. Please retry in a few seconds.' :
         (!navigator.onLine || err.code === 'ERR_NETWORK') ? 'No internet connection. Check your network.' :
@@ -580,7 +580,7 @@ const Login = () => {
 
                 {/* Access code */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">Access Code</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">Password</label>
                   <div className="relative group">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within:text-primary transition-colors" size={17}/>
                     <input
@@ -629,7 +629,7 @@ const Login = () => {
                   <button type="button" onClick={()=>setShowForgotCode(true)}
                     className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 group py-1">
                     <HelpCircle size={13} className="group-hover:scale-110 transition-transform"/>
-                    Forgot your access code?
+                    Forgot your password?
                   </button>
                 </div>
 
@@ -658,7 +658,7 @@ const Login = () => {
               </div>
               <div className="space-y-1.5">
                 <h3 className="text-lg font-bold text-foreground">Need Help With Your Code?</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">Contact the ICT Department to reset your access code.</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Contact the ICT Department to reset your password.</p>
               </div>
               <div className="w-full bg-primary/5 border border-primary/15 rounded-2xl p-5 text-left">
                 <div className="flex items-center gap-3 mb-3">

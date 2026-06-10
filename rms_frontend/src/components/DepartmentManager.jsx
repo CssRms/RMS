@@ -200,17 +200,17 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
 
   const handleResetCode = async () => {
     if (!newCode.trim() || newCode.trim().length < 4) {
-      toast.error('New access code must be at least 4 characters.');
+      toast.error('New password must be at least 4 characters.');
       return;
     }
     setResettingCode(true);
     try {
       await deptAPI.resetAccessCode(dept.id, newCode.trim());
-      toast.success(`Access code reset for ${dept.name}. The department will need to log in with the new code.`);
+      toast.success(`Password reset for ${dept.name}. The department will need to log in with the new password.`);
       setNewCode('');
       onSaved();
     } catch (err) {
-      toast.error(err?.response?.data?.error || 'Failed to reset access code.');
+      toast.error(err?.response?.data?.error || 'Failed to reset password.');
     } finally { setResettingCode(false); }
   };
 
@@ -289,7 +289,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
           <div className="border-t border-border/30 pt-6 space-y-4">
             <div className="flex items-center gap-2">
               <KeyRound size={14} className="text-amber-500" />
-              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em]">Reset Access Code</p>
+              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em]">Reset Password</p>
               {dept.codeChangedByDept && (
                 <span className="text-[9px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-widest">
                   Dept-modified
@@ -300,8 +300,8 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
               <Info size={12} className="shrink-0 mt-0.5" />
               <span>
                 {dept.codeChangedByDept
-                  ? `This department has changed their access code from the original. Resetting here will override their custom code.`
-                  : `Enter a new access code to replace the current one. The department will use this new code on their next login.`}
+                  ? `This department has changed their password from the original. Resetting here will override their custom password.`
+                  : `Enter a new password to replace the current one. The department will use this new password on their next login.`}
               </span>
             </div>
             <div className="flex gap-3">
@@ -311,7 +311,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
                   value={newCode}
                   onChange={e => setNewCode(e.target.value)}
                   type={showCode ? 'text' : 'password'}
-                  placeholder="New access code (min 4 chars)"
+                  placeholder="New password (min 4 chars)"
                   className="flex-1 px-3 py-3 text-sm font-mono bg-transparent outline-none"
                 />
                 <button type="button" onClick={() => setShowCode(v => !v)} className="px-3 text-muted-foreground hover:text-foreground">
@@ -843,7 +843,7 @@ const DepartmentManager = ({ onViewChange }) => {
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!newDeptData.name || !newDeptData.accessCode) {
-      toast.error('Department name and access code are required.');
+      toast.error('Department name and password are required.');
       return;
     }
     setIsProcessing(true);
@@ -950,7 +950,7 @@ const DepartmentManager = ({ onViewChange }) => {
             <div>
               <h3 className="text-base font-bold text-foreground">Corporate Hierarchy & Credentials</h3>
               <p className="text-[10px] text-muted-foreground font-medium mt-0.5">
-                Manage all units, their access codes, and official signatures in one centralized directory.
+                Manage all units, their passwords, and official signatures in one centralized directory.
               </p>
             </div>
             <div className="flex items-center gap-4">
@@ -1507,7 +1507,7 @@ const DepartmentManager = ({ onViewChange }) => {
               className="w-full bg-muted/30 border border-border/50 rounded-xl p-4 focus:ring-2 focus:ring-primary/20 outline-none" />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Access Code</label>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Password</label>
             <div className="relative">
               <input type={showAccessCode ? 'text' : 'password'} value={newDeptData.accessCode}
                 onChange={e => setNewDeptData(d => ({ ...d, accessCode: e.target.value }))}

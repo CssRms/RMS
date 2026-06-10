@@ -33,7 +33,7 @@ const CodeBox = ({ code, onDismiss }) => {
   };
   return (
     <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
-      <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">New Access Code — Copy now, it won't show again</p>
+      <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">New Password — Copy now, it won't show again</p>
       <div className="flex items-center gap-2">
         <code className="flex-1 font-mono text-lg font-black text-amber-900 tracking-[0.25em] bg-white border border-amber-200 rounded-xl px-4 py-2 text-center select-all">
           {code}
@@ -302,7 +302,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
     try {
       const res = await subAccountAPI.resetCode(sub.id);
       setNewCode(res.accessCode);
-      toast.success('New access code generated.');
+      toast.success('New password generated.');
       // Do NOT call onRefresh() here — it triggers setLoading(true) which unmounts this card
       // and destroys the newCode state before the user can copy it. Refresh happens on dismiss.
     } catch (err) {
@@ -376,7 +376,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
           <button onClick={() => setEditing(true)} title="Rename" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all">
             <Pencil size={13} />
           </button>
-          <button onClick={resetCode} disabled={resetting} title="Reset access code" className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all disabled:opacity-40">
+          <button onClick={resetCode} disabled={resetting} title="Reset password" className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all disabled:opacity-40">
             {resetting ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
           </button>
           <button onClick={toggle} disabled={toggling} title={sub.isDisabled ? 'Enable' : 'Disable'} className="p-1.5 rounded-lg transition-all disabled:opacity-40 text-muted-foreground hover:text-foreground">
@@ -400,10 +400,10 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, showParent = false, is
         </div>
       </div>
 
-      {/* Admin — permanent access code always visible */}
+      {/* Admin — permanent password always visible */}
       {isAdmin && !newCode && sub.accessCodeLabel && (
         <div className="px-4 pb-3 pt-1 flex items-center justify-between gap-3 bg-amber-50/60 border-t border-amber-100">
-          <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest shrink-0">Access Code</span>
+          <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest shrink-0">Password</span>
           <code className="font-mono text-sm font-black text-amber-900 tracking-[0.25em] flex-1 text-center select-all">{sub.accessCodeLabel}</code>
           <button
             onClick={() => { navigator.clipboard.writeText(sub.accessCodeLabel); toast.success('Code copied!'); }}
@@ -589,7 +589,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
           <p className="text-[10px] text-muted-foreground mt-0.5">
             {isAdmin
               ? 'View and manage sub-accounts across all departments.'
-              : 'Create child units that log in with their own access code and submit requests under your department.'}
+              : 'Create child units that log in with their own password and submit requests under your department.'}
           </p>
         </div>
         <button
@@ -646,7 +646,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
             </button>
           </div>
           <p className="text-[10px] text-muted-foreground italic">
-            An access code will be auto-generated and shown once. Staff members can then log in using the unit name + this code.
+            A password will be auto-generated and shown once. Staff members can then log in using the unit name + this password.
           </p>
         </div>
       )}
@@ -690,7 +690,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
       <div className="p-4 bg-muted/20 rounded-2xl border border-border/20 flex items-start gap-3">
         <ShieldAlert size={14} className="text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
-          Sub-accounts log in using their unit name and access code, exactly like a department. They can submit requests, use chat, and view their own records. You see all their activity and requests merged into your dashboard. Sub-accounts cannot create further sub-accounts.
+          Sub-accounts log in using their unit name and password, exactly like a department. They can submit requests, use chat, and view their own records. You see all their activity and requests merged into your dashboard. Sub-accounts cannot create further sub-accounts.
         </p>
       </div>
     </div>
