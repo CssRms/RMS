@@ -2015,8 +2015,10 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   // Account and Chairman always treat — they also have Forward + Return options
   const canTreat = isAccount || isChairman;
 
-  // Disbursement calculations (only relevant when canTreat)
-  const reqAmount        = parseFloat(detail?.amount || req.amount || 0);
+  // Disbursement calculations — use audit-verified amount if Audit has overridden the price
+  const reqAmount        = (detail?.hasAuditOverride && detail?.auditAmount != null)
+    ? parseFloat(detail.auditAmount)
+    : parseFloat(detail?.amount || req.amount || 0);
   const alreadyDisbursed = parseFloat(detail?.amountDisbursed || 0);
   const balanceDue       = reqAmount - alreadyDisbursed;
   const isPartialMode    = finalApprovalStatus === 'partial';
@@ -3546,12 +3548,16 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                          <AlertTriangle size={16} />
                          <span className="text-xs font-bold">Partial Payment — Balance Pending</span>
                        </div>
-                       {detail.amount > 0 && (
-                         <div className="text-[10px] text-orange-700/80 font-semibold pl-6">
-                           Paid: ₦{Number(detail.amountDisbursed || 0).toLocaleString()} of ₦{Number(detail.amount).toLocaleString()} requested
-                           {' — '}Balance: ₦{(Number(detail.amount) - Number(detail.amountDisbursed || 0)).toLocaleString()}
-                         </div>
-                       )}
+                       {detail.amount > 0 && (() => {
+                         const effAmt = (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount);
+                         const paid = Number(detail.amountDisbursed || 0);
+                         return (
+                           <div className="text-[10px] text-orange-700/80 font-semibold pl-6">
+                             Paid: ₦{paid.toLocaleString()} of ₦{effAmt.toLocaleString()} {detail.hasAuditOverride ? 'verified' : 'requested'}
+                             {' — '}Balance: ₦{(effAmt - paid).toLocaleString()}
+                           </div>
+                         );
+                       })()}
                      </div>
                    ) : detail?.finalApprovalStatus === 'treated' ? (
                      <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 space-y-1.5">
@@ -3561,13 +3567,16 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                            {detail?.treatmentType === 'adjusted' ? 'Treated (Adjusted Amount)' : 'Fully Treated'}
                          </span>
                        </div>
-                       {detail.amount > 0 && detail.amountDisbursed != null && (
-                         <div className="text-[10px] text-teal-700/80 font-semibold pl-6">
-                           Total Disbursed: ₦{Number(detail.amountDisbursed).toLocaleString()}
-                           {detail.treatmentType === 'adjusted' && ` of ₦${Number(detail.amount).toLocaleString()} requested`}
-                           {detail.treatmentReason && ` — ${detail.treatmentReason}`}
-                         </div>
-                       )}
+                       {detail.amount > 0 && detail.amountDisbursed != null && (() => {
+                         const effAmt = (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount);
+                         return (
+                           <div className="text-[10px] text-teal-700/80 font-semibold pl-6">
+                             Total Disbursed: ₦{Number(detail.amountDisbursed).toLocaleString()}
+                             {detail.treatmentType === 'adjusted' && ` of ₦${effAmt.toLocaleString()} ${detail.hasAuditOverride ? 'verified' : 'requested'}`}
+                             {detail.treatmentReason && ` — ${detail.treatmentReason}`}
+                           </div>
+                         );
+                       })()}
                      </div>
                    ) : detail?.finalApprovalStatus === 'published' ? (
                      <div className="p-3 rounded-xl bg-emerald-600/10 border border-emerald-600/20 flex items-center gap-2 text-emerald-800">

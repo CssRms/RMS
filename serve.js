@@ -4072,7 +4072,10 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
     }
 
     // Resolve disbursed amount — only relevant for 'treated' action
-    const reqAmount = requisition.amount || 0;
+    // Use audit-verified amount as the ceiling if Audit has overridden the creator's price
+    const reqAmount = (requisition.hasAuditOverride && requisition.auditAmount != null)
+      ? parseFloat(requisition.auditAmount)
+      : (requisition.amount || 0);
     const existingDisbursed = requisition.amountDisbursed || 0;
     let disbursedThisAction = null;
     let resolvedTreatmentType = treatmentType || null;
