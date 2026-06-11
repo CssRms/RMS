@@ -3987,6 +3987,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     department:           r.department?.name ?? r.department ?? r.departmentName ?? '',
     isFromSubAccount:     r.isFromSubAccount ?? (r.department?.isSubAccount === true),
     deptHeadName:         r.deptHeadName ?? r.department?.headName ?? '',
+    parentDeptName:       r.parentDeptName ?? r.department?.parent?.name ?? '',
     visibleToSubAccounts: r.visibleToSubAccounts ?? false,
     creator:              r.creator?.name ?? r.creator ?? r.creatorName ?? '',
     currentStageName:     r.currentStage?.name ?? '',
@@ -4477,13 +4478,22 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className="font-bold text-muted-foreground opacity-60 uppercase">{r.department}</span>
-                            {r.isFromSubAccount && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">UNIT</span>
+                            {r.isFromSubAccount && r.parentDeptName && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">{r.parentDeptName}</span>
+                            )}
+                            {r.isFromSubAccount && !r.parentDeptName && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">SUB</span>
                             )}
                             {r.targetDepartment?.name && (
                               <>
                                 <ArrowRight size={9} className="text-muted-foreground/30" />
                                 <span className="font-black text-primary uppercase tracking-tight">{r.targetDepartment.name}</span>
+                              </>
+                            )}
+                            {r.treatedByDept?.name && r.treatedByDept.name !== r.targetDepartment?.name && (
+                              <>
+                                <ArrowRight size={9} className="text-muted-foreground/30" />
+                                <span className="font-black text-teal-600 uppercase tracking-tight">{r.treatedByDept.name}</span>
                               </>
                             )}
                           </div>

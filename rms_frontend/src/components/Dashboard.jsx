@@ -497,6 +497,12 @@ const Dashboard = ({ onViewChange }) => {
                                   <span className="font-black text-primary uppercase tracking-tight">{r.targetDepartment.name}</span>
                                 </>
                               )}
+                              {r.treatedByDept?.name && r.treatedByDept.name !== r.targetDepartment?.name && (
+                                <>
+                                  <ArrowRight size={9} className="text-muted-foreground/30" />
+                                  <span className="font-black text-teal-600 uppercase tracking-tight">{r.treatedByDept.name}</span>
+                                </>
+                              )}
                             </div>
                           </td>
                           <td className="py-4 px-6 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
@@ -671,7 +677,7 @@ const Dashboard = ({ onViewChange }) => {
                                 <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                   {r.isFromSubAccount && (
                                     <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
-                                      UNIT · {r.department}
+                                      {r.parentDeptName || 'SUB'} · {r.department}
                                     </span>
                                   )}
                                   {r.urgency && r.urgency !== 'normal' && (

@@ -5950,8 +5950,9 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
       prisma.requisition.findMany({
         where,
         include: {
-          department: { select: { name: true, isSubAccount: true, headName: true } },
+          department: { select: { name: true, isSubAccount: true, headName: true, parent: { select: { name: true } } } },
           targetDepartment: { select: { name: true, headEmail: true } },
+          treatedByDept: { select: { name: true } },
           creator: { select: { name: true } },
           currentStage: true,
           attachments: { select: { id: true, filename: true, size: true, mimeType: true } },
