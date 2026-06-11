@@ -5393,7 +5393,12 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       // Right side: Date + Amount
       page.drawText(`Date: ${createdDate}`, { x: A4_W - margin - 200, y, size: 10, font: boldFont });
       if (isFinancial) {
-        page.drawText(`Amount: NGN ${Number(requisition.amount || 0).toLocaleString()}`, { x: A4_W - margin - 200, y: y - 18, size: 11, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
+        const _auditAmt = (requisition.hasAuditOverride && requisition.auditAmount != null) ? Number(requisition.auditAmount) : null;
+        const _displayAmt = _auditAmt ?? Number(requisition.amount || 0);
+        page.drawText(`Amount: NGN ${_displayAmt.toLocaleString()}`, { x: A4_W - margin - 200, y: y - 18, size: 11, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
+        if (_auditAmt != null) {
+          page.drawText(`Originally: NGN ${Number(requisition.amount || 0).toLocaleString()}`, { x: A4_W - margin - 200, y: y - 32, size: 8, font: italicFont, color: rgb(0.5, 0.5, 0.5) });
+        }
       }
 
       for (const f of leftFields) {
@@ -5408,8 +5413,16 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     // ══════════════════════════════════════════════════════
     // CONTENT BODY
     // ══════════════════════════════════════════════════════
+    const _hasAuditOverride = !isMemo && !!requisition.hasAuditOverride && !!requisition.auditContent;
+    let _auditOverrideParsed = null;
+    if (_hasAuditOverride) { try { _auditOverrideParsed = JSON.parse(requisition.auditContent); } catch {} }
+
     ensureSpace(60);
-    page.drawText(isMemo ? 'BODY:' : 'DESCRIPTION / CONTENT:', { x: margin, y, size: 10, font: boldFont, color: rgb(0.2, 0.2, 0.2) });
+    const _contentLabel = isMemo ? 'BODY:' : (_hasAuditOverride ? "CREATOR'S ESTIMATE (ORIGINAL):" : 'DESCRIPTION / CONTENT:');
+    page.drawText(_contentLabel, { x: margin, y, size: 10, font: boldFont, color: rgb(0.2, 0.2, 0.2) });
+    if (_hasAuditOverride) {
+      page.drawText('FOR REFERENCE', { x: margin + boldFont.widthOfTextAtSize(_contentLabel, 10) + 8, y: y + 1, size: 8, font: italicFont, color: rgb(0.5, 0.3, 0.7) });
+    }
     y -= 18;
 
     // Prefer rich HTML content (from Document Studio), fallback to plain description
@@ -5532,6 +5545,91 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         page.drawText(amtValue, { x: A4_W - margin - boldFont.widthOfTextAtSize(amtValue, 12), y, size: 12, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
         y -= 25;
       }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // AUDIT VERIFIED ITEMS TABLE
+    // ══════════════════════════════════════════════════════
+    if (_hasAuditOverride && _auditOverrideParsed?.items?.length > 0) {
+      const auditItems = _auditOverrideParsed.items;
+      const auditComment = _auditOverrideParsed.comment ? sanitizeText(_auditOverrideParsed.comment) : null;
+      const auditHdrColor = rgb(0.35, 0.1, 0.55);
+
+      y -= 10;
+      ensureSpace(30);
+      page.drawText('AUDIT VERIFIED AMOUNT', { x: margin, y, size: 10, font: boldFont, color: auditHdrColor });
+      page.drawText('EFFECTIVE FOR APPROVAL & PAYMENT', {
+        x: margin + boldFont.widthOfTextAtSize('AUDIT VERIFIED AMOUNT', 10) + 8, y: y + 1, size: 8, font: italicFont, color: auditHdrColor
+      });
+      y -= 14;
+      page.drawText('Verified by: Audit', { x: margin, y, size: 9, font: italicFont, color: rgb(0.45, 0.15, 0.65) });
+      y -= 14;
+
+      if (auditComment) { drawWrappedText(auditComment, { indent: 5, textFont: italicFont, fontSize: 9 }); y -= 5; }
+
+      const asnW = 28, adescW = 230, aqtyW = 55, aupW = 85, atotNW = 67, atotKW = 30;
+      const asnX = margin, adescX = asnX + asnW, aqtyX = adescX + adescW;
+      const aupX = aqtyX + aqtyW, atotNX = aupX + aupW, atotKX = atotNX + atotNW;
+      const atableRight = atotKX + atotKW;
+      const arowH = 18, aheaderH = 20;
+      const atableH = aheaderH + arowH * (auditItems.length + 1);
+
+      ensureSpace(atableH + 20);
+      const atableTop = y;
+
+      page.drawRectangle({ x: asnX, y: atableTop - aheaderH, width: atableRight - asnX, height: aheaderH, color: rgb(0.93, 0.88, 0.97), opacity: 1 });
+      const aborderC = auditHdrColor;
+      page.drawLine({ start: { x: asnX, y: atableTop }, end: { x: atableRight, y: atableTop }, thickness: 0.8, color: aborderC });
+      page.drawLine({ start: { x: asnX, y: atableTop - atableH }, end: { x: atableRight, y: atableTop - atableH }, thickness: 0.8, color: aborderC });
+      page.drawLine({ start: { x: asnX, y: atableTop }, end: { x: asnX, y: atableTop - atableH }, thickness: 0.8, color: aborderC });
+      page.drawLine({ start: { x: atableRight, y: atableTop }, end: { x: atableRight, y: atableTop - atableH }, thickness: 0.8, color: aborderC });
+      page.drawLine({ start: { x: asnX, y: atableTop - aheaderH }, end: { x: atableRight, y: atableTop - aheaderH }, thickness: 0.8, color: aborderC });
+      for (const colX of [adescX, aqtyX, aupX, atotNX, atotKX]) {
+        page.drawLine({ start: { x: colX, y: atableTop }, end: { x: colX, y: atableTop - atableH }, thickness: 0.5, color: rgb(0.45, 0.2, 0.6) });
+      }
+
+      const ahdrY = atableTop - aheaderH + 6;
+      page.drawText('S/N',              { x: asnX + 5,   y: ahdrY, size: 9, font: boldFont, color: auditHdrColor });
+      page.drawText('Item Description', { x: adescX + 5, y: ahdrY, size: 9, font: boldFont, color: auditHdrColor });
+      page.drawText('Quantity',         { x: aqtyX + 4,  y: ahdrY, size: 9, font: boldFont, color: auditHdrColor });
+      page.drawText('Unit Price',       { x: aupX + 5,   y: ahdrY, size: 9, font: boldFont, color: auditHdrColor });
+      page.drawText('N', { x: atotNX + atotNW / 2 - boldFont.widthOfTextAtSize('N', 9) / 2, y: ahdrY, size: 9, font: boldFont, color: auditHdrColor });
+      page.drawText('K', { x: atotKX + atotKW / 2 - boldFont.widthOfTextAtSize('K', 9) / 2, y: ahdrY, size: 9, font: boldFont, color: auditHdrColor });
+
+      const amaxDescChars = Math.floor(adescW / (font.widthOfTextAtSize('M', 9) * 0.58));
+      let arowY = atableTop - aheaderH;
+      for (let i = 0; i < auditItems.length; i++) {
+        const item = auditItems[i];
+        const unitPrice = item.amount || 0;
+        const lineTotal = item.lineTotal != null ? item.lineTotal : (item.qty || 1) * unitPrice;
+        const totNaira = Math.floor(lineTotal);
+        const totKobo = Math.round((lineTotal - totNaira) * 100);
+        arowY -= arowH;
+        page.drawLine({ start: { x: asnX, y: arowY }, end: { x: atableRight, y: arowY }, thickness: 0.3, color: rgb(0.55, 0.35, 0.7) });
+        const acellY = arowY + 5;
+        page.drawText(String(i + 1), { x: asnX + 10, y: acellY, size: 9, font });
+        const desc = sanitizeText(item.description || '');
+        page.drawText(desc.length > amaxDescChars ? desc.substring(0, amaxDescChars - 2) + '..' : desc, { x: adescX + 5, y: acellY, size: 9, font });
+        const qtyStr = String(item.qty ?? 1);
+        page.drawText(qtyStr, { x: aqtyX + aqtyW / 2 - font.widthOfTextAtSize(qtyStr, 9) / 2, y: acellY, size: 9, font });
+        const upStr = Number(Math.floor(unitPrice)).toLocaleString();
+        page.drawText(upStr, { x: aupX + aupW - font.widthOfTextAtSize(upStr, 9) - 4, y: acellY, size: 9, font });
+        const totNStr = Number(totNaira).toLocaleString();
+        page.drawText(totNStr, { x: atotNX + atotNW - font.widthOfTextAtSize(totNStr, 9) - 4, y: acellY, size: 9, font });
+        page.drawText(totKobo > 0 ? String(totKobo).padStart(2, '0') : '00', { x: atotKX + 5, y: acellY, size: 9, font });
+      }
+
+      arowY -= arowH;
+      page.drawLine({ start: { x: asnX, y: arowY + arowH }, end: { x: atableRight, y: arowY + arowH }, thickness: 0.8, color: aborderC });
+      const agrandTotal = auditItems.reduce((sum, it) => sum + (it.lineTotal != null ? it.lineTotal : (it.qty || 1) * (it.amount || 0)), 0);
+      const atotalNaira = Math.floor(agrandTotal);
+      const atotalKobo = Math.round((agrandTotal - atotalNaira) * 100);
+      const atotalLabel = 'GRAND TOTAL';
+      page.drawText(atotalLabel, { x: atotNX - boldFont.widthOfTextAtSize(atotalLabel, 10) - 8, y: arowY + 5, size: 10, font: boldFont, color: auditHdrColor });
+      const atotalNairaStr = Number(atotalNaira).toLocaleString();
+      page.drawText(atotalNairaStr, { x: atotNX + atotNW - boldFont.widthOfTextAtSize(atotalNairaStr, 10) - 4, y: arowY + 5, size: 10, font: boldFont, color: auditHdrColor });
+      page.drawText(atotalKobo > 0 ? String(atotalKobo).padStart(2, '0') : '00', { x: atotKX + 5, y: arowY + 5, size: 10, font: boldFont, color: auditHdrColor });
+      y = arowY - 15;
     }
 
     // ══════════════════════════════════════════════════════
