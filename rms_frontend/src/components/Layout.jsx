@@ -86,11 +86,17 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
       const data = await reqAPI.getRequisitions({ status: 'draft' });
       const serverDrafts = Array.isArray(data) ? data.filter(r => r.status === 'draft') : [];
 
-      // Also surface any localStorage autosaves not yet promoted to a server draft
+      // Also surface any localStorage autosaves not yet promoted to a server draft.
+      // key format: rms_autosave_${type}_${deptId} — only include keys for the current dept
+      const currentDeptId = String(user?.deptId || '');
       const localDrafts = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (!key?.startsWith('rms_autosave_')) continue;
+        // Parse deptId from key suffix and skip drafts that belong to other depts
+        const parts = key.replace('rms_autosave_', '').split('_');
+        const keyDeptId = parts[parts.length - 1];
+        if (currentDeptId && keyDeptId !== currentDeptId) continue;
         try {
           const raw = localStorage.getItem(key);
           if (!raw) continue;
@@ -100,8 +106,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
           const hasContent = snap.subject?.trim() || snap.comment?.trim() ||
             snap.items?.some(it => it.description?.trim());
           if (!hasContent) continue;
-          // key format: rms_autosave_${type}_${deptId}
-          const typeSlug = key.replace('rms_autosave_', '').split('_')[0] || 'Cash';
+          const typeSlug = parts.slice(0, -1).join('_') || 'Cash';
           localDrafts.push({
             id: `local_${key}`,
             _isLocal: true,
@@ -118,7 +123,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
       setDrafts([...serverDrafts, ...localDrafts]);
     } catch { setDrafts([]); }
     finally { setLoadingDrafts(false); }
-  }, []);
+  }, [user?.deptId]);
 
   React.useEffect(() => {
     loadDrafts();
