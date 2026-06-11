@@ -1158,122 +1158,47 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         </main>
       </div>
 
-      {/* Modern Floating Mobile App-Bar Navigation (Glassmorphism) */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md lg:hidden z-[100] animate-in slide-in-from-bottom-5 duration-500">
-        {/* Dept "More" slide-up tray — Profile (when store/studio active), Sub-Accounts, Activity */}
-        {showDeptMoreMenu && user?.role === 'department' && !user?.isSubAccount && (
-          <div className="mb-3 bg-white/90 backdrop-blur-2xl border border-white/40 rounded-[1.5rem] shadow-2xl shadow-primary/10 overflow-hidden animate-in slide-in-from-bottom-3 duration-200">
-            <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] px-4 pt-3 pb-1">More Options</p>
-            <div className={`grid ${(showStoreRecords || studioEnabled) ? 'grid-cols-3' : 'grid-cols-2'} divide-x divide-border/20`}>
-              <button onClick={() => { onViewChange('activity'); setShowDeptMoreMenu(false); }}
-                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'activity' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
-                <History size={18} />
-                Activity
-              </button>
-              <button onClick={() => { onViewChange('sub_accounts'); setShowDeptMoreMenu(false); }}
-                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'sub_accounts' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
-                <GitBranch size={18} />
-                Sub-Accounts
-              </button>
-              {(showStoreRecords || studioEnabled) && (
-                <button onClick={() => { onViewChange('dept_profile'); setShowDeptMoreMenu(false); }}
-                  className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'dept_profile' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
-                  <UserIcon size={18} />
-                  Profile
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Admin Oversight slide-up tray */}
-        {showOversightMenu && user?.role !== 'department' && (
-          <div className="mb-3 glass bg-white/80 backdrop-blur-2xl border border-white/40 rounded-[1.5rem] shadow-2xl shadow-primary/10 overflow-hidden animate-in slide-in-from-bottom-3 duration-200">
-            <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] px-4 pt-3 pb-1">Oversight Center</p>
-            <div className="grid grid-cols-3 divide-x divide-border/20">
-              <button onClick={() => { onViewChange('workflow_builder'); setShowOversightMenu(false); }}
-                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'workflow_builder' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
-                <Settings size={18} />
-                System Studio
-              </button>
-              <button onClick={() => { onViewChange('department_manager'); setShowOversightMenu(false); }}
-                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'department_manager' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
-                <Briefcase size={18} />
-                Departments
-              </button>
-              <button onClick={() => { onViewChange('audit_logs'); setShowOversightMenu(false); }}
-                className={`flex flex-col items-center gap-1 py-3 px-2 text-[10px] font-bold transition-colors ${currentView === 'audit_logs' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
-                <Activity size={18} />
-                System Audit
-              </button>
-            </div>
-          </div>
-        )}
-        <nav className="bg-[#206e33] border border-white/10 rounded-[2.5rem] flex items-center justify-around px-4 py-2 shadow-2xl shadow-black/30">
+      {/* Floating Mobile Nav — horizontally scrollable, all items always visible */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-lg lg:hidden z-[100] animate-in slide-in-from-bottom-5 duration-500">
+        <nav
+          className="bg-[#206e33] border border-white/10 rounded-[2rem] flex items-center px-3 py-1.5 gap-1 shadow-2xl shadow-black/30 overflow-x-auto"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
           {user?.role === 'department' ? (
             <>
-              <SidebarItem icon={LayoutDashboard} label="Dashboard" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
+              <SidebarItem icon={LayoutDashboard} label="Home" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
+              <SidebarItem icon={ClipboardCheck} label="Requests" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile badge={partialCount} />
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
-              {/* Center floating button: Store Records → Studio → Profile (always rendered) */}
-              {showStoreRecords ? (
-                <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-amber-600 shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('store_records')}>
-                  <Package size={20} />
-                </div>
-              ) : studioEnabled ? (
-                <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#206e33] shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('document_studio')}>
-                  <PenTool size={20} />
-                </div>
-              ) : (
-                <div
-                  className={`w-12 h-12 rounded-full shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer flex items-center justify-center ${currentView === 'dept_profile' ? 'bg-[#f97316] text-white' : 'bg-white text-[#206e33]'}`}
-                  onClick={() => onViewChange('dept_profile')}
-                  title="Profile"
-                >
-                  {deptStatus.isReady ? <Building2 size={20} /> : <ShieldAlert size={20} />}
-                </div>
+              <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
+              {!user?.isSubAccount && (
+                <SidebarItem icon={GitBranch} label="Sub-Units" active={currentView === 'sub_accounts'} onClick={() => onViewChange('sub_accounts')} mobile />
               )}
-              <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile badge={partialCount} />
-              {/* Sub-accounts: Activity only. Non-sub-account dept heads: "More" tray (Activity + Sub-Accounts + Profile if needed) */}
-              {user?.isSubAccount ? (
-                <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
-              ) : (
-                <button
-                  onClick={() => setShowDeptMoreMenu(v => !v)}
-                  className={`flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none ${
-                    ['activity', 'sub_accounts', ...(showStoreRecords || studioEnabled ? ['dept_profile'] : [])].includes(currentView) || showDeptMoreMenu
-                      ? 'text-[#f97316]' : 'text-white/60'
-                  }`}
-                >
-                  <Menu size={20} />
-                  <span className="text-[9px] font-black mt-1.5 uppercase tracking-tighter">More</span>
-                </button>
+              {studioEnabled && (
+                <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} mobile />
               )}
+              {showStoreRecords && (
+                <SidebarItem icon={Package} label="Store" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} mobile />
+              )}
+              <SidebarItem icon={deptStatus.isReady ? Building2 : ShieldAlert} label="Profile" active={currentView === 'dept_profile'} onClick={() => onViewChange('dept_profile')} mobile />
             </>
           ) : showHRPortal ? (
             <>
               <SidebarItem icon={HeartHandshake} label="HR Home" active={currentView === 'hr_dashboard'} onClick={() => onViewChange('hr_dashboard')} mobile />
               <SidebarItem icon={Users} label="People" active={currentView === 'hr_employees'} onClick={() => onViewChange('hr_employees')} mobile />
-              <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#206e33] shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('hr_leaves')}>
-                <CalendarDays size={20} />
-              </div>
+              <SidebarItem icon={CalendarDays} label="Leave" active={currentView === 'hr_leaves'} onClick={() => onViewChange('hr_leaves')} mobile />
+              <SidebarItem icon={Clock} label="Attendance" active={currentView === 'hr_attendance'} onClick={() => onViewChange('hr_attendance')} mobile />
               <SidebarItem icon={DollarSign} label="Payroll" active={currentView === 'hr_payroll'} onClick={() => onViewChange('hr_payroll')} mobile />
               <SidebarItem icon={UserPlus} label="Recruit" active={currentView === 'hr_recruitment'} onClick={() => onViewChange('hr_recruitment')} mobile />
             </>
           ) : (
             <>
-              <SidebarItem icon={LayoutDashboard} label="Dashboard" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
-              <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
-              <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#206e33] shadow-lg hover:scale-110 transition-transform active:scale-95 -translate-y-4 border-4 border-[#FAF9F6] cursor-pointer" onClick={() => onViewChange('document_studio')}>
-                <PenTool size={20} />
-              </div>
+              <SidebarItem icon={LayoutDashboard} label="Home" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
+              <SidebarItem icon={ClipboardCheck} label="Requests" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
-              <button
-                onClick={() => setShowOversightMenu(v => !v)}
-                className={`flex flex-col items-center gap-0.5 p-2 rounded-xl transition-colors ${['workflow_builder', 'department_manager', 'audit_logs'].includes(currentView) || showOversightMenu ? 'text-white' : 'text-white/40'}`}
-              >
-                <Settings size={18} />
-                <span className="text-[9px] font-bold">Oversight</span>
-              </button>
+              <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} mobile />
+              <SidebarItem icon={Settings} label="System" active={currentView === 'workflow_builder'} onClick={() => onViewChange('workflow_builder')} mobile />
+              <SidebarItem icon={Briefcase} label="Depts" active={currentView === 'department_manager'} onClick={() => onViewChange('department_manager')} mobile />
+              <SidebarItem icon={Activity} label="Audit" active={currentView === 'audit_logs'} onClick={() => onViewChange('audit_logs')} mobile />
             </>
           )}
         </nav>
