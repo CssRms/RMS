@@ -2943,8 +2943,10 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               </div>
               {(() => {
                 const fas = detail?.finalApprovalStatus;
-                const displayStatus = fas === 'partial' ? 'partial' : fas === 'treated' ? 'treated' : req.status;
-                const displayLabel  = fas === 'partial' ? 'Partial Payment' : fas === 'treated' ? 'Treated' : req.status;
+                // 'partial' has no dedicated badge below so we override here; 'treated'/'published'/'vetting'/'approved'
+                // are all covered by the explicit workflow chips below — don't duplicate them in this badge.
+                const displayStatus = fas === 'partial' ? 'partial' : req.status;
+                const displayLabel  = fas === 'partial' ? 'Partial Payment' : req.status;
                 return (
                   <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border shadow-sm ${statusColors[displayStatus] || statusColors[req.status]}`}>
                     {displayLabel}
