@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Menu, Inbox, Clock, WifiOff, RefreshCcw,
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
   HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch,
-  Package
+  Package, AlertTriangle
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
@@ -15,7 +15,7 @@ import ChatWidget from './ChatWidget';
 
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
 
-const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = false, isCollapsed = false }) => (
+const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = false, isCollapsed = false, badge = 0 }) => (
   <div
     onClick={onClick}
     onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
@@ -26,8 +26,13 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = fals
       : `flex items-center group relative px-3 py-2.5 rounded-2xl cursor-pointer transition-all duration-300 hover-shine-effect outline-none focus-electric-halo hover-orange-pulse ${isCollapsed ? 'justify-center mx-1' : 'space-x-4 mx-1'} ${active ? 'bg-white/10 text-[#f97316] shadow-lg shadow-black/20 scale-[0.98] animate-electric-pulse animate-active-hum' : 'text-white'}`
     }
   >
-    <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+    <div className={`relative transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
       <Icon size={mobile ? 20 : 18} />
+      {badge > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] bg-amber-500 text-white text-[8px] font-black rounded-full flex items-center justify-center px-0.5 shadow-sm shadow-amber-900/30 animate-pulse">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
     </div>
     {!mobile && !isCollapsed && (
       <span className="font-bold text-[13px] tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300">
@@ -947,6 +952,27 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
     localStorage.setItem('rms_sidebar_collapsed', isCollapsed);
   }, [isCollapsed]);
 
+  // ── Partial payment warning for Account dept ──────────────────────────────
+  const _isAccountDept = /\baccount\b/i.test(user?.name || '');
+  const [partialCount, setPartialCount] = useState(0);
+  useEffect(() => {
+    if (!_isAccountDept || !user?.deptId) return;
+    const userDeptId = Number(user.deptId);
+    const fetchPartials = async () => {
+      try {
+        const all = await getRequisitions({ scope: 'all' });
+        const count = all.filter(r =>
+          r.finalApprovalStatus === 'partial' &&
+          (Number(r.currentVettingDeptId) === userDeptId || Number(r.treatedByDeptId) === userDeptId)
+        ).length;
+        setPartialCount(count);
+      } catch { /* silent */ }
+    };
+    fetchPartials();
+    const t = setInterval(fetchPartials, 60000);
+    return () => clearInterval(t);
+  }, [_isAccountDept, user?.deptId]);
+
   const [hrPortalOpen, setHrPortalOpen] = useState(false);
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
@@ -1045,7 +1071,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
                 </p>
               )}
               <SidebarItem icon={LayoutDashboard} label="Dashboard" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} isCollapsed={isCollapsed} />
-              <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} isCollapsed={isCollapsed} />
+              <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} isCollapsed={isCollapsed} badge={partialCount} />
 
               {user?.role === 'department' && (
                 <SidebarItem
@@ -1206,7 +1232,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
                   {deptStatus.isReady ? <Building2 size={20} /> : <ShieldAlert size={20} />}
                 </div>
               )}
-              <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
+              <SidebarItem icon={ClipboardCheck} label="Requisitions" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile badge={partialCount} />
               {/* Sub-accounts: Activity only. Non-sub-account dept heads: "More" tray (Activity + Sub-Accounts + Profile if needed) */}
               {user?.isSubAccount ? (
                 <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />

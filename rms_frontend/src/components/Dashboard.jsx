@@ -59,6 +59,7 @@ const matchesTypeFilter = (record, filter) => {
 const Dashboard = ({ onViewChange }) => {
   const { user } = useAuth();
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, totalSpent: 0, memos: 0, memoPending: 0, memoPublished: 0 });
+  const [partialReqs, setPartialReqs] = useState([]);
   const [recentPending, setRecentPending] = useState([]);
   const [ccReqs, setCcReqs] = useState([]);
   const [ccOpen, setCcOpen] = useState(false);
@@ -99,6 +100,15 @@ const Dashboard = ({ onViewChange }) => {
       return isTargeted || needsFinal || isVetting;
     });
     setRecentPending(pendingForMe.slice(0, 10));
+
+    // Partial payment alerts for Account dept
+    if (/\baccount\b/i.test(userDeptName) && userDeptId) {
+      const partials = all.filter(r =>
+        r.finalApprovalStatus === 'partial' &&
+        (Number(r.currentVettingDeptId) === userDeptId || Number(r.treatedByDeptId) === userDeptId)
+      );
+      setPartialReqs(partials);
+    }
 
     // CC'd requisitions — tagged as observer
     if (user?.role === 'department' && userDeptId) {
@@ -238,6 +248,39 @@ const Dashboard = ({ onViewChange }) => {
               : `Monitoring CSS Group strategic operations.`}
           </p>
         </div>
+
+        {/* ── Partial payment warning banner — Account dept only ── */}
+        {partialReqs.length > 0 && (
+          <div
+            onClick={() => onViewChange('requisitions')}
+            className="cursor-pointer flex items-start gap-3 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-300 shadow-sm shadow-amber-200/50 animate-pulse-slow mb-2"
+          >
+            <div className="shrink-0 mt-0.5">
+              <AlertTriangle size={18} className="text-amber-600 animate-bounce" style={{ animationDuration: '2s' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-black text-amber-800 uppercase tracking-widest">
+                {partialReqs.length} Incomplete Partial Payment{partialReqs.length > 1 ? 's' : ''} — Action Required
+              </p>
+              <p className="text-[10px] text-amber-700/80 mt-0.5 leading-relaxed">
+                {partialReqs.length > 1
+                  ? `${partialReqs.length} requisitions have outstanding balances awaiting full disbursement.`
+                  : `"${partialReqs[0]?.title || `Req #${partialReqs[0]?.id}`}" has an outstanding balance awaiting full disbursement.`}
+                {' '}Tap to review.
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {partialReqs.slice(0, 5).map(r => (
+                  <span key={r.id} className="px-2 py-0.5 rounded-lg bg-amber-100 border border-amber-300 text-[9px] font-black text-amber-700 uppercase tracking-wide">
+                    #{r.id} · {r.title?.slice(0, 20) || 'Untitled'}{(r.title?.length || 0) > 20 ? '…' : ''}
+                  </span>
+                ))}
+                {partialReqs.length > 5 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-amber-200 text-[9px] font-black text-amber-800">+{partialReqs.length - 5} more</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
           <StatCard label="Pending Actions" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" onClick={() => onViewChange('requisitions')} />
