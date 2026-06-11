@@ -4031,13 +4031,17 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       || (isAccountDept && requisition.targetDepartmentId === userDeptId
           && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus))
       || (isAccountDept && isMaterialReq && requisition.targetDepartmentId === userDeptId)
+      // Account holds a request Audit has already reviewed (override saved) — allow treatment
+      // even when finalApprovalStatus is 'none' (Audit forwarded directly to Account)
+      || (isAccountDept && requisition.hasAuditOverride && requisition.targetDepartmentId === userDeptId)
       // Privileged Audit sub-account — parent is current vetting dept
       || (isPrivilegedVettingSub && isParentAuditDept && requisition.currentVettingDeptId === parentId)
       // Privileged Account sub-account — parent Account holds the request
       || (isPrivilegedVettingSub && isParentAccountDept
           && requisition.targetDepartmentId === parentId
           && ['approved', 'vetting', 'partial'].includes(requisition.finalApprovalStatus))
-      || (isPrivilegedVettingSub && isParentAccountDept && isMaterialReq && requisition.targetDepartmentId === parentId);
+      || (isPrivilegedVettingSub && isParentAccountDept && isMaterialReq && requisition.targetDepartmentId === parentId)
+      || (isPrivilegedVettingSub && isParentAccountDept && requisition.hasAuditOverride && requisition.targetDepartmentId === parentId);
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });

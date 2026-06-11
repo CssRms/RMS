@@ -1245,8 +1245,9 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
 
   // ── Audit must review and return before approval is unlocked (all request types) ──
   const auditDeptForGate = departments.find(d => /\baudit\b/i.test(d.name));
-  const auditHasReturned = !!auditDeptForGate && (detail?.forwardEvents || []).some(
-    e => e.action === 'returned' && e.fromDeptId === auditDeptForGate.id
+  const auditHasReturned = !!auditDeptForGate && (
+    (detail?.forwardEvents || []).some(e => e.action === 'returned' && e.fromDeptId === auditDeptForGate.id) ||
+    !!detail?.hasAuditOverride  // Audit saved a price override = they reviewed the request
   );
   const needsAuditPreReview = !auditHasReturned;
 
@@ -1713,11 +1714,19 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
 
   const blankRow = () => ({ description: '', qty: 1, amount: '' });
 
-  const [rows, setRows] = useState(() =>
-    existingOverride?.items?.length
-      ? existingOverride.items.map(i => ({ description: i.description, qty: i.qty, amount: String(i.amount) }))
-      : [blankRow()]
-  );
+  const [rows, setRows] = useState(() => {
+    if (existingOverride?.items?.length) {
+      return existingOverride.items.map(i => ({ description: i.description, qty: i.qty, amount: String(i.amount) }));
+    }
+    // Pre-fill with creator's original items so Audit edits rather than retyping
+    try {
+      const parsed = JSON.parse(req.content || '{}');
+      if (parsed.itemized && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        return parsed.items.map(i => ({ description: i.description || '', qty: i.qty || 1, amount: String(i.amount || '') }));
+      }
+    } catch { /* corrupt content — fall through */ }
+    return [blankRow()];
+  });
   const [comment, setComment] = useState(existingOverride?.comment || '');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -1986,12 +1995,19 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     (_isAccountDept && detail?.targetDepartmentId === user.deptId) ||
     (_isAccountSub && detail?.targetDepartmentId === _parentId)
   );
+  // Account holds a request that Audit has already reviewed (override saved) — allow treatment
+  // even when finalApprovalStatus is 'none' (Audit forwarded directly without returning to HR)
+  const _accountHoldsAuditReviewed = !!detail?.hasAuditOverride && (
+    (_isAccountDept && detail?.targetDepartmentId === user.deptId) ||
+    (_isAccountSub && detail?.targetDepartmentId === _parentId)
+  );
 
   const isCurrentVetter = user?.deptId && (
     currentVettingDeptId === user.deptId ||
     (_isAccountDept && detail?.targetDepartmentId === user.deptId &&
       (_fas === 'approved' || _fas === 'vetting' || _fas === 'partial')) ||
     _accountHoldsMaterial ||
+    _accountHoldsAuditReviewed ||
     // Privileged Audit sub-account — parent dept is current vetter
     (_isAuditSub && currentVettingDeptId === _parentId) ||
     // Privileged Account sub-account — parent Account holds the request
@@ -2008,8 +2024,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
 
   // Only the active vetting dept sees this panel
   if (!isCurrentVetter) return null;
-  // Allow Material requests at Account through even when finalApprovalStatus is 'none'
-  if (!_accountHoldsMaterial && (!finalApprovalStatus || finalApprovalStatus === 'none')) return null;
+  // Allow Material/Audit-reviewed requests at Account through even when finalApprovalStatus is 'none'
+  if (!_accountHoldsMaterial && !_accountHoldsAuditReviewed && (!finalApprovalStatus || finalApprovalStatus === 'none')) return null;
   if (finalApprovalStatus === 'treated') return null;
 
   // Account and Chairman always treat — they also have Forward + Return options
