@@ -2064,8 +2064,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
     : 'Approving Authority';
   const returnDestLabel = finalApproverDeptName;
 
-  // For Account: treatment gated by treatInitiated + paymentType; comment not required
-  const accountTreatCanAct = isAccount && treatInitiated && !!paymentType && (!hasAmount || inputIsValid);
+  // For Account: treatment gated by treatInitiated only; type is auto-resolved by backend from amount
+  const accountTreatCanAct = isAccount && treatInitiated && (!hasAmount || inputIsValid);
   const canAct = isAccount
     ? accountTreatCanAct
     : (comment.trim().length > 0
@@ -2084,8 +2084,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
         if (result !== null) toast.success(vetChecked ? 'Vetted & forwarded.' : 'Forwarded.');
       } else if (action === 'treated') {
         const disbursed = hasAmount && !isNaN(parsedInput) ? parsedInput : undefined;
-        // Account uses simple full/partial; others use existing treatChoice logic
-        const type = isAccount ? paymentType : (!isUnderpaying ? 'full' : treatChoice);
+        // For Account: do NOT send treatmentType — backend auto-determines from amount vs balance
+        // For Chairman: use existing treatChoice logic
+        const type = isAccount ? undefined : (!isUnderpaying ? 'full' : treatChoice);
         const reason = (!isAccount && treatChoice === 'adjusted')
           ? (treatReason === 'other' ? treatReasonCustom : treatReason) || undefined
           : undefined;
@@ -2099,9 +2100,11 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
           treatmentReason: reason,
         });
         if (result !== null) {
-          if (type === 'partial') toast.success(`Partial payment of ₦${disbursed?.toLocaleString()} recorded. Balance pending.`);
-          else if (type === 'adjusted') toast.success(`Requisition treated with adjusted amount ₦${disbursed?.toLocaleString()}.`);
-          else toast.success('Requisition fully treated!');
+          // Determine what actually happened for the toast
+          const wasFullyPaid = !hasAmount || (disbursed != null && disbursed >= balanceDue);
+          if (type === 'adjusted') toast.success(`Requisition treated with adjusted amount ₦${disbursed?.toLocaleString()}.`);
+          else if (wasFullyPaid) toast.success('Requisition fully treated!');
+          else toast.success(`Partial payment of ₦${disbursed?.toLocaleString()} recorded. Balance pending.`);
         }
       } else if (action === 'return') {
         result = await vettingActionRequisition(req.id, { action: 'return', comment, file: file || undefined, vetted: vetChecked });
@@ -2132,7 +2135,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             <input
               type="checkbox"
               checked={treatInitiated}
-              onChange={e => { setTreatInitiated(e.target.checked); setPaymentType(''); setAmountInput(''); }}
+              onChange={e => { setTreatInitiated(e.target.checked); setAmountInput(''); }}
               className="w-4 h-4 rounded accent-emerald-600 cursor-pointer shrink-0"
             />
             <div>
@@ -2157,34 +2160,6 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
                   Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
                 </div>
               )}
-
-              {/* Payment type selection */}
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Payment Type</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className={`flex items-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${paymentType === 'full' ? 'border-emerald-500 bg-emerald-50' : 'border-border/50 bg-white hover:border-emerald-300'}`}>
-                    <input type="radio" name="accountPayType" value="full" checked={paymentType === 'full'}
-                      onChange={() => setPaymentType('full')} className="accent-emerald-600 shrink-0" />
-                    <div>
-                      <span className="text-[11px] font-black text-foreground block">Full Payment</span>
-                      <span className="text-[9px] text-muted-foreground">Closes the request</span>
-                    </div>
-                  </label>
-                  <label className={`flex items-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${paymentType === 'partial' ? 'border-amber-500 bg-amber-50' : 'border-border/50 bg-white hover:border-amber-300'}`}>
-                    <input type="radio" name="accountPayType" value="partial" checked={paymentType === 'partial'}
-                      onChange={() => setPaymentType('partial')} className="accent-amber-600 shrink-0" />
-                    <div>
-                      <span className="text-[11px] font-black text-foreground block">Partial Payment</span>
-                      <span className="text-[9px] text-muted-foreground">Can revisit later</span>
-                    </div>
-                  </label>
-                </div>
-                {paymentType === 'partial' && (
-                  <p className="text-[10px] text-amber-700 font-semibold px-1">
-                    Status will show as <span className="font-black">Inconclusive / Partial</span> — Account can revisit to complete.
-                  </p>
-                )}
-              </div>
 
               {/* Amount input */}
               {hasAmount && (
@@ -2233,17 +2208,29 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
                 )}
               </div>
 
+              {/* System-decided payment type indicator */}
+              {hasAmount && parsedInput > 0 && inputIsValid && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold ${parsedInput >= balanceDue ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                  {parsedInput >= balanceDue
+                    ? <><CheckCircle2 size={12} className="shrink-0 text-emerald-600" /> Full payment — request will be closed as <span className="font-black ml-1">Fully Treated</span>.</>
+                    : <><AlertTriangle size={12} className="shrink-0 text-amber-500" /> Partial payment — request stays open. Balance: <span className="font-black ml-1">₦{(balanceDue - parsedInput).toLocaleString()}</span></>
+                  }
+                </div>
+              )}
+
               {/* Confirm Treatment button */}
               <button
                 onClick={() => act('treated')}
                 disabled={acting || !accountTreatCanAct}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+                className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm ${hasAmount && parsedInput > 0 && parsedInput < balanceDue ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
                 {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                {paymentType === 'partial'
-                  ? `Record Partial Payment${hasAmount && parsedInput ? ` — ₦${parsedInput.toLocaleString()}` : ''}`
+                {hasAmount && parsedInput > 0 && parsedInput < balanceDue
+                  ? `Record Partial Payment — ₦${parsedInput.toLocaleString()}`
+                  : hasAmount && parsedInput > 0
+                  ? `Confirm Full Payment — ₦${parsedInput.toLocaleString()}`
                   : isPartialMode
-                  ? `Complete Treatment${hasAmount && parsedInput ? ` (₦${parsedInput.toLocaleString()})` : ''}`
-                  : `Confirm Full Payment${hasAmount && parsedInput ? ` — ₦${parsedInput.toLocaleString()}` : ''}`}
+                  ? 'Complete Treatment'
+                  : 'Confirm Treatment'}
               </button>
             </div>
           )}
