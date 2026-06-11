@@ -3507,14 +3507,16 @@ app.post('/api/requisitions/:id/creator-comment', authenticateToken, async (req,
   } catch (error) { sendError(res, 500, error.message); }
 });
 
-// ── KIV (Keep In View) — holder puts request on hold ──────────────────────────
+// ── KIV (Keep In View) — holder or ICC puts request on hold ───────────────────
 app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
-    if (await blockIfIccFrozen(reqId, res)) return;
     const { note } = req.body || {};
     const userDeptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const isIcc = isIccDept(req.user?.name);
+    // ICC acts immediately on any request; non-ICC blocked when frozen
+    if (!isIcc && await blockIfIccFrozen(reqId, res)) return;
     const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
     const isHolder = userDeptId && (
@@ -3522,7 +3524,7 @@ app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
       requisition.currentVettingDeptId === userDeptId ||
       requisition.finalApprovedByDeptId === userDeptId
     );
-    if (!isAdmin && !isHolder) return res.status(403).json({ error: 'Only the current holder may KIV this request.' });
+    if (!isAdmin && !isIcc && !isHolder) return res.status(403).json({ error: 'Only the current holder may KIV this request.' });
     await prisma.requisition.update({
       where: { id: reqId },
       data: { isKIV: true, kivNote: note || null, kivAt: new Date(), kivByName: req.user?.name || null }
@@ -3535,9 +3537,10 @@ app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
 app.post('/api/requisitions/:id/un-kiv', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
-    if (await blockIfIccFrozen(reqId, res)) return;
     const userDeptId = req.user?.deptId ? parseInt(req.user.deptId) : null;
     const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const isIcc = isIccDept(req.user?.name);
+    if (!isIcc && await blockIfIccFrozen(reqId, res)) return;
     const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
     const isHolder = userDeptId && (
@@ -3545,7 +3548,7 @@ app.post('/api/requisitions/:id/un-kiv', authenticateToken, async (req, res) => 
       requisition.currentVettingDeptId === userDeptId ||
       requisition.finalApprovedByDeptId === userDeptId
     );
-    if (!isAdmin && !isHolder) return res.status(403).json({ error: 'Not authorized.' });
+    if (!isAdmin && !isIcc && !isHolder) return res.status(403).json({ error: 'Not authorized.' });
     await prisma.requisition.update({
       where: { id: reqId },
       data: { isKIV: false, kivNote: null, kivAt: null, kivByName: null }
@@ -6052,7 +6055,7 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
       prisma.requisition.findMany({
         where,
         include: {
-          department: { select: { name: true, isSubAccount: true, headName: true, parent: { select: { name: true } } } },
+          department: { select: { name: true, isSubAccount: true, headName: true, parentId: true, parent: { select: { name: true } } } },
           targetDepartment: { select: { name: true, headEmail: true } },
           treatedByDept: { select: { name: true } },
           creator: { select: { name: true } },

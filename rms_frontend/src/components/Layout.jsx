@@ -1194,8 +1194,15 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
             <>
               <SidebarItem icon={LayoutDashboard} label="Home" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
               <SidebarItem icon={ClipboardCheck} label="Requests" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
+              <SidebarItem icon={GitBranch} label="Sub-Units" active={currentView === 'sub_accounts'} onClick={() => onViewChange('sub_accounts')} mobile />
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
-              <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} mobile />
+              <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
+              {studioEnabled && (
+                <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} mobile />
+              )}
+              {showStoreRecords && (
+                <SidebarItem icon={Package} label="Store" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} mobile />
+              )}
               <SidebarItem icon={Settings} label="System" active={currentView === 'workflow_builder'} onClick={() => onViewChange('workflow_builder')} mobile />
               <SidebarItem icon={Briefcase} label="Depts" active={currentView === 'department_manager'} onClick={() => onViewChange('department_manager')} mobile />
               <SidebarItem icon={Activity} label="Audit" active={currentView === 'audit_logs'} onClick={() => onViewChange('audit_logs')} mobile />

@@ -64,6 +64,7 @@ const normalizeRequisitionList = (rawList) => rawList.map(r => ({
   department:       r.department?.name || r.department || r.departmentName,
   isFromSubAccount: r.department?.isSubAccount === true, // preserve before department is flattened to string
   deptHeadName:     r.department?.headName ?? '',
+  parentDeptId:     r.department?.parentId ?? null,     // parent dept ID for sub-accounts
   parentDeptName:   r.parentDeptName ?? r.department?.parent?.name ?? '', // parent dept name for sub-accounts
   creator:          r.creator?.name || r.creator || r.creatorName,
   currentStageName: r.currentStage?.name || r.currentStageName

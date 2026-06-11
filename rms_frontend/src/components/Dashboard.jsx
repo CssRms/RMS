@@ -115,11 +115,11 @@ const Dashboard = ({ onViewChange }) => {
       const cc = all.filter(r => isOperationalRequisition(r) && Array.isArray(r.tags) && r.tags.some(t => Number(t.deptId) === userDeptId));
       setCcReqs(cc);
 
-      // My outgoing requests — created by this dept OR by one of its sub-units
+      // My outgoing requests — created by this dept OR by one of its own sub-units
       const mine = all.filter(r =>
         Number(r.departmentId) === userDeptId ||
         Number(r.creatorDeptId) === userDeptId ||
-        (r.isFromSubAccount === true && !user?.isSubAccount)
+        (r.isFromSubAccount === true && !user?.isSubAccount && Number(r.parentDeptId) === userDeptId)
       );
       const submitted = mine.filter(r => r.status !== 'draft');
       const inProgress = submitted.filter(r => !['treated', 'published', 'rejected'].includes(r.finalApprovalStatus) && r.status !== 'rejected');
@@ -720,7 +720,7 @@ const Dashboard = ({ onViewChange }) => {
                                 <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                   {r.isFromSubAccount && (
                                     <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
-                                      {r.parentDeptName || 'SUB'} · {r.department}
+                                      {r.department}{r.parentDeptName ? ` · ${r.parentDeptName}` : ''}
                                     </span>
                                   )}
                                   {r.urgency && r.urgency !== 'normal' && (

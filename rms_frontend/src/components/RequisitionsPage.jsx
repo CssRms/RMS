@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze } from '../lib/store';
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -1538,12 +1538,16 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
 const IccObserverPanel = ({ req, detail, onDone }) => {
   const [comment, setComment] = useState('');
   const [freezeNote, setFreezeNote] = useState('');
+  const [kivNote, setKivNote] = useState('');
   const [showFreezeForm, setShowFreezeForm] = useState(false);
+  const [showKivForm, setShowKivForm] = useState(false);
   const [posting, setPosting] = useState(false);
   const [freezing, setFreezing] = useState(false);
   const [unfreezing, setUnfreezing] = useState(false);
+  const [kivActing, setKivActing] = useState(false);
 
   const frozen = !!detail?.iccFrozen;
+  const onKiv = !!(detail?.isKIV ?? req?.isKIV);
 
   const handleComment = async () => {
     if (!comment.trim()) { toast.error('Please enter a comment.'); return; }
@@ -1696,6 +1700,73 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
               </div>
             )}
           </div>
+        )}
+
+        {/* KIV section */}
+        <div className="w-full h-px bg-border/30 my-3"/>
+        {onKiv ? (
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-violet-50 border border-violet-200">
+            <BookMarked size={12} className="text-violet-600 shrink-0"/>
+            <span className="flex-1 text-[11px] font-bold text-violet-700">
+              On Hold (KIV — ICC){(detail?.kivNote || req?.kivNote) ? ` — ${detail?.kivNote || req?.kivNote}` : ''}
+            </span>
+            <button
+              onClick={async () => {
+                setKivActing(true);
+                try { await unKivRequisition(req.id); toast.success('KIV lifted — request can proceed.'); onDone(); }
+                catch (err) { toast.error(err?.response?.data?.error || 'Could not lift KIV.'); }
+                finally { setKivActing(false); }
+              }}
+              disabled={kivActing}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black transition-all disabled:opacity-50"
+            >
+              {kivActing ? <Loader2 size={10} className="animate-spin"/> : <BookMarked size={10}/>}
+              Resume
+            </button>
+          </div>
+        ) : (
+          !showKivForm ? (
+            <button
+              onClick={() => setShowKivForm(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-xs font-bold hover:bg-violet-100 transition-all w-full justify-center"
+            >
+              <BookMarked size={12}/> Place on Hold (KIV)
+            </button>
+          ) : (
+            <div className="space-y-2 p-3 rounded-xl bg-violet-50 border border-violet-200">
+              <p className="text-[10px] font-black text-violet-800 uppercase tracking-wide flex items-center gap-1.5">
+                <BookMarked size={10}/> ICC Keep-In-View — takes effect immediately
+              </p>
+              <textarea
+                value={kivNote}
+                onChange={e => setKivNote(e.target.value)}
+                rows={2}
+                placeholder="Optional reason for placing on hold…"
+                className="w-full text-xs border border-violet-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none bg-white"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    setKivActing(true);
+                    try { await kivRequisition(req.id, kivNote.trim() || null); toast.success('Request placed on KIV hold by ICC.'); setShowKivForm(false); setKivNote(''); onDone(); }
+                    catch (err) { toast.error(err?.response?.data?.error || 'Could not KIV request.'); }
+                    finally { setKivActing(false); }
+                  }}
+                  disabled={kivActing}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+                >
+                  {kivActing ? <Loader2 size={12} className="animate-spin"/> : <BookMarked size={12}/>}
+                  {kivActing ? 'Placing hold…' : 'Confirm KIV Hold'}
+                </button>
+                <button
+                  onClick={() => { setShowKivForm(false); setKivNote(''); }}
+                  className="px-4 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-bold hover:bg-muted transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )
         )}
       </div>
     </div>
@@ -4496,11 +4567,10 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className="font-bold text-muted-foreground opacity-60 uppercase">{r.department}</span>
-                            {r.isFromSubAccount && r.parentDeptName && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">{r.parentDeptName}</span>
-                            )}
-                            {r.isFromSubAccount && !r.parentDeptName && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">SUB</span>
+                            {r.isFromSubAccount && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
+                                {r.parentDeptName || 'Sub-Unit'}
+                              </span>
                             )}
                             {r.targetDepartment?.name && (
                               <>
