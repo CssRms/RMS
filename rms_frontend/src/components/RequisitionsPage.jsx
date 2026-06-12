@@ -4574,7 +4574,17 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           {isMoneyReq ? (
-                            <span className="text-[12px] font-black text-foreground font-mono">₦{Number(r.amount || 0).toLocaleString()}</span>
+                            r.hasAuditOverride && r.auditAmount != null ? (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[12px] font-black text-purple-700 font-mono">₦{Number(r.auditAmount).toLocaleString()}</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(r.amount || 0).toLocaleString()}</span>
+                                  <span className="px-1 py-0.5 rounded text-[7px] font-black bg-purple-100 border border-purple-200 text-purple-600 uppercase tracking-wide">Audit</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-[12px] font-black text-foreground font-mono">₦{Number(r.amount || 0).toLocaleString()}</span>
+                            )
                           ) : (
                             <span className="text-[10px] text-muted-foreground/50 italic">Non-financial</span>
                           )}
