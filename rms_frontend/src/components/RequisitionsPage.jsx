@@ -4502,7 +4502,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                       <th className="pb-3 px-4 w-8">
                         <input type="checkbox" className="rounded-md border-border/50 text-primary focus:ring-primary" checked={filtered.length > 0 && selectedIds.length === filtered.length} onChange={toggleAll} />
                       </th>
-                      <th className="pb-3 px-4">Reference</th>
+                      <th className="pb-3 px-4">S/N</th>
                       <th className="pb-3 px-4">Module Type</th>
                       <th className="pb-3 px-4">Registry Item</th>
                       <th className="pb-3 px-4">Payload</th>
