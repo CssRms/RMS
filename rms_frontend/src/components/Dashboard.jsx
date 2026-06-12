@@ -718,11 +718,16 @@ const Dashboard = ({ onViewChange }) => {
                               <td className="py-3 px-4 bg-blue-50/30 border-y border-blue-100/60 group-hover:bg-blue-50/60 transition-colors max-w-[200px]">
                                 <p className="text-[11px] font-bold text-foreground truncate">{r.title}</p>
                                 <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                                  {r.isFromSubAccount && (
-                                    <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
-                                      {r.department}{r.parentDeptName ? ` · ${r.parentDeptName}` : ''}
-                                    </span>
-                                  )}
+                                  {r.isFromSubAccount && (() => {
+                                    const subDept = departments.find(d => d.id === r.departmentId);
+                                    const parentDept = subDept?.parentId ? departments.find(d => d.id === subDept.parentId) : null;
+                                    const pName = parentDept?.name || r.parentDeptName || null;
+                                    return (
+                                      <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
+                                        {r.department}{pName ? ` · ${pName}` : ''}
+                                      </span>
+                                    );
+                                  })()}
                                   {r.urgency && r.urgency !== 'normal' && (
                                     <span className={`text-[8px] font-black uppercase ${urgencyColors[r.urgency]}`}>{r.urgency}</span>
                                   )}

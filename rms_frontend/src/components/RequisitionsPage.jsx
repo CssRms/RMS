@@ -4567,11 +4567,14 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className="font-bold text-muted-foreground opacity-60 uppercase">{r.department}</span>
-                            {r.isFromSubAccount && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
-                                {r.parentDeptName || 'Sub-Unit'}
-                              </span>
-                            )}
+                            {r.isFromSubAccount && (() => {
+                              const subDept = departments.find(d => d.id === r.departmentId);
+                              const parentDept = subDept?.parentId ? departments.find(d => d.id === subDept.parentId) : null;
+                              const pName = parentDept?.name || r.parentDeptName || null;
+                              return pName ? (
+                                <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">{pName}</span>
+                              ) : null;
+                            })()}
                             {r.targetDepartment?.name && (
                               <>
                                 <ArrowRight size={9} className="text-muted-foreground/30" />
