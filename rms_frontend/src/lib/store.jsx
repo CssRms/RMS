@@ -66,6 +66,7 @@ const normalizeRequisitionList = (rawList) => rawList.map(r => ({
   deptHeadName:     r.department?.headName ?? '',
   parentDeptId:     r.department?.parentId ?? null,     // parent dept ID for sub-accounts
   parentDeptName:   r.parentDeptName ?? r.department?.parent?.name ?? '', // parent dept name for sub-accounts
+  refCode:          r.refCode ?? null,
   creator:          r.creator?.name || r.creator || r.creatorName,
   currentStageName: r.currentStage?.name || r.currentStageName
 }));

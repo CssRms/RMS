@@ -4503,6 +4503,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         <input type="checkbox" className="rounded-md border-border/50 text-primary focus:ring-primary" checked={filtered.length > 0 && selectedIds.length === filtered.length} onChange={toggleAll} />
                       </th>
                       <th className="pb-3 px-4">S/N</th>
+                      <th className="pb-3 px-4">Reference</th>
                       <th className="pb-3 px-4">Module Type</th>
                       <th className="pb-3 px-4">Registry Item</th>
                       <th className="pb-3 px-4">Payload</th>
@@ -4528,6 +4529,13 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                             <span className="text-[10px] font-black text-primary tracking-widest">#{r.id}</span>
                             <span className="text-[9px] text-muted-foreground/60 font-mono italic">{new Date(r.createdAt).toLocaleDateString()}</span>
                           </div>
+                        </td>
+                        <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors max-w-[180px]">
+                          {r.refCode ? (
+                            <span className="text-[9px] font-mono font-bold text-primary/80 tracking-tight break-all">{r.refCode}</span>
+                          ) : (
+                            <span className="text-[9px] text-muted-foreground/30 italic">—</span>
+                          )}
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="flex items-center gap-2">

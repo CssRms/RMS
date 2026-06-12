@@ -202,6 +202,50 @@ function subPrivilegeCoversCash(user, effectiveAmount) {
 // ── ICC helpers ───────────────────────────────────────────────────────────────
 const isIccDept = (name) => /\bicc\b|internal.*control|control.*compliance/i.test(name || '');
 
+// ── Reference Code Generator ──────────────────────────────────────────────────
+const deriveCode = (name) => {
+  const words = (name || '').trim().split(/[\s&\/,\-]+/).filter(w => w.length > 1);
+  if (!words.length) return (name || 'UNK').slice(0, 4).toUpperCase();
+  return words.map(w => w[0]).join('').toUpperCase().slice(0, 6);
+};
+
+const buildRefCode = async (type, deptId, isDraft) => {
+  if (isDraft) return null;
+  try {
+    const [orgRow, cashRow, matRow, memoRow] = await Promise.all([
+      prisma.systemSetting.findUnique({ where: { key: 'ref_org_prefix' } }),
+      prisma.systemSetting.findUnique({ where: { key: 'ref_type_cash' } }),
+      prisma.systemSetting.findUnique({ where: { key: 'ref_type_material' } }),
+      prisma.systemSetting.findUnique({ where: { key: 'ref_type_memo' } }),
+    ]);
+    const orgPrefix    = orgRow?.value  || 'CSSG';
+    const typeCash     = cashRow?.value || 'FR';
+    const typeMaterial = matRow?.value  || 'MR';
+    const typeMemo     = memoRow?.value || 'MO';
+    const t = (type || '').toLowerCase();
+    const typeCode = (t.includes('memo') || t.includes('memorandum')) ? typeMemo
+                   : t.includes('material') ? typeMaterial
+                   : typeCash;
+    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { name: true, code: true } });
+    const deptCode = dept?.code || deriveCode(dept?.name || '');
+    const now = new Date();
+    const dd   = String(now.getDate()).padStart(2, '0');
+    const mm   = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const datePart = `${dd}${mm}${yyyy}`;
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const countToday = await prisma.requisition.count({
+      where: { createdAt: { gte: startOfDay, lte: endOfDay }, refCode: { not: null } }
+    });
+    const seq = String(countToday + 1).padStart(2, '0');
+    return `${orgPrefix}/${deptCode}/${typeCode}/${datePart}/${seq}`;
+  } catch (e) {
+    console.error('[REF CODE]', e.message);
+    return null;
+  }
+};
+
 // Blocks any mutating action on a frozen request. Returns true (and sends 403) if frozen.
 async function blockIfIccFrozen(reqId, res) {
   try {
@@ -2966,6 +3010,7 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
       const isAdminOriginated = normalizeRole(req.user.role) === 'global_admin';
       const useWorkflow = !targetDepartmentId || isAdminOriginated;
 
+      const refCode = await buildRefCode(recordType, originDeptId, isDraft);
       const created = await prisma.requisition.create({
         data: {
           clientId,
@@ -2982,6 +3027,7 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
           lastActionById: creatorId,
           lastActionAt: new Date(),
           targetDepartmentId: isDraft ? null : targetDepartmentId,
+          refCode: refCode || null,
         }
       });
 
@@ -3389,6 +3435,39 @@ app.put('/api/system-settings/:key', authenticateToken, async (req, res) => {
     `;
     res.json({ key: req.params.key, value });
   } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ── Reference Code Pattern Settings ──────────────────────────────────────────
+app.get('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
+  if (normalizeRole(req.user?.role) !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const keys = ['ref_org_prefix', 'ref_type_cash', 'ref_type_material', 'ref_type_memo'];
+    const rows = await prisma.systemSetting.findMany({ where: { key: { in: keys } } });
+    const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    res.json({
+      orgPrefix:    map.ref_org_prefix    || 'CSSG',
+      typeCash:     map.ref_type_cash     || 'FR',
+      typeMaterial: map.ref_type_material || 'MR',
+      typeMemo:     map.ref_type_memo     || 'MO',
+    });
+  } catch (e) { sendError(res, 500, e.message); }
+});
+
+app.patch('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
+  if (normalizeRole(req.user?.role) !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const { orgPrefix, typeCash, typeMaterial, typeMemo } = req.body || {};
+    const updates = [
+      { key: 'ref_org_prefix',    value: String(orgPrefix    || 'CSSG').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'CSSG' },
+      { key: 'ref_type_cash',     value: String(typeCash     || 'FR'  ).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'FR'   },
+      { key: 'ref_type_material', value: String(typeMaterial || 'MR'  ).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'MR'   },
+      { key: 'ref_type_memo',     value: String(typeMemo     || 'MO'  ).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'MO'   },
+    ];
+    await Promise.all(updates.map(u =>
+      prisma.systemSetting.upsert({ where: { key: u.key }, update: { value: u.value }, create: u })
+    ));
+    res.json({ ok: true });
+  } catch (e) { sendError(res, 500, e.message); }
 });
 
 // ── Print Access Settings ─────────────────────────────────────────────────────
@@ -5366,8 +5445,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
     if (isMemo) {
       // Memo-style header
+      const memoRef = requisition.refCode || `CSSG/${deptCode}/MO/${String(id).padStart(3, '0')}`;
       const memoFields = [
-        { label: 'REF:', value: `CSSG/${deptCode}/MO/${String(id).padStart(3, '0')}` },
+        { label: 'REF:', value: memoRef },
         { label: 'DATE:', value: createdDate },
         { label: 'TO:', value: toDeptName },
         { label: 'FROM:', value: fromDeptName },
@@ -5384,8 +5464,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     } else {
       // Requisition Voucher header
       const creatorName = sanitizeText(requisition.department?.headName || '');
+      const refValue = requisition.refCode || `#${id}`;
       const leftFields = [
-        { label: 'Voucher No:', value: `#${id}` },
+        { label: 'Reference No:', value: refValue },
         { label: 'From:', value: sanitizeText(requisition.department?.name || 'Origin Department') },
         { label: 'To:', value: sanitizeText(externalDepts.length > 0 ? externalDepts.map(d => d.name).join('/') : (requisition.targetDepartment?.name || 'Processing Department')) },
         { label: 'Title:', value: sanitizeText(requisition.title || 'Untitled') },

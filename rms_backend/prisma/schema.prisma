@@ -162,6 +162,9 @@ model Requisition {
   iccFreezeAt   DateTime?
   iccFreezeBy   String?
 
+  // Auto-generated reference code: CSSG/ISAC/FR/24032026/01
+  refCode   String?
+
   // Audit / Vetting Price Override — vetting dept can supply their own verified items table
   // which supersedes the creator's estimate for threshold decisions and payment
   hasAuditOverride  Boolean  @default(false)

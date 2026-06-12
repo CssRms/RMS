@@ -199,7 +199,13 @@ export const settingsAPI = {
   },
   async set(key, value) {
     return api.put(`/system-settings/${key}`, { value });
-  }
+  },
+  async getRefPattern() {
+    return api.get('/settings/ref-pattern');
+  },
+  async setRefPattern(data) {
+    return api.patch('/settings/ref-pattern', data);
+  },
 };
 
 export const reqAPI = {

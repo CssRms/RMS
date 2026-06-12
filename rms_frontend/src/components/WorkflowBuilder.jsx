@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor } from 'lucide-react';
+import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash } from 'lucide-react';
 
 const WorkflowStage = ({ stage, onUpdate, onDelete, isFirst }) => {
   return (
@@ -81,6 +81,10 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [recordDeptOptions, setRecordDeptOptions] = useState([]);
   const [savingRecord, setSavingRecord]     = useState(false);
 
+  // ── Reference code pattern ────────────────────────────────────────────────
+  const [refPattern, setRefPattern] = useState({ orgPrefix: 'CSSG', typeCash: 'FR', typeMaterial: 'MR', typeMemo: 'MO' });
+  const [savingRef, setSavingRef]   = useState(false);
+
   // ── Feature flags ──────────────────────────────────────────────────────────
   const [studioEnabled, setStudioEnabled]           = useState(true);
   const [hrPortalEnabled, setHrPortalEnabled]       = useState(true);
@@ -124,6 +128,22 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
   const toggleRecordDept = (id) => {
     setRecordDepts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const loadRefPattern = async () => {
+    try {
+      const data = await settingsAPI.getRefPattern();
+      if (data) setRefPattern(data);
+    } catch {}
+  };
+
+  const saveRefPattern = async () => {
+    setSavingRef(true);
+    try {
+      await settingsAPI.setRefPattern(refPattern);
+      toast.success('Reference code pattern saved.');
+    } catch { toast.error('Failed to save reference pattern.'); }
+    finally { setSavingRef(false); }
   };
 
   const loadFeatureFlags = async () => {
@@ -194,7 +214,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
       ]);
       await Promise.all([
         loadRecordAccess(Array.isArray(depts) ? depts : []),
-        loadFeatureFlags()
+        loadFeatureFlags(),
+        loadRefPattern(),
       ]);
     })();
   }, []);
@@ -314,6 +335,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
               className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'features' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
             >
               Features
+            </button>
+            <button
+              onClick={() => setActiveTab('refcode')}
+              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'refcode' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
+            >
+              Ref Code
             </button>
           </div>
         </div>
@@ -615,6 +642,119 @@ const WorkflowBuilder = ({ onViewChange }) => {
               >
                 {savingFeatures ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
+              </button>
+            </div>
+          </div>
+        ) : activeTab === 'refcode' ? (
+          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-6">
+              <div className="flex items-start gap-3">
+                <Hash size={22} className="text-primary mt-0.5 shrink-0" />
+                <div>
+                  <h3 className="text-lg font-black text-foreground tracking-tight">Reference Code Pattern</h3>
+                  <p className="text-sm text-muted-foreground mt-1 font-medium leading-relaxed">
+                    Configure the parts used to build auto-generated reference numbers on every new request.
+                    Changes apply to all new requests going forward.
+                  </p>
+                </div>
+              </div>
+
+              {/* Live preview */}
+              <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 text-center">
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Preview</p>
+                <p className="text-base font-mono font-black text-primary tracking-wider">
+                  {refPattern.orgPrefix || 'CSSG'}/{'{DEPT}'}/{refPattern.typeCash || 'FR'}/24032026/01
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-1">Fund · {refPattern.orgPrefix || 'CSSG'}/{'{DEPT}'}/{refPattern.typeMaterial || 'MR'}/24032026/01 · Material · {refPattern.orgPrefix || 'CSSG'}/{'{DEPT}'}/{refPattern.typeMemo || 'MO'}/24032026/01 · Memo</p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Org Prefix */}
+                <div className="p-5 rounded-2xl border-2 border-border/50 bg-white/80 space-y-3">
+                  <div>
+                    <p className="text-sm font-black text-foreground">Organisation Prefix</p>
+                    <p className="text-[11px] text-muted-foreground">The company/group code at the start of every reference. E.g. <span className="font-mono font-bold">CSSG</span> for CSS Group.</p>
+                  </div>
+                  <input
+                    value={refPattern.orgPrefix}
+                    onChange={e => setRefPattern(p => ({ ...p, orgPrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) }))}
+                    className="w-full text-sm font-mono font-bold border border-border/50 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 uppercase bg-white"
+                    placeholder="CSSG"
+                    maxLength={8}
+                  />
+                </div>
+
+                {/* Type codes */}
+                <div className="p-5 rounded-2xl border-2 border-border/50 bg-white/80 space-y-4">
+                  <div>
+                    <p className="text-sm font-black text-foreground">Request Type Codes</p>
+                    <p className="text-[11px] text-muted-foreground">Short code inserted in the reference to identify the request type.</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Fund Request</label>
+                      <input
+                        value={refPattern.typeCash}
+                        onChange={e => setRefPattern(p => ({ ...p, typeCash: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) }))}
+                        className="w-full text-sm font-mono font-bold border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 uppercase bg-white"
+                        placeholder="FR"
+                        maxLength={4}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Material Request</label>
+                      <input
+                        value={refPattern.typeMaterial}
+                        onChange={e => setRefPattern(p => ({ ...p, typeMaterial: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) }))}
+                        className="w-full text-sm font-mono font-bold border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 uppercase bg-white"
+                        placeholder="MR"
+                        maxLength={4}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Memo</label>
+                      <input
+                        value={refPattern.typeMemo}
+                        onChange={e => setRefPattern(p => ({ ...p, typeMemo: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) }))}
+                        className="w-full text-sm font-mono font-bold border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 uppercase bg-white"
+                        placeholder="MO"
+                        maxLength={4}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pattern explanation */}
+                <div className="p-4 rounded-2xl bg-muted/40 border border-border/30 space-y-2">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Pattern Breakdown</p>
+                  <div className="grid grid-cols-5 gap-1 text-center text-[9px]">
+                    {[
+                      { part: refPattern.orgPrefix || 'CSSG', label: 'Org Prefix' },
+                      { part: '{DEPT}',     label: 'Dept Code' },
+                      { part: refPattern.typeCash || 'FR',   label: 'Type Code' },
+                      { part: 'DDMMYYYY',  label: 'Date' },
+                      { part: '01',        label: 'Daily Seq.' },
+                    ].map((item, i) => (
+                      <div key={i} className="space-y-1">
+                        <div className="font-mono font-black text-primary text-[10px] bg-primary/10 rounded-lg py-1.5">{item.part}</div>
+                        <div className="text-muted-foreground">{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    <strong>{'{DEPT}'}</strong> is taken from each department's <em>code</em> field. If a dept has no code set, it is auto-abbreviated from the department name.
+                    The daily sequence resets to 01 each day.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={saveRefPattern}
+                disabled={savingRef}
+                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
+              >
+                {savingRef ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {savingRef ? 'Saving…' : 'Save Reference Pattern'}
               </button>
             </div>
           </div>
