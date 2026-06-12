@@ -492,6 +492,7 @@ export const subAccountAPI = {
   availableUsers: (parentId) => api.get('/sub-accounts/available-users', { params: parentId ? { parentId } : {} }),
   setPrivilege: (id, payload) => api.put(`/sub-accounts/${id}/privilege`, payload),
   delete: (id) => api.delete(`/sub-accounts/${id}`),
+  reactivate: (id) => api.post(`/sub-accounts/${id}/reactivate`),
   getRequisitions: (id) => api.get(`/sub-accounts/${id}/requisitions`),
 };
 

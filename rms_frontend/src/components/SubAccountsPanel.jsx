@@ -796,6 +796,11 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [newCode, setNewCode] = useState(null);
   const [newSubName, setNewSubName] = useState('');
 
+  // Name-clash conflict resolution
+  const [conflict, setConflict] = useState(null); // { deletedSub: {...}, suggestedName: '' }
+  const [altName, setAltName] = useState('');      // editable version of suggestedName
+  const [resolving, setResolving] = useState(false);
+
   // Admin dept selector
   const [departments, setDepartments] = useState([]);
   const [selectedDeptId, setSelectedDeptId] = useState('');
@@ -833,6 +838,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const create = async () => {
     if (!newName.trim()) return;
     setCreating(true);
+    setConflict(null);
     try {
       const res = await subAccountAPI.create(newName.trim(), parentId || undefined);
       setNewCode(res.accessCode);
@@ -842,8 +848,57 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
       load();
       toast.success(`"${res.name}" created.`);
     } catch (err) {
-      toast.error(err?.response?.data?.error || 'Failed to create sub-account.');
+      const data = err?.response?.data;
+      if (err?.response?.status === 409 && data?.conflict === 'deleted') {
+        // Deleted sub-account with same name exists — show resolution panel
+        setConflict(data);
+        setAltName(data.suggestedName || '');
+      } else {
+        toast.error(data?.error || 'Failed to create sub-account.');
+      }
     } finally { setCreating(false); }
+  };
+
+  const resolveReactivate = async () => {
+    if (!conflict?.deletedSub?.id) return;
+    setResolving(true);
+    try {
+      const res = await subAccountAPI.reactivate(conflict.deletedSub.id);
+      setNewCode(res.accessCode);
+      setNewSubName(res.name);
+      setConflict(null);
+      setNewName('');
+      setShowCreate(false);
+      load();
+      toast.success(`"${res.name}" reactivated — all previous records restored.`);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to reactivate.');
+    } finally { setResolving(false); }
+  };
+
+  const resolveCreateNew = async () => {
+    const name = altName.trim();
+    if (!name) return;
+    setResolving(true);
+    try {
+      const res = await subAccountAPI.create(name, parentId || undefined);
+      setNewCode(res.accessCode);
+      setNewSubName(res.name);
+      setConflict(null);
+      setNewName('');
+      setShowCreate(false);
+      load();
+      toast.success(`"${res.name}" created as a new sub-account.`);
+    } catch (err) {
+      const data = err?.response?.data;
+      if (err?.response?.status === 409 && data?.conflict === 'deleted') {
+        setConflict(data);
+        setAltName(data.suggestedName || '');
+        toast.error('That name also conflicts — try a different name.');
+      } else {
+        toast.error(data?.error || 'Failed to create sub-account.');
+      }
+    } finally { setResolving(false); }
   };
 
   return (
@@ -914,6 +969,77 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
           <p className="text-[10px] text-muted-foreground italic">
             A password will be auto-generated and shown once. Staff members can then log in using the unit name + this password.
           </p>
+        </div>
+      )}
+
+      {/* ── Name conflict resolution panel ─────────────────────────────────── */}
+      {conflict && (
+        <div className="border border-amber-200 bg-amber-50/60 rounded-2xl p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Header */}
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <ShieldAlert size={15} className="text-amber-600" />
+            </div>
+            <div>
+              <p className="text-[11px] font-black text-amber-800 uppercase tracking-wide">Name Conflict Detected</p>
+              <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                A deleted sub-account named <span className="font-black">"{conflict.deletedSub.name}"</span> already exists under this department.
+                Choose what you'd like to do:
+              </p>
+            </div>
+            <button onClick={() => setConflict(null)} className="ml-auto p-1 rounded-lg text-amber-500 hover:text-amber-700 flex-shrink-0">
+              <X size={13} />
+            </button>
+          </div>
+
+          {/* Option A — Reactivate */}
+          <div className="bg-white border border-emerald-200 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-[10px] font-black text-emerald-700">A</div>
+              <p className="text-[11px] font-black text-emerald-800">Reactivate "{conflict.deletedSub.name}"</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground/70 leading-relaxed pl-7">
+              Restore the deleted sub-account exactly as it was — all its previous requests, history, and records come back. A new login password will be generated.
+            </p>
+            <div className="pl-7">
+              <button
+                onClick={resolveReactivate}
+                disabled={resolving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all"
+              >
+                {resolving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                Reactivate Sub-Account
+              </button>
+            </div>
+          </div>
+
+          {/* Option B — Create with new name */}
+          <div className="bg-white border border-blue-200 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-[10px] font-black text-blue-700">B</div>
+              <p className="text-[11px] font-black text-blue-800">Create a brand new sub-account</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground/70 leading-relaxed pl-7">
+              Start fresh with a different name. The deleted sub-account stays as-is. Edit the suggested name below or type your own.
+            </p>
+            <div className="pl-7 flex gap-2 items-center">
+              <input
+                value={altName}
+                onChange={e => setAltName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') resolveCreateNew(); }}
+                placeholder="Enter a different name…"
+                className="flex-1 border border-border/50 rounded-xl px-3 py-1.5 text-xs bg-white outline-none focus:ring-2 focus:ring-blue-200 min-w-0"
+              />
+              <button
+                onClick={resolveCreateNew}
+                disabled={resolving || !altName.trim()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-700 disabled:opacity-50 transition-all flex-shrink-0"
+              >
+                {resolving ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+                Create New
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -2543,7 +2543,24 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
     if (!parent) return res.status(404).json({ error: 'Parent department not found.' });
     const { name } = parsed.data;
     const existing = await prisma.department.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' } } });
-    if (existing) return res.status(409).json({ error: 'A department or sub-account with that name already exists.' });
+    if (existing) {
+      // Deleted sub-account under the same parent → offer reactivate or suggest alternative name
+      if (existing.isDeleted && existing.isSubAccount && existing.parentId === parentId) {
+        // Generate a safe alternative name: "DAVID (2)", "DAVID (3)", …
+        let suggestedName = null;
+        for (let n = 2; n <= 20; n++) {
+          const candidate = `${name.trim()} (${n})`;
+          const clash = await prisma.department.findFirst({ where: { name: { equals: candidate, mode: 'insensitive' } } });
+          if (!clash) { suggestedName = candidate; break; }
+        }
+        return res.status(409).json({
+          conflict: 'deleted',
+          deletedSub: { id: existing.id, name: existing.name, headName: existing.headName, createdAt: existing.createdAt },
+          suggestedName,
+        });
+      }
+      return res.status(409).json({ error: 'A department or sub-account with that name already exists.' });
+    }
     const plainCode = await generateUniqueAccessCode(name.trim());
     const hash = await bcrypt.hash(plainCode, 10);
     const sub = await prisma.department.create({
@@ -2635,6 +2652,55 @@ app.delete('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager,
       data: { action: 'SubAccountDeleted', details: `Sub-account "${sub.name}" soft-deleted by ${req.user.name || 'user'}. All records preserved.` }
     });
     res.json({ success: true, message: `"${sub.name}" has been deleted. All its records are preserved.` });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Reactivate a previously deleted sub-account — generates a fresh access code, preserves all history
+app.post('/api/sub-accounts/:id/reactivate', authenticateToken, requireSubAccountManager, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
+    if (!sub.isDeleted) return res.status(400).json({ error: 'Sub-account is not deleted — nothing to reactivate.' });
+    const parentId = resolveParentId(req);
+    if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'You can only reactivate sub-accounts belonging to your department.' });
+    const parent = await prisma.department.findUnique({ where: { id: sub.parentId } });
+
+    // Generate a fresh access code
+    const plainCode = await generateUniqueAccessCode(sub.name);
+    const hash = await bcrypt.hash(plainCode, 10);
+
+    await prisma.department.update({
+      where: { id: subId },
+      data: { isDeleted: false, isDisabled: false, accessCodeHash: hash, accessCodeLabel: plainCode }
+    });
+    await prisma.activityLog.create({
+      data: { action: 'SubAccountReactivated', details: `Sub-account "${sub.name}" reactivated by ${req.user.name || 'user'}. All prior records restored.` }
+    });
+
+    // Email parent dept head with new credentials
+    if (parent?.headEmail && !parent.headEmail.endsWith('@cssgroup.local')) {
+      const { text, html } = buildEmailContent({
+        title: `Sub-Account Reactivated — ${sub.name}`,
+        lines: [
+          `A previously deleted sub-account has been reactivated under your department.`,
+          `Unit Name: ${sub.name}`,
+          `Parent Department: ${parent.name}`,
+          `New Login Password: ${plainCode}`,
+          `Reactivated by: ${req.user?.name || 'Administrator'}`,
+          `Date: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`,
+          ``,
+          `All previous requests and records for this unit have been restored. Please share the new password securely with the relevant staff.`
+        ]
+      });
+      sendEmail({ to: parent.headEmail, subject: `[RMS] Sub-Account Reactivated — ${sub.name}`, text, html }).catch(() => {});
+    }
+
+    res.json({
+      id: sub.id, name: sub.name, accessCode: plainCode,
+      isDisabled: false, isDeleted: false,
+      parentDept: parent ? { id: parent.id, name: parent.name } : null
+    });
   } catch (err) { sendError(res, 500, err.message); }
 });
 
