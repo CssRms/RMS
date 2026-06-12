@@ -3087,9 +3087,16 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             <div className="flex items-center gap-3 text-xs tracking-wide text-muted-foreground font-semibold flex-wrap">
                <span className="flex items-center gap-1.5">
                  <Building2 size={13}/> {req.department}
-                 {req.isFromSubAccount && (
-                   <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest">UNIT</span>
-                 )}
+                 {req.isFromSubAccount && (() => {
+                   const subDept = departments.find(d => d.id === req.departmentId);
+                   const parentDept = subDept?.parentId ? departments.find(d => d.id === subDept.parentId) : null;
+                   const pName = parentDept?.name || req.parentDeptName || null;
+                   return (
+                     <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">
+                       {pName || 'Sub-Unit'}
+                     </span>
+                   );
+                 })()}
                </span>
                {/* Shared-by badge — shows to sub-accounts viewing their parent dept's shared request */}
                {user?.isSubAccount && user?.parentDeptId && Number(req.departmentId) === Number(user.parentDeptId) && (
