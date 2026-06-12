@@ -3014,8 +3014,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               </div>
               {(() => {
                 const fas = detail?.finalApprovalStatus;
-                // 'partial' has no dedicated badge below so we override here; 'treated'/'published'/'vetting'/'approved'
-                // are all covered by the explicit workflow chips below — don't duplicate them in this badge.
+                // These have their own dedicated chip below — don't show req.status alongside them
+                if (['approved', 'vetting', 'treated', 'published'].includes(fas)) return null;
                 const displayStatus = fas === 'partial' ? 'partial' : req.status;
                 const displayLabel  = fas === 'partial' ? 'Partial Payment' : req.status;
                 return (
