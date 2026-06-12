@@ -768,6 +768,18 @@ async function canReadRequisition(requisition, user) {
 
   if (directDeptIds.includes(deptId)) return true;
 
+  // Parent dept head can always read requests created by their sub-accounts,
+  // even after the sub-account has been deleted (parentId is preserved on soft-delete).
+  if (!user?.isSubAccount) {
+    try {
+      const creatorDept = await prisma.department.findFirst({
+        where: { id: toIntOrNull(requisition.departmentId), isSubAccount: true },
+        select: { parentId: true }
+      });
+      if (creatorDept?.parentId && toIntOrNull(creatorDept.parentId) === deptId) return true;
+    } catch (_) {}
+  }
+
   try {
     const forwardEvent = await prisma.forwardEvent.findFirst({
       where: { requisitionId: reqId, OR: [{ fromDeptId: deptId }, { toDeptId: deptId }] },
