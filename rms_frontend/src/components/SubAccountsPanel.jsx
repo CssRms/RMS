@@ -163,12 +163,14 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   const [savingToggles, setSavingToggles] = useState(false);
 
   // Direct route state
-  const [directRouteOn, setDirectRouteOn]     = useState(!!sub.directRoute);
-  const [allowedDeptIds, setAllowedDeptIds]   = useState(Array.isArray(sub.allowedRouteDeptIds) ? sub.allowedRouteDeptIds : []);
-  const [allDepts, setAllDepts]               = useState([]);
-  const [loadingDepts, setLoadingDepts]       = useState(false);
-  const [savingRoute, setSavingRoute]         = useState(false);
-  const [selectedDeptToAdd, setSelectedDeptToAdd] = useState('');
+  const [directRouteOn, setDirectRouteOn]           = useState(!!sub.directRoute);
+  // pendingDirectRoute: toggle is visually ON but NOT yet saved — waiting for ≥1 dept selection
+  const [pendingDirectRoute, setPendingDirectRoute] = useState(false);
+  const [allowedDeptIds, setAllowedDeptIds]         = useState(Array.isArray(sub.allowedRouteDeptIds) ? sub.allowedRouteDeptIds : []);
+  const [allDepts, setAllDepts]                     = useState([]);
+  const [loadingDepts, setLoadingDepts]             = useState(false);
+  const [savingRoute, setSavingRoute]               = useState(false);
+  const [selectedDeptToAdd, setSelectedDeptToAdd]   = useState('');
 
   // Load departments when Direct Route is toggled on
   useEffect(() => {
@@ -181,6 +183,30 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   }, [directRouteOn]);
 
   const fmt = n => n != null ? `₦${Number(n).toLocaleString()}` : null;
+
+  // ── Shared helper: save a new allowed-dept list (also commits directRoute if pending) ──
+  const saveAllowedDepts = async (nextIds, prevIds) => {
+    setAllowedDeptIds(nextIds);
+    setSelectedDeptToAdd('');
+    setSavingRoute(true);
+    try {
+      const payload = { allowedRouteDeptIds: nextIds.length ? nextIds : null };
+      if (pendingDirectRoute) payload.directRoute = true;
+      await subAccountAPI.setPrivilege(sub.id, payload);
+      if (pendingDirectRoute) {
+        setPendingDirectRoute(false);
+        onUpdatePrivilege({ directRoute: true, allowedRouteDeptIds: nextIds });
+        toast.success('Direct routing enabled.');
+      } else {
+        onUpdatePrivilege({ allowedRouteDeptIds: nextIds });
+        toast.success(nextIds.length > prevIds.length ? 'Department added.' : 'Department removed.');
+      }
+    } catch (err) {
+      setAllowedDeptIds(prevIds); // revert
+      if (pendingDirectRoute) setDirectRouteOn(false);
+      toast.error(err?.response?.data?.error || 'Failed to update.');
+    } finally { setSavingRoute(false); }
+  };
 
   const saveCash = async () => {
     const trimmed = cashInput.trim();
@@ -232,50 +258,75 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   const handleMaterialToggle = (v) => { setMaterialOn(v); saveToggle('materialPrivilege', v); };
 
   const handleDirectRouteToggle = async (v) => {
-    setDirectRouteOn(v);
-    setSavingRoute(true);
-    try {
-      await subAccountAPI.setPrivilege(sub.id, { directRoute: v });
-      toast.success(v ? 'Direct routing enabled.' : 'Direct routing disabled — requests route through you first.');
-      onUpdatePrivilege({ directRoute: v });
-    } catch (err) {
-      setDirectRouteOn(!v);
-      toast.error(err?.response?.data?.error || 'Failed to update routing setting.');
-    } finally { setSavingRoute(false); }
+    if (v) {
+      // Turning ON — only save immediately if dept list already has entries
+      setDirectRouteOn(true);
+      if (allowedDeptIds.length === 0) {
+        // Enter pending state: show picker, don't save until ≥1 dept is chosen
+        setPendingDirectRoute(true);
+      } else {
+        setSavingRoute(true);
+        try {
+          await subAccountAPI.setPrivilege(sub.id, { directRoute: true });
+          toast.success('Direct routing enabled.');
+          onUpdatePrivilege({ directRoute: true });
+        } catch (err) {
+          setDirectRouteOn(false);
+          toast.error(err?.response?.data?.error || 'Failed to update routing setting.');
+        } finally { setSavingRoute(false); }
+      }
+    } else {
+      // Turning OFF
+      if (pendingDirectRoute) {
+        // Never saved — just revert local state, no API call
+        setDirectRouteOn(false);
+        setPendingDirectRoute(false);
+      } else {
+        setDirectRouteOn(false);
+        setSavingRoute(true);
+        try {
+          await subAccountAPI.setPrivilege(sub.id, { directRoute: false });
+          toast.success('Direct routing disabled — requests go through you first.');
+          onUpdatePrivilege({ directRoute: false });
+        } catch (err) {
+          setDirectRouteOn(true);
+          toast.error(err?.response?.data?.error || 'Failed to update routing setting.');
+        } finally { setSavingRoute(false); }
+      }
+    }
   };
 
-  const addAllowedDept = async () => {
+  // Called when user picks from the dropdown
+  const handleDeptDropdownChange = (val) => {
+    if (val === '__all__') {
+      // "All Departments" — add every available dept at once
+      const allIds = allDepts.map(d => d.id);
+      const next = [...new Set([...allowedDeptIds, ...allIds])];
+      if (next.length === allowedDeptIds.length) return; // nothing new
+      saveAllowedDepts(next, allowedDeptIds);
+    } else {
+      setSelectedDeptToAdd(val);
+    }
+  };
+
+  const addAllowedDept = () => {
     const id = parseInt(selectedDeptToAdd);
     if (!id || allowedDeptIds.includes(id)) return;
-    const next = [...allowedDeptIds, id];
-    setAllowedDeptIds(next);
-    setSelectedDeptToAdd('');
-    setSavingRoute(true);
-    try {
-      await subAccountAPI.setPrivilege(sub.id, { allowedRouteDeptIds: next });
-      onUpdatePrivilege({ allowedRouteDeptIds: next });
-      toast.success('Allowed department added.');
-    } catch (err) {
-      setAllowedDeptIds(allowedDeptIds);
-      toast.error(err?.response?.data?.error || 'Failed to update.');
-    } finally { setSavingRoute(false); }
+    saveAllowedDepts([...allowedDeptIds, id], allowedDeptIds);
   };
 
-  const removeAllowedDept = async (id) => {
+  const removeAllowedDept = (id) => {
     const next = allowedDeptIds.filter(d => d !== id);
-    setAllowedDeptIds(next);
-    setSavingRoute(true);
-    try {
-      await subAccountAPI.setPrivilege(sub.id, { allowedRouteDeptIds: next.length ? next : null });
-      onUpdatePrivilege({ allowedRouteDeptIds: next });
-      toast.success('Department removed from allowed list.');
-    } catch (err) {
-      setAllowedDeptIds(allowedDeptIds);
-      toast.error(err?.response?.data?.error || 'Failed to update.');
-    } finally { setSavingRoute(false); }
+    // Block removing last dept when direct route is already saved ON
+    if (next.length === 0 && directRouteOn && !pendingDirectRoute) {
+      toast.error('At least one department must remain. Disable direct routing first if you want to remove all.');
+      return;
+    }
+    saveAllowedDepts(next, allowedDeptIds);
   };
 
   const availableDepts = allDepts.filter(d => !allowedDeptIds.includes(d.id));
+  const allSelected    = allDepts.length > 0 && availableDepts.length === 0;
 
   return (
     <div className="mt-3 border-t border-border/20 pt-3 space-y-0">
@@ -357,11 +408,20 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
       <div className="py-2 border-t border-border/10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded-lg ${directRouteOn ? 'bg-blue-50' : 'bg-muted/40'}`}>
-              {directRouteOn ? <Globe size={11} className="text-blue-600" /> : <Lock size={11} className="text-muted-foreground/60" />}
+            <div className={`p-1 rounded-lg ${directRouteOn ? (pendingDirectRoute ? 'bg-amber-50' : 'bg-blue-50') : 'bg-muted/40'}`}>
+              {directRouteOn
+                ? (pendingDirectRoute ? <Lock size={11} className="text-amber-500" /> : <Globe size={11} className="text-blue-600" />)
+                : <Lock size={11} className="text-muted-foreground/60" />}
             </div>
             <div>
-              <p className="text-[11px] font-semibold text-foreground">Direct Routing</p>
+              <p className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                Direct Routing
+                {pendingDirectRoute && (
+                  <span className="text-[8px] font-black uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                    Not saved
+                  </span>
+                )}
+              </p>
               <p className="text-[9px] text-muted-foreground/60">
                 {directRouteOn ? 'Can send requests directly to departments' : 'All requests route through you first'}
               </p>
@@ -370,13 +430,19 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
           <Toggle on={directRouteOn} onChange={handleDirectRouteToggle} disabled={savingRoute} />
         </div>
 
-        {/* Routing mode description */}
-        <div className={`mt-2 px-2.5 py-2 rounded-xl text-[9px] leading-relaxed ${directRouteOn ? 'bg-blue-50/60 border border-blue-100 text-blue-700' : 'bg-amber-50/60 border border-amber-100 text-amber-700'}`}>
-          {directRouteOn
-            ? <><span className="font-black">ON —</span> This unit can choose which department to send requests to directly.</>
-            : <><span className="font-black">OFF —</span> Every request this unit creates will be automatically routed to you (the head) first. You handle it from there.</>
-          }
-        </div>
+        {/* Pending warning — shown when toggle is ON but no depts selected yet */}
+        {pendingDirectRoute ? (
+          <div className="mt-2 px-2.5 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-[9px] leading-relaxed">
+            <span className="font-black">Action required —</span> Select at least one department below (or choose "All Departments") to save direct routing.
+          </div>
+        ) : (
+          <div className={`mt-2 px-2.5 py-2 rounded-xl text-[9px] leading-relaxed ${directRouteOn ? 'bg-blue-50/60 border border-blue-100 text-blue-700' : 'bg-amber-50/60 border border-amber-100 text-amber-700'}`}>
+            {directRouteOn
+              ? <><span className="font-black">ON —</span> This unit can choose which department to send requests to directly.</>
+              : <><span className="font-black">OFF —</span> Every request this unit creates will be automatically routed to you (the head) first.</>
+            }
+          </div>
+        )}
 
         {/* Allowed departments — only when direct route is ON */}
         {directRouteOn && (
@@ -384,9 +450,14 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-semibold text-foreground/70 flex items-center gap-1">
                 <Route size={9} className="text-blue-500" /> Allowed Departments
+                {pendingDirectRoute && <span className="text-red-500 ml-0.5">*</span>}
               </span>
-              <span className="text-[9px] text-muted-foreground/50 italic">
-                {allowedDeptIds.length === 0 ? 'Empty = any department' : `${allowedDeptIds.length} restricted`}
+              <span className={`text-[9px] italic font-semibold ${pendingDirectRoute && allowedDeptIds.length === 0 ? 'text-red-400' : 'text-muted-foreground/50'}`}>
+                {allSelected
+                  ? 'All departments'
+                  : allowedDeptIds.length === 0
+                    ? (pendingDirectRoute ? 'Required — pick at least one' : 'None')
+                    : `${allowedDeptIds.length} selected`}
               </span>
             </div>
 
@@ -413,33 +484,39 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
               <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 py-1">
                 <Loader2 size={11} className="animate-spin" /> Loading departments…
               </div>
-            ) : availableDepts.length > 0 ? (
+            ) : !allSelected ? (
               <div className="flex gap-2 items-center">
                 <select
                   value={selectedDeptToAdd}
-                  onChange={e => setSelectedDeptToAdd(e.target.value)}
-                  className="flex-1 text-xs border border-border/50 rounded-xl px-3 py-1.5 bg-white outline-none focus:ring-2 focus:ring-primary/20"
+                  onChange={e => handleDeptDropdownChange(e.target.value)}
+                  className={`flex-1 text-xs border rounded-xl px-3 py-1.5 bg-white outline-none focus:ring-2 transition-colors
+                    ${pendingDirectRoute && allowedDeptIds.length === 0
+                      ? 'border-amber-300 focus:ring-amber-200'
+                      : 'border-border/50 focus:ring-primary/20'}`}
                 >
                   <option value="">— Add a department —</option>
+                  <option value="__all__">✓ All Departments</option>
                   {availableDepts.map(d => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
                 <button
                   onClick={addAllowedDept}
-                  disabled={!selectedDeptToAdd || savingRoute}
+                  disabled={!selectedDeptToAdd || selectedDeptToAdd === '__all__' || savingRoute}
                   className="p-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-all"
                   title="Add to allowed list"
                 >
                   {savingRoute ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
                 </button>
               </div>
-            ) : allDepts.length > 0 ? (
-              <p className="text-[9px] text-muted-foreground/50 italic">All departments already added.</p>
-            ) : null}
+            ) : (
+              <p className="text-[9px] text-blue-600 font-bold italic flex items-center gap-1">
+                <Check size={10} /> All departments selected — unit can route to anyone.
+              </p>
+            )}
 
             <p className="text-[9px] text-muted-foreground/40 italic">
-              Leave empty to allow routing to any department. Add specific departments to restrict where this unit can send requests.
+              Choose "All Departments" to allow any department, or add specific ones to restrict where this unit can send requests.
             </p>
           </div>
         )}
