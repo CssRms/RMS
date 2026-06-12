@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../lib/api';
-import { logActivity } from '../lib/store';
+import { logActivity, clearAllCaches } from '../lib/store';
 import { toast } from 'react-hot-toast';
 
 // ── Credential hashing using PBKDF2 (Web Crypto) ──────────────────────────────
@@ -69,6 +69,8 @@ export const AuthProvider = ({ children }) => {
   const deptLogin = async (departmentName, accessCode, mfaCode) => {
     try {
       const { user: userData } = await authAPI.deptLogin(departmentName, accessCode, mfaCode);
+      // Wipe previous user's cached data before populating this user's data
+      await clearAllCaches();
       // Server sets the HttpOnly auth cookie — we only keep user data for the UI
 
       // Derive and store credential hashes using PBKDF2 — actual codes are never stored
@@ -133,6 +135,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     await authAPI.logout(); // server clears HttpOnly cookie and blacklists token
+    await clearAllCaches();  // wipe shared localforage so the next user doesn't see stale data
     setUser(null);
     localStorage.removeItem('rms_user');
     localStorage.removeItem('rms_offline_auth');

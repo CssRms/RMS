@@ -175,17 +175,22 @@ const getEffectiveReqAmount = (req) => {
 async function getSubPrivilege(deptId) {
   try {
     const rows = await prisma.$queryRaw`
-      SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege"
+      SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege",
+             "directRoute", "allowedRouteDeptIds"
       FROM "Department" WHERE id = ${parseInt(deptId)} LIMIT 1
     `;
     const d = rows?.[0];
+    let allowedRouteDeptIds = [];
+    try { allowedRouteDeptIds = JSON.parse(d?.allowedRouteDeptIds || 'null') || []; } catch { allowedRouteDeptIds = []; }
     return {
-      privilegeAmount:   d?.privilegeAmount   ?? null,
-      cashPrivilege:     d?.cashPrivilege     ?? false,
-      memoPrivilege:     d?.memoPrivilege     ?? false,
-      materialPrivilege: d?.materialPrivilege ?? false,
+      privilegeAmount:     d?.privilegeAmount   ?? null,
+      cashPrivilege:       d?.cashPrivilege     ?? false,
+      memoPrivilege:       d?.memoPrivilege     ?? false,
+      materialPrivilege:   d?.materialPrivilege ?? false,
+      directRoute:         d?.directRoute       ?? false,
+      allowedRouteDeptIds,
     };
-  } catch { return { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false }; }
+  } catch { return { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false, directRoute: false, allowedRouteDeptIds: [] }; }
 }
 // Legacy compat — returns just the amount
 async function getSubPrivilegeAmount(deptId) {
@@ -2505,10 +2510,12 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
       // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
       ...(isAdmin ? { accessCodeLabel: s.accessCodeLabel } : {}),
       parentDept: s.parent ? { id: s.parent.id, name: s.parent.name } : null,
-      privilegeAmount:   s.privilegeAmount   ?? null,
-      cashPrivilege:     s.cashPrivilege     ?? false,
-      memoPrivilege:     s.memoPrivilege     ?? false,
-      materialPrivilege: s.materialPrivilege ?? false
+      privilegeAmount:     s.privilegeAmount     ?? null,
+      cashPrivilege:       s.cashPrivilege       ?? false,
+      memoPrivilege:       s.memoPrivilege       ?? false,
+      materialPrivilege:   s.materialPrivilege   ?? false,
+      directRoute:         s.directRoute         ?? false,
+      allowedRouteDeptIds: (() => { try { return JSON.parse(s.allowedRouteDeptIds || 'null') || []; } catch { return []; } })(),
     })));
   } catch (err) { sendError(res, 500, err.message); }
 });
@@ -2806,15 +2813,17 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     }
 
     const parsed = z.object({
-      maxAmount:         z.union([z.number().min(0), z.null()]).optional(),
-      cashPrivilege:     z.boolean().optional(),
-      memoPrivilege:     z.boolean().optional(),
-      materialPrivilege: z.boolean().optional(),
+      maxAmount:           z.union([z.number().min(0), z.null()]).optional(),
+      cashPrivilege:       z.boolean().optional(),
+      memoPrivilege:       z.boolean().optional(),
+      materialPrivilege:   z.boolean().optional(),
+      directRoute:         z.boolean().optional(),
+      allowedRouteDeptIds: z.array(z.number().int()).nullable().optional(),
     }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid privilege payload.' });
 
-    const { maxAmount, cashPrivilege, memoPrivilege, materialPrivilege } = parsed.data;
-    if (maxAmount === undefined && cashPrivilege === undefined && memoPrivilege === undefined && materialPrivilege === undefined)
+    const { maxAmount, cashPrivilege, memoPrivilege, materialPrivilege, directRoute, allowedRouteDeptIds } = parsed.data;
+    if (maxAmount === undefined && cashPrivilege === undefined && memoPrivilege === undefined && materialPrivilege === undefined && directRoute === undefined && allowedRouteDeptIds === undefined)
       return res.status(400).json({ error: 'No privilege fields provided.' });
 
     // Ensure columns exist in DB regardless of Prisma client schema version
@@ -2823,6 +2832,8 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "cashPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "memoPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "materialPrivilege" BOOLEAN NOT NULL DEFAULT false`;
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "directRoute" BOOLEAN NOT NULL DEFAULT false`;
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "allowedRouteDeptIds" TEXT`;
     } catch (_) {}
 
     // Build and run raw UPDATE to bypass Prisma client field validation
@@ -2832,6 +2843,8 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     if (cashPrivilege !== undefined) { setClauses.push(`"cashPrivilege" = $${setClauses.length + 1}`); values.push(cashPrivilege); }
     if (memoPrivilege !== undefined) { setClauses.push(`"memoPrivilege" = $${setClauses.length + 1}`); values.push(memoPrivilege); }
     if (materialPrivilege !== undefined) { setClauses.push(`"materialPrivilege" = $${setClauses.length + 1}`); values.push(materialPrivilege); }
+    if (directRoute !== undefined) { setClauses.push(`"directRoute" = $${setClauses.length + 1}`); values.push(directRoute); }
+    if (allowedRouteDeptIds !== undefined) { setClauses.push(`"allowedRouteDeptIds" = $${setClauses.length + 1}`); values.push(allowedRouteDeptIds === null || allowedRouteDeptIds.length === 0 ? null : JSON.stringify(allowedRouteDeptIds)); }
     values.push(subId);
     await prisma.$executeRawUnsafe(
       `UPDATE "Department" SET ${setClauses.join(', ')} WHERE id = $${values.length}`,
@@ -2848,13 +2861,19 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
       });
     } catch (_) {}
 
-    let updated = { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false };
+    let updated = { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false, directRoute: false, allowedRouteDeptIds: [] };
     try {
       const rows = await prisma.$queryRaw`
-        SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege"
+        SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege",
+               "directRoute", "allowedRouteDeptIds"
         FROM "Department" WHERE id = ${subId} LIMIT 1
       `;
-      if (rows?.[0]) updated = rows[0];
+      if (rows?.[0]) {
+        const d = rows[0];
+        let allowedRouteDeptIds = [];
+        try { allowedRouteDeptIds = JSON.parse(d.allowedRouteDeptIds || 'null') || []; } catch { allowedRouteDeptIds = []; }
+        updated = { ...d, allowedRouteDeptIds };
+      }
     } catch (_) {}
     res.json({ success: true, ...updated });
   } catch (error) { sendError(res, 500, error.message); }
@@ -2967,6 +2986,24 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
 
       // Validate target department if supplied
       let targetDepartmentId = data.targetDepartmentId ? parseInt(data.targetDepartmentId) : null;
+
+      // ── Sub-account routing enforcement ───────────────────────────────────
+      if (!isDraft && req.user.isSubAccount && req.user.parentDeptId) {
+        const subPriv = await getSubPrivilege(originDeptId);
+        if (!subPriv.directRoute) {
+          // Direct route OFF → force all requests through the parent head
+          targetDepartmentId = parseInt(req.user.parentDeptId);
+        } else if (subPriv.allowedRouteDeptIds && subPriv.allowedRouteDeptIds.length > 0) {
+          // Direct route ON with restricted list → validate chosen target
+          if (targetDepartmentId && !subPriv.allowedRouteDeptIds.includes(targetDepartmentId)) {
+            return res.status(403).json({
+              error: 'Your unit is not authorised to send requests to that department. Contact your department head.'
+            });
+          }
+        }
+        // directRoute ON + empty allowedRouteDeptIds → any department is fine (no restriction)
+      }
+      // ──────────────────────────────────────────────────────────────────────
 
       // Non-admin, non-draft submissions must always specify a target department
       const isAdminSender = normalizeRole(req.user.role) === 'global_admin';

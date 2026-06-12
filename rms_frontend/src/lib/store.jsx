@@ -105,6 +105,19 @@ async function ensureInitialized() {
   _initialized = true;
 }
 
+// ── Cache management ──
+export async function clearAllCaches() {
+  _initialized = false;
+  await Promise.allSettled([
+    requisitionStore.clear(),
+    activityStore.clear(),
+    workflowStore.clear(),
+    departmentStore.clear(),
+    reqDetailStore.clear(),
+    notificationStore.clear(),
+  ]);
+}
+
 // ── Requisition Logic ──
 export async function getRequisitions(options = {}) {
   await ensureInitialized();

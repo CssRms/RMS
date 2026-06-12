@@ -66,6 +66,7 @@ model Department {
   forwardEventsFrom    ForwardEvent[]   @relation("ForwardFrom")
   forwardEventsTo      ForwardEvent[]   @relation("ForwardTo")
   finalApprovedRequisitions Requisition[] @relation("FinalApprover")
+  treatedRequisitions       Requisition[] @relation("TreatedBy")
   canPrint             Boolean          @default(true)
   subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
   storeRecords         StoreRecord[]
@@ -74,6 +75,10 @@ model Department {
   cashPrivilege        Boolean          @default(false)
   memoPrivilege        Boolean          @default(false)
   materialPrivilege    Boolean          @default(false)
+  // Per-sub-account routing: if false, all requests route through parent head first
+  directRoute          Boolean          @default(false)
+  // JSON array of dept IDs the sub-account may target directly; null = any department
+  allowedRouteDeptIds  String?
   // Head dept routing control: if false, sub-account requests land here first before going anywhere
   subAccountAutoRoute  Boolean          @default(true)
   createdAt            DateTime         @default(now())
@@ -127,6 +132,7 @@ model Requisition {
   finalApprovedNote     String?
   currentVettingDeptId  Int?
   treatedByDeptId       Int?
+  treatedByDept         Department?    @relation("TreatedBy", fields: [treatedByDeptId], references: [id])
   treatedAt             DateTime?
   amountDisbursed       Float?
   treatmentType         String?

@@ -3,7 +3,7 @@ import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
   Check, Loader2, Copy, UserPlus, UserMinus,
   ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
-  FileText, User, Clock
+  FileText, User, Clock, Route, Globe, Lock
 } from 'lucide-react';
 import { subAccountAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -162,6 +162,24 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   const [savingCash, setSavingCash]     = useState(false);
   const [savingToggles, setSavingToggles] = useState(false);
 
+  // Direct route state
+  const [directRouteOn, setDirectRouteOn]     = useState(!!sub.directRoute);
+  const [allowedDeptIds, setAllowedDeptIds]   = useState(Array.isArray(sub.allowedRouteDeptIds) ? sub.allowedRouteDeptIds : []);
+  const [allDepts, setAllDepts]               = useState([]);
+  const [loadingDepts, setLoadingDepts]       = useState(false);
+  const [savingRoute, setSavingRoute]         = useState(false);
+  const [selectedDeptToAdd, setSelectedDeptToAdd] = useState('');
+
+  // Load departments when Direct Route is toggled on
+  useEffect(() => {
+    if (!directRouteOn || allDepts.length > 0) return;
+    setLoadingDepts(true);
+    deptAPI.getDepartments()
+      .then(d => setAllDepts((Array.isArray(d) ? d : []).filter(dept => !dept.isSubAccount && dept.name?.toLowerCase() !== 'super admin')))
+      .catch(() => {})
+      .finally(() => setLoadingDepts(false));
+  }, [directRouteOn]);
+
   const fmt = n => n != null ? `₦${Number(n).toLocaleString()}` : null;
 
   const saveCash = async () => {
@@ -189,7 +207,6 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
       toast.success(`${labels[field] || field} requests ${value ? 'enabled' : 'disabled'}.`);
       onUpdatePrivilege({ [field]: value, ...extraPayload });
     } catch (err) {
-      // Revert optimistic toggle on failure
       if (field === 'cashPrivilege') setCashOn(!value);
       if (field === 'memoPrivilege') setMemoOn(!value);
       if (field === 'materialPrivilege') setMaterialOn(!value);
@@ -203,16 +220,9 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
       setCashInput('');
       setEditingCash(false);
       setSavingToggles(true);
-      // API uses maxAmount; state uses privilegeAmount — must map separately
       subAccountAPI.setPrivilege(sub.id, { cashPrivilege: false, maxAmount: null })
-        .then(() => {
-          toast.success('Cash requests disabled.');
-          onUpdatePrivilege({ cashPrivilege: false, privilegeAmount: null });
-        })
-        .catch(err => {
-          setCashOn(true);
-          toast.error(err?.response?.data?.error || 'Failed to disable cash requests.');
-        })
+        .then(() => { toast.success('Cash requests disabled.'); onUpdatePrivilege({ cashPrivilege: false, privilegeAmount: null }); })
+        .catch(err => { setCashOn(true); toast.error(err?.response?.data?.error || 'Failed to disable cash requests.'); })
         .finally(() => setSavingToggles(false));
     } else {
       saveToggle('cashPrivilege', true);
@@ -220,6 +230,52 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   };
   const handleMemoToggle = (v) => { setMemoOn(v); saveToggle('memoPrivilege', v); };
   const handleMaterialToggle = (v) => { setMaterialOn(v); saveToggle('materialPrivilege', v); };
+
+  const handleDirectRouteToggle = async (v) => {
+    setDirectRouteOn(v);
+    setSavingRoute(true);
+    try {
+      await subAccountAPI.setPrivilege(sub.id, { directRoute: v });
+      toast.success(v ? 'Direct routing enabled.' : 'Direct routing disabled — requests route through you first.');
+      onUpdatePrivilege({ directRoute: v });
+    } catch (err) {
+      setDirectRouteOn(!v);
+      toast.error(err?.response?.data?.error || 'Failed to update routing setting.');
+    } finally { setSavingRoute(false); }
+  };
+
+  const addAllowedDept = async () => {
+    const id = parseInt(selectedDeptToAdd);
+    if (!id || allowedDeptIds.includes(id)) return;
+    const next = [...allowedDeptIds, id];
+    setAllowedDeptIds(next);
+    setSelectedDeptToAdd('');
+    setSavingRoute(true);
+    try {
+      await subAccountAPI.setPrivilege(sub.id, { allowedRouteDeptIds: next });
+      onUpdatePrivilege({ allowedRouteDeptIds: next });
+      toast.success('Allowed department added.');
+    } catch (err) {
+      setAllowedDeptIds(allowedDeptIds);
+      toast.error(err?.response?.data?.error || 'Failed to update.');
+    } finally { setSavingRoute(false); }
+  };
+
+  const removeAllowedDept = async (id) => {
+    const next = allowedDeptIds.filter(d => d !== id);
+    setAllowedDeptIds(next);
+    setSavingRoute(true);
+    try {
+      await subAccountAPI.setPrivilege(sub.id, { allowedRouteDeptIds: next.length ? next : null });
+      onUpdatePrivilege({ allowedRouteDeptIds: next });
+      toast.success('Department removed from allowed list.');
+    } catch (err) {
+      setAllowedDeptIds(allowedDeptIds);
+      toast.error(err?.response?.data?.error || 'Failed to update.');
+    } finally { setSavingRoute(false); }
+  };
+
+  const availableDepts = allDepts.filter(d => !allowedDeptIds.includes(d.id));
 
   return (
     <div className="mt-3 border-t border-border/20 pt-3 space-y-0">
@@ -236,15 +292,12 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
           </div>
           <Toggle on={cashOn} onChange={handleCashToggle} disabled={savingToggles} />
         </div>
-
-        {/* Amount limit — only shown when cash is enabled */}
         {cashOn && (
           <div className="mt-2 pl-1 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground/70 italic">Amount limit <span className="text-muted-foreground/40">(optional)</span></span>
               {!editingCash && (
-                <button onClick={() => setEditingCash(true)}
-                  className="text-[10px] font-bold text-primary hover:underline">
+                <button onClick={() => setEditingCash(true)} className="text-[10px] font-bold text-primary hover:underline">
                   {sub.privilegeAmount != null ? 'Edit limit' : 'Set limit'}
                 </button>
               )}
@@ -260,13 +313,11 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
                 <div className="relative flex-1">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 text-sm font-bold">₦</span>
                   <input type="number" min="0" step="any" value={cashInput}
-                    onChange={e => setCashInput(e.target.value)} autoFocus
-                    placeholder="e.g. 50000"
+                    onChange={e => setCashInput(e.target.value)} autoFocus placeholder="e.g. 50000"
                     onKeyDown={e => { if (e.key === 'Enter') saveCash(); if (e.key === 'Escape') setEditingCash(false); }}
                     className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
-                <button onClick={saveCash} disabled={savingCash}
-                  className="p-2 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
+                <button onClick={saveCash} disabled={savingCash} className="p-2 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
                   {savingCash ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                 </button>
                 {sub.privilegeAmount != null && (
@@ -275,8 +326,7 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
                     <Trash2 size={13} />
                   </button>
                 )}
-                <button onClick={() => setEditingCash(false)}
-                  className="p-2 rounded-xl border border-border/40 text-muted-foreground">
+                <button onClick={() => setEditingCash(false)} className="p-2 rounded-xl border border-border/40 text-muted-foreground">
                   <X size={13} />
                 </button>
               </div>
@@ -301,6 +351,98 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
           <p className="text-[9px] text-muted-foreground/60">Can create &amp; handle material requests</p>
         </div>
         <Toggle on={materialOn} onChange={handleMaterialToggle} disabled={savingToggles} />
+      </div>
+
+      {/* Direct Route toggle + allowed departments */}
+      <div className="py-2 border-t border-border/10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`p-1 rounded-lg ${directRouteOn ? 'bg-blue-50' : 'bg-muted/40'}`}>
+              {directRouteOn ? <Globe size={11} className="text-blue-600" /> : <Lock size={11} className="text-muted-foreground/60" />}
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold text-foreground">Direct Routing</p>
+              <p className="text-[9px] text-muted-foreground/60">
+                {directRouteOn ? 'Can send requests directly to departments' : 'All requests route through you first'}
+              </p>
+            </div>
+          </div>
+          <Toggle on={directRouteOn} onChange={handleDirectRouteToggle} disabled={savingRoute} />
+        </div>
+
+        {/* Routing mode description */}
+        <div className={`mt-2 px-2.5 py-2 rounded-xl text-[9px] leading-relaxed ${directRouteOn ? 'bg-blue-50/60 border border-blue-100 text-blue-700' : 'bg-amber-50/60 border border-amber-100 text-amber-700'}`}>
+          {directRouteOn
+            ? <><span className="font-black">ON —</span> This unit can choose which department to send requests to directly.</>
+            : <><span className="font-black">OFF —</span> Every request this unit creates will be automatically routed to you (the head) first. You handle it from there.</>
+          }
+        </div>
+
+        {/* Allowed departments — only when direct route is ON */}
+        {directRouteOn && (
+          <div className="mt-3 pl-1 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-foreground/70 flex items-center gap-1">
+                <Route size={9} className="text-blue-500" /> Allowed Departments
+              </span>
+              <span className="text-[9px] text-muted-foreground/50 italic">
+                {allowedDeptIds.length === 0 ? 'Empty = any department' : `${allowedDeptIds.length} restricted`}
+              </span>
+            </div>
+
+            {/* Selected dept chips */}
+            {allowedDeptIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {allowedDeptIds.map(id => {
+                  const dept = allDepts.find(d => d.id === id);
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 border border-blue-200 text-blue-700 text-[9px] font-bold">
+                      {dept?.name || `Dept #${id}`}
+                      <button onClick={() => removeAllowedDept(id)} disabled={savingRoute}
+                        className="hover:text-red-500 disabled:opacity-40 transition-colors ml-0.5">
+                        <X size={9} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add department dropdown */}
+            {loadingDepts ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 py-1">
+                <Loader2 size={11} className="animate-spin" /> Loading departments…
+              </div>
+            ) : availableDepts.length > 0 ? (
+              <div className="flex gap-2 items-center">
+                <select
+                  value={selectedDeptToAdd}
+                  onChange={e => setSelectedDeptToAdd(e.target.value)}
+                  className="flex-1 text-xs border border-border/50 rounded-xl px-3 py-1.5 bg-white outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">— Add a department —</option>
+                  {availableDepts.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={addAllowedDept}
+                  disabled={!selectedDeptToAdd || savingRoute}
+                  className="p-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-all"
+                  title="Add to allowed list"
+                >
+                  {savingRoute ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                </button>
+              </div>
+            ) : allDepts.length > 0 ? (
+              <p className="text-[9px] text-muted-foreground/50 italic">All departments already added.</p>
+            ) : null}
+
+            <p className="text-[9px] text-muted-foreground/40 italic">
+              Leave empty to allow routing to any department. Add specific departments to restrict where this unit can send requests.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
