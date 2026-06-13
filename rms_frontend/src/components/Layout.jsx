@@ -9,7 +9,7 @@ import {
   HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch,
   Package, AlertTriangle
 } from 'lucide-react';
-import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord } from '../lib/store';
+import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord, getDepartments } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
 import ChatWidget from './ChatWidget';
 
@@ -721,7 +721,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
               {user?.role === 'department' ? (user?.isSubAccount ? 'Sub-Account' : 'Controller') : (user?.role || 'Admin Account')}
               {user?.isSubAccount && (
                 <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[7px] font-black tracking-widest normal-case">
-                  {user?.parentDeptName || 'UNIT'}
+                  {parentDeptLabel || 'UNIT'}
                 </span>
               )}
             </p>
@@ -766,6 +766,15 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [actionAlert, setActionAlert] = useState(null);
   const [showOversightMenu, setShowOversightMenu] = useState(false);
   const [showDeptMoreMenu, setShowDeptMoreMenu] = useState(false);
+  const [parentDeptLabel, setParentDeptLabel] = useState(user?.parentDeptName || null);
+
+  useEffect(() => {
+    if (!user?.isSubAccount || !user?.parentDeptId || user?.parentDeptName) return;
+    getDepartments().then(depts => {
+      const parent = depts.find(d => d.id === parseInt(user.parentDeptId));
+      if (parent?.name) setParentDeptLabel(parent.name);
+    }).catch(() => {});
+  }, [user?.parentDeptId, user?.parentDeptName, user?.isSubAccount]);
 
   useEffect(() => {
     const fetchNotifs = async () => {
