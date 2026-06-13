@@ -2746,6 +2746,38 @@ const KIVWarningBanner = ({ req, detail, canResume, onRefresh }) => {
     } finally { setResuming(false); }
   };
 
+  if (canResume) {
+    // ── Holder's view — they placed the hold, show their own reason + Resume ──
+    return (
+      <div className="mx-4 mt-3 mb-1 rounded-xl border-2 border-violet-400 bg-violet-50 shadow-md shadow-violet-100 animate-in fade-in slide-in-from-top-3 duration-300">
+        <div className="p-4 flex items-start gap-3">
+          <BookMarked size={20} className="text-violet-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-black text-violet-800 uppercase tracking-wide">You Have Placed This Request On Hold</p>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-violet-200 border border-violet-400 text-violet-800 uppercase tracking-wide">KIV Active</span>
+            </div>
+            {kivNote && (
+              <p className="mt-1.5 text-xs text-violet-700 leading-relaxed">
+                <span className="font-bold">Your reason:</span> {kivNote}
+              </p>
+            )}
+            <p className="mt-1 text-[10px] text-violet-500 font-medium italic">Click Resume to lift the hold and re-enable all actions.</p>
+          </div>
+          <button
+            onClick={handleResume}
+            disabled={resuming}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-black transition-all disabled:opacity-50 shadow-sm"
+          >
+            {resuming ? <Loader2 size={12} className="animate-spin" /> : <BookMarked size={12} />}
+            Resume
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Viewer's view — someone else placed the hold ──────────────────────────
   return (
     <div className="mx-4 mt-3 mb-1 rounded-xl border-2 border-amber-400 bg-amber-50 shadow-md shadow-amber-100 animate-in fade-in slide-in-from-top-3 duration-300">
       <div className="p-4 flex items-start gap-3">
@@ -2770,16 +2802,6 @@ const KIVWarningBanner = ({ req, detail, canResume, onRefresh }) => {
             </div>
           )}
         </div>
-        {canResume && (
-          <button
-            onClick={handleResume}
-            disabled={resuming}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black transition-all disabled:opacity-50 shadow-sm"
-          >
-            {resuming ? <Loader2 size={12} className="animate-spin" /> : <BookMarked size={12} />}
-            Resume
-          </button>
-        )}
       </div>
     </div>
   );
