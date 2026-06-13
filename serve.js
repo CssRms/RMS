@@ -1496,6 +1496,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       ...(matchedSubAccount ? {
         isSubAccount: true,
         parentDeptId: dept.id,
+        parentDeptName: dept.name,
         directRoute: resolved.directRoute ?? false,
         allowedRouteDeptIds: (() => { try { return JSON.parse(resolved.allowedRouteDeptIds || 'null') || []; } catch { return []; } })(),
       } : {}),

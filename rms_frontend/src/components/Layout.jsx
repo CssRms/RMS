@@ -721,7 +721,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
               {user?.role === 'department' ? (user?.isSubAccount ? 'Sub-Account' : 'Controller') : (user?.role || 'Admin Account')}
               {user?.isSubAccount && (
                 <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[7px] font-black tracking-widest normal-case">
-                  UNIT
+                  {user?.parentDeptName || 'UNIT'}
                 </span>
               )}
             </p>
