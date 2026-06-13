@@ -1493,7 +1493,12 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       role: isSuperAdmin ? 'global_admin' : 'department',
       deptId: resolved.id,
       email: `${resolved.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
-      ...(matchedSubAccount ? { isSubAccount: true, parentDeptId: dept.id } : {}),
+      ...(matchedSubAccount ? {
+        isSubAccount: true,
+        parentDeptId: dept.id,
+        directRoute: resolved.directRoute ?? false,
+        allowedRouteDeptIds: (() => { try { return JSON.parse(resolved.allowedRouteDeptIds || 'null') || []; } catch { return []; } })(),
+      } : {}),
       ...(resolved.privilegeAmount != null ? { privilegeAmount: resolved.privilegeAmount } : {}),
       ...(resolved.memoPrivilege           ? { memoPrivilege: true }                       : {}),
       ...(resolved.materialPrivilege       ? { materialPrivilege: true }                   : {})

@@ -48,15 +48,31 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
     /general\s*manager|\bgm\b|ceo|chairman|\bicc\b|internal.*control|control.*compliance|audit|account/i.test(name);
 
   // Allowed targets when creating:
+  // • Sub-account, directRoute OFF → only parent dept (backend forces it anyway)
+  // • Sub-account, directRoute ON, specific list → only those depts
+  // • Sub-account, directRoute ON, no list → any non-privileged dept
   // • Chairman / HR / GM → anywhere (no restrictions)
   // • Regular dept → any dept EXCEPT GM, Chairman, ICC, Audit, Account
-  //                  (must reach those via HR first; can freely route among peer depts)
-  const allowedTargets = departments.filter(d => {
-    if (d.id === user?.deptId) return false;
-    if (d.type === 'Sub-Account') return false;                        // Sub-accounts are never direct targets
-    if (isChairmanCreator || isGMCreator || isHRCreator) return true; // No restrictions for executives
-    return !isPrivilegedDept(d.name);                                  // Regular: exclude privileged depts
-  });
+  const allowedTargets = (() => {
+    if (user?.isSubAccount) {
+      if (!user?.directRoute) {
+        // Route OFF — request will land on parent head regardless; show only them
+        return departments.filter(d => d.id === user.parentDeptId);
+      }
+      const ids = user?.allowedRouteDeptIds || [];
+      if (ids.length > 0) {
+        // Route ON with specific list — only those departments
+        return departments.filter(d => ids.includes(d.id) && d.type !== 'Sub-Account');
+      }
+      // Route ON, no restriction — fall through to normal filter (minus sub-accounts)
+    }
+    return departments.filter(d => {
+      if (d.id === user?.deptId) return false;
+      if (d.type === 'Sub-Account') return false;
+      if (isChairmanCreator || isGMCreator || isHRCreator) return true;
+      return !isPrivilegedDept(d.name);
+    });
+  })();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -605,7 +621,11 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
                 </select>
                 <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               </div>
-              {!isExecutiveCreator && (
+              {user?.isSubAccount && !user?.directRoute ? (
+                <p className="text-[10px] text-muted-foreground/70 italic pl-1 mt-1">
+                  All requests from your unit are routed through your department head first.
+                </p>
+              ) : !isExecutiveCreator && !user?.isSubAccount && (
                 <p className="text-[10px] text-muted-foreground/70 italic pl-1 mt-1">
                   GM, Chairman, Audit, ICC, and Account are not available here — this request must reach them through HR.
                 </p>
