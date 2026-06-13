@@ -16,6 +16,7 @@ const LoginPagePremium = () => {
   const [isStandalone, setIsStandalone] = useState(false);
   const [showForgotCode, setShowForgotCode] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [deptActivated, setDeptActivated] = useState(null); // null=unknown, true=activated, false=first-time
   const { deptLogin } = useAuth();
 
   useEffect(() => {
@@ -35,6 +36,22 @@ const LoginPagePremium = () => {
       document.head.removeChild(link);
     };
   }, []);
+
+  const handleDeptChange = async (name) => {
+    setSelectedDept(name);
+    setDeptActivated(null);
+    if (!name || name === 'Super Admin') {
+      setDeptActivated(name === 'Super Admin' ? true : null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/departments/login-status?name=${encodeURIComponent(name)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDeptActivated(data.activated);
+      }
+    } catch (_) { /* network error — leave as null */ }
+  };
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) { toast("To install: Open browser menu → 'Add to Home Screen'", { icon: '📲' }); return; }
@@ -207,7 +224,7 @@ const LoginPagePremium = () => {
                     <div className="relative group">
                       <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" size={15} />
                       <select
-                        value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
+                        value={selectedDept} onChange={(e) => handleDeptChange(e.target.value)}
                         disabled={isSubmitting} required
                         className="w-full bg-white border border-border rounded-xl pl-10 pr-4 py-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50 appearance-none cursor-pointer"
                       >
@@ -218,7 +235,13 @@ const LoginPagePremium = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Password</label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                      {!selectedDept || deptActivated === null
+                        ? 'PASSWORD / ACCESS CODE'
+                        : deptActivated
+                          ? 'PASSWORD'
+                          : 'ACCESS CODE'}
+                    </label>
                     <div className="relative group">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" size={15} />
                       <input

@@ -1597,6 +1597,20 @@ app.get('/api/departments', async (req, res) => {
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// Public: whether a department has self-activated its password (drives login label)
+app.get('/api/departments/login-status', async (req, res) => {
+  try {
+    const name = (req.query.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const dept = await prisma.department.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' }, isDeleted: false },
+      select: { codeChangedByDept: true, isSubAccount: true }
+    });
+    if (!dept) return res.status(404).json({ error: 'Not found' });
+    res.json({ activated: dept.codeChangedByDept === true, isSubAccount: dept.isSubAccount === true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 app.get('/api/departments/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2358,17 +2372,21 @@ app.put('/api/departments/:id/head', authenticateToken, async (req, res) => {
     const parsed = z.object({
       headName: z.string().min(2),
       headTitle: z.string().min(2),
-      headEmail: z.string().email()
+      headEmail: z.string().email(),
+      password: z.string().min(6).optional(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid department head payload' });
-    const updated = await prisma.department.update({
-      where: { id: deptId },
-      data: {
-        headName: parsed.data.headName,
-        headTitle: parsed.data.headTitle,
-        headEmail: parsed.data.headEmail
-      }
-    });
+    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { name: true, isSubAccount: true } });
+    const updateData = {
+      headName: parsed.data.headName,
+      headTitle: parsed.data.headTitle,
+      headEmail: parsed.data.headEmail,
+    };
+    if (parsed.data.password && !dept?.isSubAccount) {
+      updateData.accessCodeHash = await bcrypt.hash(parsed.data.password, 10);
+      updateData.codeChangedByDept = true;
+    }
+    const updated = await prisma.department.update({ where: { id: deptId }, data: updateData });
     await prisma.activityLog.create({
       data: {
         userId: getNumericUserId(req.user) || null,
