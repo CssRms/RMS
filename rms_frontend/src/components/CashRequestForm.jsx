@@ -53,7 +53,8 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   //                  (must reach those via HR first; can freely route among peer depts)
   const allowedTargets = departments.filter(d => {
     if (d.id === user?.deptId) return false;
-    if (isChairmanCreator || isGMCreator || isHRCreator) return true; // No restrictions
+    if (d.type === 'Sub-Account') return false;                        // Sub-accounts are never direct targets
+    if (isChairmanCreator || isGMCreator || isHRCreator) return true; // No restrictions for executives
     return !isPrivilegedDept(d.name);                                  // Regular: exclude privileged depts
   });
 
