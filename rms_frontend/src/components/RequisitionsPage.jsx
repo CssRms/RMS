@@ -2729,11 +2729,13 @@ const SubVisibilitySelector = ({ req, onAction }) => {
 };
 
 // ── KIV Warning Banner — shown to ALL users when a request is on hold ────────
-const KIVWarningBanner = ({ req, detail, canResume, onRefresh }) => {
+const KIVWarningBanner = ({ req, detail, canResume, onRefresh, departments = [] }) => {
   const [expanded, setExpanded] = useState(false);
   const [resuming, setResuming] = useState(false);
   const kivNote   = detail?.kivNote   || req?.kivNote;
   const kivByName = detail?.kivByName || req?.kivByName;
+  const kivDept   = departments.find(d => d.name === kivByName);
+  const kivHeadName = kivDept?.headName;
 
   const handleResume = async () => {
     setResuming(true);
@@ -2786,7 +2788,12 @@ const KIVWarningBanner = ({ req, detail, canResume, onRefresh }) => {
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-black text-amber-800 uppercase tracking-wide">Request On Hold (KIV)</p>
             <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-200 border border-amber-400 text-amber-800 uppercase tracking-wide">All Actions Paused</span>
-            {kivByName && <span className="text-xs font-bold text-amber-700">— Held by <span className="underline">{kivByName}</span></span>}
+            {kivByName && (
+              <span className="text-xs font-bold text-amber-700">
+                — Held by <span className="underline">{kivByName}</span>
+                {kivHeadName && <span className="font-normal"> ({kivHeadName})</span>}
+              </span>
+            )}
           </div>
           {kivNote && (
             <button
@@ -3253,6 +3260,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             req={req}
             detail={detail}
             canResume={canResumeKiv}
+            departments={departments}
             onRefresh={() => getRequisitionDetail(req.id).then(d => setDetail(d))}
           />
         )}
