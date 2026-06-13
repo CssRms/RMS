@@ -3753,9 +3753,10 @@ app.post('/api/requisitions/:id/kiv', authenticateToken, async (req, res) => {
       requisition.finalApprovedByDeptId === userDeptId
     );
     if (!isAdmin && !isIcc && !isHolder) return res.status(403).json({ error: 'Only the current holder may KIV this request.' });
+    if (!note?.trim()) return res.status(400).json({ error: 'A reason is required to place this request on hold.' });
     await prisma.requisition.update({
       where: { id: reqId },
-      data: { isKIV: true, kivNote: note || null, kivAt: new Date(), kivByName: req.user?.name || null }
+      data: { isKIV: true, kivNote: note.trim(), kivAt: new Date(), kivByName: req.user?.name || null }
     });
     broadcastUpdate(reqId, { action: 'kiv', fromDept: req.user?.name || '' });
     res.json({ ok: true });
