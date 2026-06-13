@@ -269,7 +269,8 @@ const AppContent = () => {
       const dept = await getDepartmentById(user.deptId);
       if (!dept) return;
       setDeptProfile(dept);
-      if (!dept.headName || !dept.headTitle || !dept.headEmail) {
+      // Sub-accounts have their details pre-filled by the dept head at creation — skip the setup modal
+      if (!user?.isSubAccount && (!dept.headName || !dept.headTitle || !dept.headEmail)) {
         setShowDeptModal(true);
       }
     };

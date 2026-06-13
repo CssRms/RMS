@@ -2535,7 +2535,13 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
 // Create a sub-account
 app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async (req, res) => {
   try {
-    const parsed = z.object({ name: z.string().min(2), parentId: z.number().int().optional() }).safeParse(req.body);
+    const parsed = z.object({
+      name:      z.string().min(2),
+      parentId:  z.number().int().optional(),
+      headName:  z.string().optional(),
+      headTitle: z.string().optional(),
+      headEmail: z.string().email().optional().or(z.literal('')),
+    }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Sub-account name is required (min 2 chars).' });
     const parentId = resolveParentId(req);
     if (!parentId) return res.status(400).json({ error: 'parentId is required for admin requests.' });
@@ -2563,11 +2569,15 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
     }
     const plainCode = await generateUniqueAccessCode(name.trim());
     const hash = await bcrypt.hash(plainCode, 10);
+    const { headName: hName, headTitle: hTitle, headEmail: hEmail } = parsed.data;
     const sub = await prisma.department.create({
       data: {
         name: name.trim(), type: 'Sub-Account',
         isSubAccount: true, parentId, createdByDeptId: parentId,
-        accessCodeHash: hash, accessCodeLabel: plainCode
+        accessCodeHash: hash, accessCodeLabel: plainCode,
+        ...(hName  ? { headName:  hName.trim()  } : {}),
+        ...(hTitle ? { headTitle: hTitle.trim() } : {}),
+        ...(hEmail ? { headEmail: hEmail.trim() } : {}),
       }
     });
     await prisma.activityLog.create({ data: { action: 'Sub-Account Created', details: `${name.trim()} created under ${parent.name}` } });

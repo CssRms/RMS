@@ -482,7 +482,7 @@ export const aiAPI = {
 
 export const subAccountAPI = {
   list: (parentId) => api.get('/sub-accounts', { params: parentId ? { parentId } : {} }),
-  create: (name, parentId) => api.post('/sub-accounts', { name, ...(parentId ? { parentId } : {}) }),
+  create: (name, parentId, extra = {}) => api.post('/sub-accounts', { name, ...(parentId ? { parentId } : {}), ...extra }),
   update: (id, data) => api.patch(`/sub-accounts/${id}`, data),
   toggle: (id) => api.patch(`/sub-accounts/${id}/toggle`),
   resetCode: (id) => api.post(`/sub-accounts/${id}/reset-code`),

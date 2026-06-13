@@ -792,6 +792,9 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newHeadName, setNewHeadName] = useState('');
+  const [newHeadTitle, setNewHeadTitle] = useState('');
+  const [newHeadEmail, setNewHeadEmail] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newCode, setNewCode] = useState(null);
   const [newSubName, setNewSubName] = useState('');
@@ -835,15 +838,26 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     if (!isAdmin || selectedDeptId !== undefined) load();
   }, [selectedDeptId, isAdmin]);
 
+  const resetCreateForm = () => {
+    setNewName('');
+    setNewHeadName('');
+    setNewHeadTitle('');
+    setNewHeadEmail('');
+  };
+
   const create = async () => {
     if (!newName.trim()) return;
     setCreating(true);
     setConflict(null);
     try {
-      const res = await subAccountAPI.create(newName.trim(), parentId || undefined);
+      const extra = {};
+      if (newHeadName.trim())  extra.headName  = newHeadName.trim();
+      if (newHeadTitle.trim()) extra.headTitle = newHeadTitle.trim();
+      if (newHeadEmail.trim()) extra.headEmail = newHeadEmail.trim();
+      const res = await subAccountAPI.create(newName.trim(), parentId || undefined, extra);
       setNewCode(res.accessCode);
       setNewSubName(res.name);
-      setNewName('');
+      resetCreateForm();
       setShowCreate(false);
       load();
       toast.success(`"${res.name}" created.`);
@@ -942,32 +956,75 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
       {/* Create form */}
       {showCreate && (
         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
-          <p className="text-[10px] font-black text-primary uppercase tracking-wider">
-            New Sub-Account / Unit{isAdmin && selectedDeptId ? ` — ${departments.find(d => String(d.id) === selectedDeptId)?.name || ''}` : ''}
-          </p>
-          <div className="flex gap-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black text-primary uppercase tracking-wider">
+              New Sub-Account / Unit{isAdmin && selectedDeptId ? ` — ${departments.find(d => String(d.id) === selectedDeptId)?.name || ''}` : ''}
+            </p>
+            <button onClick={() => { setShowCreate(false); resetCreateForm(); }} className="p-1 rounded-lg text-muted-foreground hover:text-foreground transition-all">
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Unit name */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Unit Name <span className="text-red-400">*</span></label>
             <input
               autoFocus
               value={newName}
               onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') create(); if (e.key === 'Escape') setShowCreate(false); }}
+              onKeyDown={e => { if (e.key === 'Escape') { setShowCreate(false); resetCreateForm(); } }}
               placeholder="e.g. Finance - Procurement"
-              className="flex-1 border border-border/50 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              className="w-full border border-border/50 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
             />
-            <button
-              onClick={create}
-              disabled={creating || !newName.trim()}
-              className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {creating ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              Create
-            </button>
-            <button onClick={() => setShowCreate(false)} className="p-2.5 rounded-xl border border-border/40 text-muted-foreground hover:text-foreground transition-all">
-              <X size={14} />
-            </button>
           </div>
-          <p className="text-[10px] text-muted-foreground italic">
-            A password will be auto-generated and shown once. Staff members can then log in using the unit name + this password.
+
+          {/* Head details — pre-filled by the dept head so sub-account skips setup on first login */}
+          <div className="pt-1 space-y-2 border-t border-primary/10">
+            <p className="text-[10px] text-muted-foreground/70 italic">
+              Fill in the unit head details now so the sub-account goes straight to the dashboard on first login.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Head Name</label>
+                <input
+                  value={newHeadName}
+                  onChange={e => setNewHeadName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Title / Position</label>
+                <input
+                  value={newHeadTitle}
+                  onChange={e => setNewHeadTitle(e.target.value)}
+                  placeholder="e.g. Officer"
+                  className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Email Address</label>
+              <input
+                type="email"
+                value={newHeadEmail}
+                onChange={e => setNewHeadEmail(e.target.value)}
+                placeholder="email@company.com"
+                className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={create}
+            disabled={creating || !newName.trim()}
+            className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1.5"
+          >
+            {creating ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Create Sub-Account
+          </button>
+          <p className="text-[10px] text-muted-foreground/60 italic text-center">
+            A login password is auto-generated and shown once after creation.
           </p>
         </div>
       )}
