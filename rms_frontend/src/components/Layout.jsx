@@ -75,7 +75,7 @@ const REFRESH_STEPS = [
   { key: 'page',   label: 'Syncing current page data' },
 ];
 
-const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotifications, showBell, setShowBell, onLogout, onViewChange, currentView, actionAlert, onChatDeepLink }) => {
+const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotifications, showBell, setShowBell, onLogout, onViewChange, currentView, actionAlert, onChatDeepLink, parentDeptLabel }) => {
   const { isOnline, networkQuality } = useNetwork();
   const qcfg = QUALITY_CFG[networkQuality] || QUALITY_CFG.strong;
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -1030,6 +1030,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         currentView={currentView}
         actionAlert={actionAlert}
         onChatDeepLink={setChatDeepLink}
+        parentDeptLabel={parentDeptLabel}
       />
 
       {/* Persistent offline banner — always visible while disconnected */}
