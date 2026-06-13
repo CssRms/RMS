@@ -792,7 +792,6 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newHeadName, setNewHeadName] = useState('');
   const [newHeadTitle, setNewHeadTitle] = useState('');
   const [newHeadEmail, setNewHeadEmail] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -840,7 +839,6 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
   const resetCreateForm = () => {
     setNewName('');
-    setNewHeadName('');
     setNewHeadTitle('');
     setNewHeadEmail('');
   };
@@ -850,8 +848,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     setCreating(true);
     setConflict(null);
     try {
-      const extra = {};
-      if (newHeadName.trim())  extra.headName  = newHeadName.trim();
+      const extra = { headName: newName.trim() };
       if (newHeadTitle.trim()) extra.headTitle = newHeadTitle.trim();
       if (newHeadEmail.trim()) extra.headEmail = newHeadEmail.trim();
       const res = await subAccountAPI.create(newName.trim(), parentId || undefined, extra);
@@ -983,25 +980,14 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
             <p className="text-[10px] text-muted-foreground/70 italic">
               Fill in the unit head details now so the sub-account goes straight to the dashboard on first login.
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Head Name</label>
-                <input
-                  value={newHeadName}
-                  onChange={e => setNewHeadName(e.target.value)}
-                  placeholder="Full name"
-                  className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Title / Position</label>
-                <input
-                  value={newHeadTitle}
-                  onChange={e => setNewHeadTitle(e.target.value)}
-                  placeholder="e.g. Officer"
-                  className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Title / Position</label>
+              <input
+                value={newHeadTitle}
+                onChange={e => setNewHeadTitle(e.target.value)}
+                placeholder="e.g. Officer"
+                className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Email Address</label>
