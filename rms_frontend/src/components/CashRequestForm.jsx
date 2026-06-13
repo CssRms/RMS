@@ -8,6 +8,11 @@ import { toast } from 'react-hot-toast';
 const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) => {
   const { user } = useAuth();
   const [departments, setDepartments] = useState([]);
+  // Live sub-account routing privileges (refreshed from server on open, not from stale JWT)
+  const [ownPriv, setOwnPriv] = useState({
+    directRoute: user?.directRoute ?? false,
+    allowedRouteDeptIds: user?.allowedRouteDeptIds || [],
+  });
   const [subject, setSubject] = useState('');
   const [comment, setComment] = useState('');
   const [urgency, setUrgency] = useState('normal');
@@ -55,11 +60,11 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   // • Regular dept → any dept EXCEPT GM, Chairman, ICC, Audit, Account
   const allowedTargets = (() => {
     if (user?.isSubAccount) {
-      if (!user?.directRoute) {
+      if (!ownPriv.directRoute) {
         // Route OFF — request will land on parent head regardless; show only them
         return departments.filter(d => d.id === user.parentDeptId);
       }
-      const ids = user?.allowedRouteDeptIds || [];
+      const ids = ownPriv.allowedRouteDeptIds || [];
       if (ids.length > 0) {
         // Route ON with specific list — only those departments
         return departments.filter(d => ids.includes(d.id) && d.type !== 'Sub-Account');
@@ -77,6 +82,19 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
   useEffect(() => {
     if (!isOpen) return;
     getDepartments().then(d => {
+      if (user?.isSubAccount) {
+        const ownDept = d.find(dept => dept.id === user.deptId || dept.id === parseInt(user.deptId));
+        if (ownDept) {
+          const freshIds = (() => {
+            try {
+              const raw = ownDept.allowedRouteDeptIds;
+              if (Array.isArray(raw)) return raw;
+              return JSON.parse(raw || 'null') || [];
+            } catch { return []; }
+          })();
+          setOwnPriv({ directRoute: ownDept.directRoute ?? false, allowedRouteDeptIds: freshIds });
+        }
+      }
       const all = d.filter(dept => dept.id !== user?.deptId);
       setDepartments(all);
     });
@@ -621,7 +639,7 @@ const CashRequestForm = ({ type = 'Cash', isOpen, onClose, editDraft = null }) =
                 </select>
                 <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               </div>
-              {user?.isSubAccount && !user?.directRoute ? (
+              {user?.isSubAccount && !ownPriv.directRoute ? (
                 <p className="text-[10px] text-muted-foreground/70 italic pl-1 mt-1">
                   All requests from your unit are routed through your department head first.
                 </p>
