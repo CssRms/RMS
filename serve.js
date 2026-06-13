@@ -1596,7 +1596,7 @@ app.get('/api/departments', async (req, res) => {
       select: isGlobalAdmin
         ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
         : isAuthenticated
-          ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
+          ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true }
           : { id: true, name: true, type: true, code: true }
     });
     res.json(departments);
