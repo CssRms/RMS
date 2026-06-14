@@ -231,8 +231,16 @@ const buildRefCode = async (type, deptId, isDraft) => {
     const typeCode = (t.includes('memo') || t.includes('memorandum')) ? typeMemo
                    : t.includes('material') ? typeMaterial
                    : typeCash;
-    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { name: true, code: true } });
-    const deptCode = dept?.code || deriveCode(dept?.name || '');
+    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { name: true, code: true, parentId: true, type: true } });
+    let deptCode;
+    if (dept?.type === 'Sub-Account' && dept?.parentId) {
+      const parentDept = await prisma.department.findUnique({ where: { id: dept.parentId }, select: { name: true, code: true } });
+      const parentCode = parentDept?.code || deriveCode(parentDept?.name || '');
+      const subCode    = dept?.code || deriveCode(dept?.name || '');
+      deptCode = `${parentCode}[${subCode}]`;
+    } else {
+      deptCode = dept?.code || deriveCode(dept?.name || '');
+    }
     const now = new Date();
     const dd   = String(now.getDate()).padStart(2, '0');
     const mm   = String(now.getMonth() + 1).padStart(2, '0');
