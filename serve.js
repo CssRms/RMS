@@ -2300,6 +2300,42 @@ app.patch('/api/chat/messages/:id', authenticateToken, async (req, res) => {
   } catch (err) { sendError(res, 500, err.message); }
 });
 
+// One-time migration: fix sub-account refCodes to use parentCode[subCode] format
+app.post('/api/admin/fix-subaccount-refcodes', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
+  try {
+    const reqs = await prisma.requisition.findMany({
+      where: { refCode: { not: null }, department: { type: 'Sub-Account' } },
+      select: {
+        id: true, refCode: true,
+        department: { select: { id: true, name: true, code: true, parentId: true } },
+      },
+    });
+    const parentCache = {};
+    const results = [];
+    for (const req of reqs) {
+      const dept = req.department;
+      if (!dept?.parentId) { results.push({ id: req.id, status: 'skipped', reason: 'no parentId' }); continue; }
+      if (!parentCache[dept.parentId]) {
+        parentCache[dept.parentId] = await prisma.department.findUnique({ where: { id: dept.parentId }, select: { name: true, code: true } });
+      }
+      const parent = parentCache[dept.parentId];
+      if (!parent) { results.push({ id: req.id, status: 'skipped', reason: 'parent not found' }); continue; }
+      const parentCode = parent.code || deriveCode(parent.name);
+      const subCode    = dept.code   || deriveCode(dept.name);
+      const parts = (req.refCode || '').split('/');
+      if (parts.length < 5) { results.push({ id: req.id, status: 'skipped', reason: 'bad refCode format' }); continue; }
+      if (parts[1].includes('[')) { results.push({ id: req.id, status: 'already_correct', old: req.refCode }); continue; }
+      parts[1] = `${parentCode}[${subCode}]`;
+      const newRefCode = parts.join('/');
+      await prisma.requisition.update({ where: { id: req.id }, data: { refCode: newRefCode } });
+      results.push({ id: req.id, status: 'updated', old: req.refCode, new: newRefCode });
+    }
+    const updated = results.filter(r => r.status === 'updated').length;
+    const skipped = results.filter(r => r.status !== 'updated').length;
+    res.json({ message: `Done. Updated: ${updated}, Skipped/already correct: ${skipped}`, results });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 app.post('/api/requisition-types', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
   try {
     const parsed = z.object({
