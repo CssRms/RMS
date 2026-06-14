@@ -2205,7 +2205,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
   };
 
   // Account is the only post-approval vetter
-  const roleLabel      = isAccount ? 'Account Treatment' : isChairman ? 'Chairman / CEO Treatment' : 'Payment Treatment';
+  const roleLabel      = isAccount ? 'Account' : isChairman ? 'Chairman / CEO Treatment' : 'Payment Treatment';
   const primaryLabel   = 'Mark Treated';
   const primaryDisabled = false;
 
@@ -2291,7 +2291,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             />
             <div>
               <span className="text-[12px] font-black text-foreground">
-                {treatInitiated ? '✓ Treatment Initiated' : 'Initiate Treatment'}
+                {treatInitiated ? '✓ Payment Amount Set' : 'Set Payment Amount'}
               </span>
               {!treatInitiated && (
                 <p className="text-[10px] text-muted-foreground mt-0.5">Check to open the treatment form for this requisition.</p>
