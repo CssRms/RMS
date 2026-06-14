@@ -4425,7 +4425,13 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
     if (filterView === 'active' && user?.role !== 'global_admin') {
       if (!isActiveForMe(r)) return false;
     }
-    const matchSearch  = r.title?.toLowerCase().includes(search.toLowerCase()) || String(r.id).includes(search);
+    const q = search.toLowerCase();
+    const matchSearch  = !q
+      || String(r.id).includes(q)
+      || r.refCode?.toLowerCase().includes(q)
+      || r.type?.toLowerCase().includes(q)
+      || r.title?.toLowerCase().includes(q)
+      || String(r.amount || '').includes(q);
     const matchStatus  = filterStatus === 'all' || r.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -4591,7 +4597,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Query by ID, title, or department payload…"
+                  placeholder="Search by S/N, reference, type, registry item, or amount…"
                   className="w-full bg-white border border-border/50 rounded-xl py-3 pl-12 pr-4 text-sm font-bold text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
                 />
               </div>
