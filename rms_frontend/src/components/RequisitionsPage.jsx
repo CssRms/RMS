@@ -2033,17 +2033,19 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
           </div>
         )}
 
-        {/* Routing comment — always visible, sent as note with forward/return */}
-        <div className="space-y-1 pt-1 border-t border-purple-100">
-          <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest">Review / Comment</label>
-          <textarea
-            value={routingNote}
-            onChange={e => setRoutingNote(e.target.value)}
-            rows={2}
-            placeholder="Add your review or reason (optional — visible to recipient)…"
-            className="w-full text-xs border border-purple-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 resize-none"
-          />
-        </div>
+        {/* Routing comment — visible only when table is NOT expanded (no duplicate with override comment) */}
+        {!showForm && (
+          <div className="space-y-1 pt-1 border-t border-purple-100">
+            <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest">Review / Comment</label>
+            <textarea
+              value={routingNote}
+              onChange={e => setRoutingNote(e.target.value)}
+              rows={2}
+              placeholder="Add your review or reason (optional — visible to recipient)…"
+              className="w-full text-xs border border-purple-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 resize-none"
+            />
+          </div>
+        )}
 
         {/* Forward department selector — always visible */}
         <div className="space-y-1">
