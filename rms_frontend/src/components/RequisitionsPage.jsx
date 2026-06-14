@@ -20,6 +20,21 @@ import {
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
 
+// Highlights the first occurrence of `query` inside `text` with a yellow mark
+const Highlight = ({ text, query }) => {
+  const str = String(text ?? '');
+  if (!query) return <>{str}</>;
+  const idx = str.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{str}</>;
+  return (
+    <>
+      {str.slice(0, idx)}
+      <mark className="bg-yellow-200 text-yellow-900 rounded-sm px-0.5 not-italic">{str.slice(idx, idx + query.length)}</mark>
+      {str.slice(idx + query.length)}
+    </>
+  );
+};
+
 const statusColors = {
   pending:    'bg-amber-50 border-amber-200 text-amber-700',
   approved:   'bg-emerald-50 border-emerald-200 text-emerald-700',
@@ -4674,13 +4689,13 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-primary tracking-widest">#{r.id}</span>
+                            <span className="text-[10px] font-black text-primary tracking-widest"><Highlight text={`#${r.id}`} query={search} /></span>
                             <span className="text-[9px] text-muted-foreground/60 font-mono italic">{new Date(r.createdAt).toLocaleDateString()}</span>
                           </div>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors max-w-[180px]">
                           {r.refCode ? (
-                            <span className="text-[9px] font-mono font-bold text-primary/80 tracking-tight break-all">{r.refCode}</span>
+                            <span className="text-[9px] font-mono font-bold text-primary/80 tracking-tight break-all"><Highlight text={r.refCode} query={search} /></span>
                           ) : (
                             <span className="text-[9px] text-muted-foreground/30 italic">—</span>
                           )}
@@ -4692,12 +4707,12 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                               : r.type === 'Material' ? 'bg-primary shadow-primary/20'
                               : 'bg-amber-500 shadow-amber-500/20'
                             } shadow-lg`} />
-                            <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{r.type}</span>
+                            <span className="text-[10px] font-black text-foreground uppercase tracking-widest"><Highlight text={r.type} query={search} /></span>
                           </div>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           <div className="space-y-0.5">
-                            <p className="text-[12px] font-bold text-foreground max-w-xs truncate">{r.title}</p>
+                            <p className="text-[12px] font-bold text-foreground max-w-xs truncate"><Highlight text={r.title} query={search} /></p>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {r.urgency && r.urgency !== 'normal' && (
                                 <div className={`flex items-center gap-1 text-[9px] font-black uppercase ${urgencyColors[r.urgency]}`}>
@@ -4724,7 +4739,7 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-[12px] font-black text-foreground font-mono">₦{Number(r.amount || 0).toLocaleString()}</span>
+                              <span className={`text-[12px] font-black text-foreground font-mono ${search && String(r.amount || '').includes(search) ? 'bg-yellow-200 text-yellow-900 rounded-sm px-0.5' : ''}`}>₦{Number(r.amount || 0).toLocaleString()}</span>
                             )
                           ) : (
                             <span className="text-[10px] text-muted-foreground/50 italic">Non-financial</span>
