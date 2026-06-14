@@ -1837,14 +1837,15 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
     return [blankRow()];
   };
 
-  const [rows, setRows]         = useState(initRows);
-  const [comment, setComment]   = useState(existingOverride?.comment || '');
-  const [clearing, setClearing] = useState(false);
-  const [acting, setActing]     = useState(false);
+  const [rows, setRows]           = useState(initRows);
+  const [comment, setComment]     = useState(existingOverride?.comment || '');
+  const [routingNote, setRoutingNote] = useState(''); // always-visible note sent with forward/return
+  const [clearing, setClearing]   = useState(false);
+  const [acting, setActing]       = useState(false);
   const [forwardDeptId, setForwardDeptId] = useState('');
-  const [showForm, setShowForm] = useState(!!detail?.hasAuditOverride);
+  const [showForm, setShowForm]   = useState(!!detail?.hasAuditOverride);
 
-  // Snapshot at mount for change detection
+  // Snapshot at mount for change detection — routing note is never counted as a "table change"
   const originalRows    = React.useRef(initRows());
   const originalComment = React.useRef(existingOverride?.comment || '');
 
@@ -1855,14 +1856,13 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
   const addRow    = () => setRows(prev => [...prev, blankRow()]);
   const removeRow = (idx) => setRows(prev => prev.filter((_, i) => i !== idx));
 
-  // True when user has modified the table or comment vs. what the form opened with
+  // True only when the table rows differ from creator's original — routing note never triggers this
   const hasChanges = showForm && (
     rows.length !== originalRows.current.length ||
     rows.some((r, i) => {
       const o = originalRows.current[i];
       return !o || r.description !== o.description || String(r.qty) !== String(o.qty) || String(r.amount) !== String(o.amount);
-    }) ||
-    comment !== originalComment.current
+    })
   );
 
   // Return destination: whoever last forwarded to this dept
@@ -1897,7 +1897,7 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
     setActing(true);
     try {
       if (hasChanges) await doSaveOverride();
-      await forwardRequisition(req.id, { targetDepartmentId: parseInt(forwardDeptId), note: '', returnToSender: false });
+      await forwardRequisition(req.id, { targetDepartmentId: parseInt(forwardDeptId), note: routingNote.trim(), returnToSender: false });
       toast.success(hasChanges ? 'Audit table saved & forwarded.' : 'Forwarded.');
       onDone();
     } catch (err) { toast.error(err?.response?.data?.error || err.message || 'Action failed.'); }
@@ -1908,7 +1908,7 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
     setActing(true);
     try {
       if (hasChanges) await doSaveOverride();
-      await forwardRequisition(req.id, { targetDepartmentId: null, note: '', returnToSender: true });
+      await forwardRequisition(req.id, { targetDepartmentId: null, note: routingNote.trim(), returnToSender: true });
       toast.success(hasChanges ? `Saved & returned to ${returnTarget?.name || 'sender'}.` : `Returned to ${returnTarget?.name || 'sender'}.`);
       onDone();
     } catch (err) { toast.error(err?.response?.data?.error || err.message || 'Action failed.'); }
@@ -1945,7 +1945,7 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
           {isItemized && (
             !showForm ? (
               <button onClick={() => setShowForm(true)} className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline">
-                {detail?.hasAuditOverride ? 'Edit' : 'Vet Now'}
+                {detail?.hasAuditOverride ? 'Edit' : 'Alter Request'}
               </button>
             ) : (
               !detail?.hasAuditOverride && (
@@ -2033,8 +2033,20 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
           </div>
         )}
 
-        {/* Forward department selector — always visible */}
+        {/* Routing comment — always visible, sent as note with forward/return */}
         <div className="space-y-1 pt-1 border-t border-purple-100">
+          <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest">Review / Comment</label>
+          <textarea
+            value={routingNote}
+            onChange={e => setRoutingNote(e.target.value)}
+            rows={2}
+            placeholder="Add your review or reason (optional — visible to recipient)…"
+            className="w-full text-xs border border-purple-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 resize-none"
+          />
+        </div>
+
+        {/* Forward department selector — always visible */}
+        <div className="space-y-1">
           <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest">Forward to</label>
           <select value={forwardDeptId} onChange={e => setForwardDeptId(e.target.value)}
             className="w-full bg-white border border-purple-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-purple-300">
