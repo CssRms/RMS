@@ -1817,7 +1817,7 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
 // ── Audit Price Override Panel ────────────────────────────────────────────────
 // Shown only to the Audit department when they currently hold the request.
 // Allows them to build a verified items table that supersedes the creator's price.
-const AuditOverridePanel = ({ req, detail, user, onDone }) => {
+const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => {
   const _fmt = n => `₦${Number(n || 0).toLocaleString()}`;
 
   const existingOverride = detail?.hasAuditOverride
@@ -1826,74 +1826,114 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
 
   const blankRow = () => ({ description: '', qty: 1, amount: '' });
 
-  const [rows, setRows] = useState(() => {
-    if (existingOverride?.items?.length) {
+  const initRows = () => {
+    if (existingOverride?.items?.length)
       return existingOverride.items.map(i => ({ description: i.description, qty: i.qty, amount: String(i.amount) }));
-    }
-    // Pre-fill with creator's original items so Audit edits rather than retyping
     try {
       const parsed = JSON.parse(req.content || '{}');
-      if (parsed.itemized && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      if (parsed.itemized && Array.isArray(parsed.items) && parsed.items.length > 0)
         return parsed.items.map(i => ({ description: i.description || '', qty: i.qty || 1, amount: String(i.amount || '') }));
-      }
-    } catch { /* corrupt content — fall through */ }
+    } catch { /* fall through */ }
     return [blankRow()];
-  });
-  const [comment, setComment] = useState(existingOverride?.comment || '');
-  const [saving, setSaving] = useState(false);
+  };
+
+  const [rows, setRows]         = useState(initRows);
+  const [comment, setComment]   = useState(existingOverride?.comment || '');
   const [clearing, setClearing] = useState(false);
-  // Start collapsed — override table is optional; only auto-open if an override already exists
+  const [acting, setActing]     = useState(false);
+  const [forwardDeptId, setForwardDeptId] = useState('');
   const [showForm, setShowForm] = useState(!!detail?.hasAuditOverride);
 
-  const calcLineTotal = (row) => {
-    const qty = parseFloat(row.qty) || 0;
-    const amt = parseFloat(row.amount) || 0;
-    return qty * amt;
-  };
+  // Snapshot at mount for change detection
+  const originalRows    = React.useRef(initRows());
+  const originalComment = React.useRef(existingOverride?.comment || '');
+
+  const calcLineTotal = (row) => (parseFloat(row.qty) || 0) * (parseFloat(row.amount) || 0);
   const grandTotal = rows.reduce((s, r) => s + calcLineTotal(r), 0);
 
-  const updateRow = (idx, field, val) => {
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
-  };
-  const addRow = () => setRows(prev => [...prev, blankRow()]);
+  const updateRow = (idx, field, val) => setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+  const addRow    = () => setRows(prev => [...prev, blankRow()]);
   const removeRow = (idx) => setRows(prev => prev.filter((_, i) => i !== idx));
 
-  const handleSave = async () => {
+  // True when user has modified the table or comment vs. what the form opened with
+  const hasChanges = showForm && (
+    rows.length !== originalRows.current.length ||
+    rows.some((r, i) => {
+      const o = originalRows.current[i];
+      return !o || r.description !== o.description || String(r.qty) !== String(o.qty) || String(r.amount) !== String(o.amount);
+    }) ||
+    comment !== originalComment.current
+  );
+
+  // Return destination: whoever last forwarded to this dept
+  const forwardEvents = detail?.forwardEvents || [];
+  const currentDeptId = detail?.targetDepartmentId;
+  const lastInbound   = [...forwardEvents].reverse().find(e => e.toDeptId === currentDeptId && e.fromDeptId !== currentDeptId);
+  const returnTarget  = lastInbound
+    ? departments.find(d => d.id === lastInbound.fromDeptId)
+    : departments.find(d => d.id === req.departmentId);
+
+  // Forward targets: exclude self and immediate sender
+  const forwardDepts = departments.filter(d => {
+    if (d.id === currentDeptId) return false;
+    if (lastInbound && d.id === lastInbound.fromDeptId) return false;
+    return true;
+  });
+
+  const doSaveOverride = async () => {
     const validRows = rows.filter(r => r.description.trim() && parseFloat(r.amount) > 0);
-    if (!validRows.length) { toast.error('Add at least one item with a description and price.'); return; }
-    setSaving(true);
+    if (!validRows.length) throw new Error('Add at least one item with a description and price.');
+    const items = validRows.map(r => ({
+      description: r.description.trim(),
+      qty: parseFloat(r.qty) || 1,
+      amount: parseFloat(r.amount),
+      lineTotal: parseFloat(((parseFloat(r.qty) || 1) * parseFloat(r.amount)).toFixed(2)),
+    }));
+    await saveAuditOverride(req.id, { items, comment: comment.trim() || undefined });
+  };
+
+  const handleForward = async () => {
+    if (!forwardDeptId) { toast.error('Please select a department to forward to.'); return; }
+    setActing(true);
     try {
-      const items = validRows.map(r => ({
-        description: r.description.trim(),
-        qty: parseFloat(r.qty) || 1,
-        amount: parseFloat(r.amount),
-        lineTotal: parseFloat(((parseFloat(r.qty) || 1) * parseFloat(r.amount)).toFixed(2)),
-      }));
-      await saveAuditOverride(req.id, { items, comment: comment.trim() || undefined });
-      toast.success('Audit verified table saved. This amount will be used for approval & payment.');
-      setShowForm(false);
+      if (hasChanges) await doSaveOverride();
+      await forwardRequisition(req.id, { targetDepartmentId: parseInt(forwardDeptId), note: '', returnToSender: false });
+      toast.success(hasChanges ? 'Audit table saved & forwarded.' : 'Forwarded.');
       onDone();
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Could not save audit override.');
-    } finally { setSaving(false); }
+    } catch (err) { toast.error(err?.response?.data?.error || err.message || 'Action failed.'); }
+    finally { setActing(false); }
+  };
+
+  const handleReturn = async () => {
+    setActing(true);
+    try {
+      if (hasChanges) await doSaveOverride();
+      await forwardRequisition(req.id, { targetDepartmentId: null, note: '', returnToSender: true });
+      toast.success(hasChanges ? `Saved & returned to ${returnTarget?.name || 'sender'}.` : `Returned to ${returnTarget?.name || 'sender'}.`);
+      onDone();
+    } catch (err) { toast.error(err?.response?.data?.error || err.message || 'Action failed.'); }
+    finally { setActing(false); }
   };
 
   const handleClear = async () => {
     setClearing(true);
     try {
       await clearAuditOverride(req.id);
-      toast.success('Audit override cleared. Original creator amount is now effective.');
+      toast.success('Override cleared — original creator amount is now effective.');
       onDone();
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Could not clear override.');
-    } finally { setClearing(false); }
+    } catch (err) { toast.error(err?.response?.data?.error || 'Could not clear override.'); }
+    finally { setClearing(false); }
   };
+
+  const isItemized = (() => { try { return JSON.parse(req.content || '{}')?.itemized; } catch { return false; } })();
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 border border-purple-200 rounded-2xl shadow-sm relative overflow-hidden bg-purple-50/40">
       <div className="absolute top-0 left-0 w-1 h-full bg-purple-500" />
-      <div className="p-4">
-        <div className="flex items-center justify-between pl-1 mb-3">
+      <div className="p-4 space-y-3">
+
+        {/* Header */}
+        <div className="flex items-center justify-between pl-1">
           <div className="flex items-center gap-2">
             <Gavel size={14} className="text-purple-700" />
             <p className="text-[10px] font-black text-purple-800 uppercase tracking-widest">Audit Price Override</p>
@@ -1902,51 +1942,37 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
               <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Override Active</span>
             )}
           </div>
-          {!showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline"
-            >
-              {detail?.hasAuditOverride ? 'Edit' : '+ Create Override'}
-            </button>
-          )}
-          {showForm && !detail?.hasAuditOverride && (
-            <button
-              onClick={() => setShowForm(false)}
-              className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline"
-            >
-              Cancel
-            </button>
+          {isItemized && (
+            !showForm ? (
+              <button onClick={() => setShowForm(true)} className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline">
+                {detail?.hasAuditOverride ? 'Edit' : 'Vet Now'}
+              </button>
+            ) : (
+              !detail?.hasAuditOverride && (
+                <button onClick={() => setShowForm(false)} className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline">Cancel</button>
+              )
+            )
           )}
         </div>
 
-        {!detail?.hasAuditOverride && !showForm && (
-          <p className="text-[11px] text-purple-600/60 pl-1 italic">
-            You can vet and forward this request without an override. Use "+ Create Override" above only if the amounts need correction.
-          </p>
-        )}
-
+        {/* Existing override summary */}
         {detail?.hasAuditOverride && !showForm && existingOverride && (
-          <div className="mb-3 space-y-2">
-            <p className="text-xs text-purple-700/80 pl-1">Verified amount: <span className="font-black text-purple-900">{_fmt(detail.auditAmount)}</span></p>
-            {existingOverride.comment && <p className="text-xs text-purple-700/80 italic pl-1">"{existingOverride.comment}"</p>}
-            <button
-              onClick={handleClear}
-              disabled={clearing}
-              className="text-[10px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1 pl-1"
-            >
+          <div className="space-y-1.5 pl-1">
+            <p className="text-xs text-purple-700/80">Verified amount: <span className="font-black text-purple-900">{_fmt(detail.auditAmount)}</span></p>
+            {existingOverride.comment && <p className="text-xs text-purple-700/80 italic">"{existingOverride.comment}"</p>}
+            <button onClick={handleClear} disabled={clearing} className="text-[10px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1">
               {clearing ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
               Clear Override (revert to creator's amount)
             </button>
           </div>
         )}
 
+        {/* Expanded table form */}
         {showForm && (
           <div className="space-y-3">
             <p className="text-[11px] text-purple-700/80 pl-1 leading-relaxed">
-              Build your verified items table below. This will <strong>override the creator's estimated amount</strong> for threshold decisions and payment. The creator's original table remains visible.
+              Build your verified items table below. This will <strong>override the creator's estimated amount</strong> for threshold decisions and payment.
             </p>
-
             <div className="overflow-x-auto rounded-xl border border-purple-200 shadow-sm">
               <table className="w-full text-sm">
                 <thead>
@@ -1964,42 +1990,23 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
                     <tr key={idx} className="bg-white">
                       <td className="px-2 py-2 text-xs text-muted-foreground font-mono">{idx + 1}</td>
                       <td className="px-2 py-1.5">
-                        <input
-                          type="text"
-                          value={row.description}
-                          onChange={e => updateRow(idx, 'description', e.target.value)}
+                        <input type="text" value={row.description} onChange={e => updateRow(idx, 'description', e.target.value)}
                           placeholder="Item description"
-                          className="w-full text-xs border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
-                        />
+                          className="w-full text-xs border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400" />
                       </td>
                       <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          min="1"
-                          value={row.qty}
-                          onChange={e => updateRow(idx, 'qty', e.target.value)}
-                          className="w-full text-xs text-center border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
-                        />
+                        <input type="number" min="1" value={row.qty} onChange={e => updateRow(idx, 'qty', e.target.value)}
+                          className="w-full text-xs text-center border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400" />
                       </td>
                       <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={row.amount}
-                          onChange={e => updateRow(idx, 'amount', e.target.value)}
+                        <input type="number" min="0" step="0.01" value={row.amount} onChange={e => updateRow(idx, 'amount', e.target.value)}
                           placeholder="0.00"
-                          className="w-full text-xs text-right border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
-                        />
+                          className="w-full text-xs text-right border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-400" />
                       </td>
-                      <td className="px-2 py-2 text-xs text-right font-mono font-bold text-foreground">
-                        {_fmt(calcLineTotal(row))}
-                      </td>
+                      <td className="px-2 py-2 text-xs text-right font-mono font-bold text-foreground">{_fmt(calcLineTotal(row))}</td>
                       <td className="px-2 py-2 text-center">
                         {rows.length > 1 && (
-                          <button onClick={() => removeRow(idx)} className="text-red-400 hover:text-red-600">
-                            <Trash2 size={13} />
-                          </button>
+                          <button onClick={() => removeRow(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={13} /></button>
                         )}
                       </td>
                     </tr>
@@ -2014,45 +2021,45 @@ const AuditOverridePanel = ({ req, detail, user, onDone }) => {
                 </tfoot>
               </table>
             </div>
-
-            <button
-              onClick={addRow}
-              className="flex items-center gap-1.5 text-[11px] font-bold text-purple-700 hover:text-purple-900 transition-colors pl-1"
-            >
+            <button onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-bold text-purple-700 hover:text-purple-900 transition-colors pl-1">
               <Plus size={13} /> Add Row
             </button>
-
             <div>
               <label className="block text-[10px] font-black text-purple-700 uppercase tracking-widest mb-1 pl-1">Comment (optional)</label>
-              <textarea
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                rows={2}
+              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
                 placeholder="e.g. Prices verified against market rate..."
-                className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-400 resize-none"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm transition-all disabled:opacity-50 shadow-md"
-              >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Gavel size={15} />}
-                {saving ? 'Saving…' : 'Save Audit Verified Table'}
-              </button>
-              {detail?.hasAuditOverride && (
-                <button
-                  onClick={() => setShowForm(false)}
-                  className="px-4 py-2.5 rounded-xl border border-border text-muted-foreground text-sm font-bold hover:bg-muted transition-all"
-                >
-                  Cancel
-                </button>
-              )}
+                className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-400 resize-none" />
             </div>
           </div>
         )}
+
+        {/* Forward department selector — always visible */}
+        <div className="space-y-1 pt-1 border-t border-purple-100">
+          <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest">Forward to</label>
+          <select value={forwardDeptId} onChange={e => setForwardDeptId(e.target.value)}
+            className="w-full bg-white border border-purple-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-purple-300">
+            <option value="">— Select department —</option>
+            {forwardDepts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>
+
+        {/* Action buttons — labels change when unsaved changes exist */}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={handleForward} disabled={acting || !forwardDeptId}
+            className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+            {acting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            {hasChanges ? 'Save & Forward' : 'Forward'}
+          </button>
+          <div className="space-y-0.5">
+            {returnTarget && <p className="text-[9px] text-purple-700/70 font-bold uppercase text-center tracking-wide">Returns to: {returnTarget.name}</p>}
+            <button onClick={handleReturn} disabled={acting}
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+              {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+              {hasChanges ? 'Save & Return' : 'Return'}
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -3435,6 +3442,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
 
               {!isTaggedObserver && !approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading && !isFrozen && !isOnKiv &&
+               !/\baudit\b/i.test(user?.name || '') &&
                (!['treated', 'published', 'approved', 'vetting', 'partial'].includes(detail?.finalApprovalStatus) || isVettingReturned) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                    <RespondPanel
@@ -3446,16 +3454,17 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Audit Override Panel — shown to Audit dept when they hold the request and it has an itemized table */}
+              {/* Audit Override Panel — primary action surface for Audit dept (replaces RespondPanel) */}
               {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isFrozen &&
                /\baudit\b/i.test(user?.name || '') &&
                detail.targetDepartmentId === user?.deptId &&
-               _parsedContent?.itemized && (
+               !isMemoRecord(req) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <AuditOverridePanel
                     req={req}
                     detail={detail}
                     user={user}
+                    departments={departments}
                     onDone={() => {
                       getRequisitionDetail(req.id).then(d => setDetail(d));
                       onAction();
