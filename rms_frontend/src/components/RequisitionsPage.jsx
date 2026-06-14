@@ -1117,7 +1117,7 @@ const RespondPanel = ({ req, detail, departments, onDone }) => {
 // ── Final Approve Panel ───────────────────────────────────────────────────────
 const DEFAULT_THRESHOLDS = { hr_ceiling: 50000, chairman_min: 100000 };
 
-const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onApproveCheck }) => {
+const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onApproveCheck, onAuditGate }) => {
   const [note, setNote]               = useState('');
   const [acting, setActing]           = useState(false);
   const [treating, setTreating]       = useState(false);
@@ -1320,24 +1320,18 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
     } finally { setActing(false); }
   };
 
-  // ── Audit pre-review gate (Cash requests only) ──────────────────────────────
+  // ── Audit pre-review gate — signal parent to show top banner, render only KIV here ──
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (onAuditGate) onAuditGate(needsAuditPreReview ? { authorityLabel } : null);
+    return () => { if (onAuditGate) onAuditGate(null); };
+  // authorityLabel is a string derived from amount/thresholds; safe to include
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsAuditPreReview, authorityLabel]);
+
   if (needsAuditPreReview) {
     return (
-      <div className="space-y-3 border border-amber-200 rounded-2xl p-4 bg-amber-50/60 shadow-sm relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
-        <div className="flex items-center gap-2 pl-1">
-          <ShieldCheck size={14} className="text-amber-700" />
-          <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Audit Pre-Review Required</p>
-          <span className="ml-auto px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-black text-amber-700 uppercase">{authorityLabel}</span>
-        </div>
-        <p className="text-[12px] text-amber-800 leading-relaxed">
-          This request must be reviewed by <strong>Audit</strong> before you can approve it.
-          Use the Forward option below to send it to the Audit department. Once Audit reviews and returns it to you, the approval form will unlock.
-        </p>
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-white border border-amber-200 text-[11px] text-amber-700 font-medium">
-          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
-          <span>Approval is locked until Audit returns this document. You can still forward or return it using the routing panel.</span>
-        </div>
+      <div className="space-y-2">
         {!showKivFormFA ? (
           <button onClick={() => setShowKivFormFA(true)} disabled={kivActing}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-[10px] font-black transition-all disabled:opacity-50">
@@ -2843,6 +2837,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const [deletingAttachment, setDeletingAttachment] = useState(false);
   const [approveChecked, setApproveChecked] = useState(false);
   const [tagModal, setTagModal]     = useState(false);
+  const [auditGate, setAuditGate]   = useState(null); // { authorityLabel } when active, else null
   const fileInputRef                = React.useRef(null);
 
   useEffect(() => {
@@ -3268,6 +3263,26 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
              </div>
           )}
         </div>
+
+        {/* Audit Pre-Review Banner — shown at top when approval authority is gated on audit */}
+        {auditGate && detail && !loading && !isOnKiv && (
+          <div className="mx-4 mt-3 space-y-2 border border-amber-200 rounded-2xl p-4 bg-amber-50/60 shadow-sm relative overflow-hidden animate-in fade-in slide-in-from-top-3 duration-300">
+            <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 rounded-l-2xl" />
+            <div className="flex items-center gap-2 pl-1">
+              <ShieldCheck size={14} className="text-amber-700" />
+              <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Audit Pre-Review Required</p>
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-black text-amber-700 uppercase">{auditGate.authorityLabel}</span>
+            </div>
+            <p className="text-[12px] text-amber-800 leading-relaxed pl-1">
+              This request must be reviewed by <strong>Audit</strong> before you can approve it.
+              Forward it to the Audit department — once Audit reviews and returns it, the approval form will unlock.
+            </p>
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-white border border-amber-200 text-[11px] text-amber-700 font-medium">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
+              <span>Approval is locked until Audit returns this document. You can still forward or return it using the routing panel below.</span>
+            </div>
+          </div>
+        )}
 
         {/* KIV Warning Banner — visible to ALL users when request is on hold */}
         {isOnKiv && detail && !loading && (
@@ -3729,6 +3744,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                     user={user}
                     departments={departments}
                     onApproveCheck={setApproveChecked}
+                    onAuditGate={setAuditGate}
                     onApproved={() => {
                       setApproveChecked(false);
                       getRequisitionDetail(req.id).then(d => setDetail(d));
