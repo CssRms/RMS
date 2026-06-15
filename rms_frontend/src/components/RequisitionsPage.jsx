@@ -2860,6 +2860,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const [tagModal, setTagModal]     = useState(false);
   const [auditGate, setAuditGate]   = useState(null); // { authorityLabel } when active, else null
   const fileInputRef                = React.useRef(null);
+  const paymentSectionRef           = React.useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -3510,7 +3511,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                ((detail.finalApprovalStatus && !['none', 'treated'].includes(detail.finalApprovalStatus))
                 || (/^material/i.test(req?.type || '') && (detail.targetDepartmentId === user?.deptId
                     || detail.targetDepartmentId === (user?.parentDeptId ? parseInt(user.parentDeptId) : -1)))) && (
-                <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
+                <div ref={paymentSectionRef} className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <VettingPanel
                     req={req}
                     detail={detail}
@@ -3829,6 +3830,15 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                        <div className="flex items-center gap-2 text-orange-700">
                          <AlertTriangle size={16} />
                          <span className="text-xs font-bold">Partial Payment — Balance Pending</span>
+                         {/* Mobile-only: tap to jump down to payment entry section */}
+                         <button
+                           onClick={() => paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                           className="lg:hidden ml-auto flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-700 text-[10px] font-black transition-all animate-bounce"
+                           title="Go to payment entry"
+                         >
+                           <ArrowDownToLine size={12} />
+                           <span>Enter Amount</span>
+                         </button>
                        </div>
                        {detail.amount > 0 && (() => {
                          const effAmt = (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount);
