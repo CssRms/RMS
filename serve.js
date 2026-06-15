@@ -175,7 +175,7 @@ const getEffectiveReqAmount = (req) => {
 async function getSubPrivilege(deptId) {
   try {
     const rows = await prisma.$queryRaw`
-      SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege",
+      SELECT "privilegeAmount", "approvalLimit", "cashPrivilege", "memoPrivilege", "materialPrivilege",
              "directRoute", "allowedRouteDeptIds"
       FROM "Department" WHERE id = ${parseInt(deptId)} LIMIT 1
     `;
@@ -184,13 +184,14 @@ async function getSubPrivilege(deptId) {
     try { allowedRouteDeptIds = JSON.parse(d?.allowedRouteDeptIds || 'null') || []; } catch { allowedRouteDeptIds = []; }
     return {
       privilegeAmount:     d?.privilegeAmount   ?? null,
+      approvalLimit:       d?.approvalLimit     ?? null,
       cashPrivilege:       d?.cashPrivilege     ?? false,
       memoPrivilege:       d?.memoPrivilege     ?? false,
       materialPrivilege:   d?.materialPrivilege ?? false,
       directRoute:         d?.directRoute       ?? false,
       allowedRouteDeptIds,
     };
-  } catch { return { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false, directRoute: false, allowedRouteDeptIds: [] }; }
+  } catch { return { privilegeAmount: null, approvalLimit: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false, directRoute: false, allowedRouteDeptIds: [] }; }
 }
 // Legacy compat — returns just the amount
 async function getSubPrivilegeAmount(deptId) {
@@ -1509,6 +1510,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
         allowedRouteDeptIds: (() => { try { return JSON.parse(resolved.allowedRouteDeptIds || 'null') || []; } catch { return []; } })(),
       } : {}),
       ...(resolved.privilegeAmount != null ? { privilegeAmount: resolved.privilegeAmount } : {}),
+      ...(resolved.approvalLimit   != null ? { approvalLimit: resolved.approvalLimit }     : {}),
       ...(resolved.memoPrivilege           ? { memoPrivilege: true }                       : {}),
       ...(resolved.materialPrivilege       ? { materialPrivilege: true }                   : {})
     };
@@ -1604,7 +1606,7 @@ app.get('/api/departments', async (req, res) => {
       select: isGlobalAdmin
         ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
         : isAuthenticated
-          ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true }
+          ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true, privilegeAmount: true, approvalLimit: true }
           : { id: true, name: true, type: true, code: true }
     });
     res.json(departments);
@@ -2970,6 +2972,7 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
 
     const parsed = z.object({
       maxAmount:           z.union([z.number().min(0), z.null()]).optional(),
+      approvalLimit:       z.union([z.number().min(0), z.null()]).optional(),
       cashPrivilege:       z.boolean().optional(),
       memoPrivilege:       z.boolean().optional(),
       materialPrivilege:   z.boolean().optional(),
@@ -2978,13 +2981,14 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     }).safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid privilege payload.' });
 
-    const { maxAmount, cashPrivilege, memoPrivilege, materialPrivilege, directRoute, allowedRouteDeptIds } = parsed.data;
-    if (maxAmount === undefined && cashPrivilege === undefined && memoPrivilege === undefined && materialPrivilege === undefined && directRoute === undefined && allowedRouteDeptIds === undefined)
+    const { maxAmount, approvalLimit, cashPrivilege, memoPrivilege, materialPrivilege, directRoute, allowedRouteDeptIds } = parsed.data;
+    if (maxAmount === undefined && approvalLimit === undefined && cashPrivilege === undefined && memoPrivilege === undefined && materialPrivilege === undefined && directRoute === undefined && allowedRouteDeptIds === undefined)
       return res.status(400).json({ error: 'No privilege fields provided.' });
 
     // Ensure columns exist in DB regardless of Prisma client schema version
     try {
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "privilegeAmount" DOUBLE PRECISION`;
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "approvalLimit" DOUBLE PRECISION`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "cashPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "memoPrivilege" BOOLEAN NOT NULL DEFAULT false`;
       await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "materialPrivilege" BOOLEAN NOT NULL DEFAULT false`;
@@ -2996,6 +3000,7 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
     const setClauses = [];
     const values = [];
     if (maxAmount !== undefined) { setClauses.push(`"privilegeAmount" = $${setClauses.length + 1}`); values.push(maxAmount === null ? null : parseFloat(maxAmount)); }
+    if (approvalLimit !== undefined) { setClauses.push(`"approvalLimit" = $${setClauses.length + 1}`); values.push(approvalLimit === null ? null : parseFloat(approvalLimit)); }
     if (cashPrivilege !== undefined) { setClauses.push(`"cashPrivilege" = $${setClauses.length + 1}`); values.push(cashPrivilege); }
     if (memoPrivilege !== undefined) { setClauses.push(`"memoPrivilege" = $${setClauses.length + 1}`); values.push(memoPrivilege); }
     if (materialPrivilege !== undefined) { setClauses.push(`"materialPrivilege" = $${setClauses.length + 1}`); values.push(materialPrivilege); }
@@ -3017,10 +3022,10 @@ app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
       });
     } catch (_) {}
 
-    let updated = { privilegeAmount: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false, directRoute: false, allowedRouteDeptIds: [] };
+    let updated = { privilegeAmount: null, approvalLimit: null, cashPrivilege: false, memoPrivilege: false, materialPrivilege: false, directRoute: false, allowedRouteDeptIds: [] };
     try {
       const rows = await prisma.$queryRaw`
-        SELECT "privilegeAmount", "cashPrivilege", "memoPrivilege", "materialPrivilege",
+        SELECT "privilegeAmount", "approvalLimit", "cashPrivilege", "memoPrivilege", "materialPrivilege",
                "directRoute", "allowedRouteDeptIds"
         FROM "Department" WHERE id = ${subId} LIMIT 1
       `;

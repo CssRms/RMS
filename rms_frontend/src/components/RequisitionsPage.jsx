@@ -1147,7 +1147,9 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
   const amount = effectiveAmount;
 
   // For privileged sub-accounts use parent dept name for authority checks
-  const isPrivSub = user?.isSubAccount && user?.parentDeptId && user?.privilegeAmount != null;
+  // approvalLimit (separate from privilegeAmount) controls what amount they can APPROVE
+  const approvalLimit = user?.approvalLimit != null ? parseFloat(user.approvalLimit) : null;
+  const isPrivSub = user?.isSubAccount && user?.parentDeptId && approvalLimit != null;
   const parentDept = isPrivSub ? departments.find(d => d.id === parseInt(user.parentDeptId)) : null;
   const checkDeptName = (isPrivSub && parentDept) ? parentDept.name : deptName;
 
@@ -1159,12 +1161,12 @@ const FinalApprovePanel = ({ req, detail, user, departments, onApproved, onAppro
 
   // isAtMyDesk: request is at my dept, OR I'm a privileged sub-account of the dept holding it
   const parentDeptId = user?.parentDeptId ? parseInt(user.parentDeptId) : null;
-  const privLimit = user?.privilegeAmount != null ? parseFloat(user.privilegeAmount) : null;
   const isMaterial = /^material/i.test(req.type || '');
   const isCash = !isMaterial && !/^memo/i.test(req.type || '');
+  // Approval authority check uses approvalLimit (not privilegeAmount which governs creation)
   const subHasTypePriv = isMaterial
     ? !!(user?.materialPrivilege)
-    : (isCash ? (privLimit != null && effectiveAmount <= privLimit) : false);
+    : (isCash ? (approvalLimit != null && effectiveAmount <= approvalLimit) : false);
 
   const isAtMyDesk = detail?.targetDepartmentId === user?.deptId
     || (isPrivSub && parentDeptId && detail?.targetDepartmentId === parentDeptId && subHasTypePriv);
@@ -2106,9 +2108,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const _fas = detail?.finalApprovalStatus;
   const _isMaterialReq = /^material/i.test(req?.type || '');
 
-  // Privileged sub-account of Audit or Account — compute BEFORE _accountHoldsMaterial
-  const _privSub = user?.isSubAccount && user?.parentDeptId && user?.privilegeAmount != null;
-  const _privLimit = _privSub ? parseFloat(user.privilegeAmount) : null;
+  // Privileged sub-account of Audit or Account — uses approvalLimit for handling authority
+  const _privSub = user?.isSubAccount && user?.parentDeptId && user?.approvalLimit != null;
+  const _privLimit = _privSub ? parseFloat(user.approvalLimit) : null;
   const _effAmt = (detail?.hasAuditOverride && detail?.auditAmount != null)
     ? parseFloat(detail.auditAmount) : parseFloat(req?.amount || 0);
   const _privCovers = _privSub && _privLimit != null && _effAmt <= _privLimit;
@@ -3508,7 +3510,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               {/* Vetting Panel — Account (and privileged Audit/Account sub-accounts) for post-approval treatment. */}
               {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isFrozen && !isOnKiv &&
                (/\baccount\b/i.test(user?.name || '') || /\baudit\b/i.test(user?.name || '')
-                || (user?.isSubAccount && user?.parentDeptId && user?.privilegeAmount != null)) &&
+                || (user?.isSubAccount && user?.parentDeptId && user?.approvalLimit != null)) &&
                ((detail.finalApprovalStatus && !['none', 'treated'].includes(detail.finalApprovalStatus))
                 || (/^material/i.test(req?.type || '') && (detail.targetDepartmentId === user?.deptId
                     || detail.targetDepartmentId === (user?.parentDeptId ? parseInt(user.parentDeptId) : -1)))) && (

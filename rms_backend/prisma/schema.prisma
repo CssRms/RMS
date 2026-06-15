@@ -71,7 +71,8 @@ model Department {
   subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
   storeRecords         StoreRecord[]
   // Sub-account privilege delegation (set by parent dept head or admin)
-  privilegeAmount      Float?
+  privilegeAmount      Float?   // Max amount sub-account can CREATE a request for
+  approvalLimit        Float?   // Max amount of incoming request sub-account can APPROVE on head's behalf
   cashPrivilege        Boolean          @default(false)
   memoPrivilege        Boolean          @default(false)
   materialPrivilege    Boolean          @default(false)
