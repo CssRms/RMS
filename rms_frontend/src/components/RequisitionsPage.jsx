@@ -2080,7 +2080,7 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
 };
 
 // ── Vetting Panel (ICC / Audit / Account — role-specific auto-routing) ─────────
-const VettingPanel = ({ req, detail, user, departments, onDone }) => {
+const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated }) => {
   const [comment, setComment]       = useState('');
   // Audit dept: default vetChecked=true since their sole role here is vetting
   const [vetChecked, setVetChecked] = useState(() => /\baudit\b/i.test(user?.name || ''));
@@ -2286,7 +2286,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             <input
               type="checkbox"
               checked={treatInitiated}
-              onChange={e => { setTreatInitiated(e.target.checked); setAmountInput(''); }}
+              onChange={e => { setTreatInitiated(e.target.checked); setAmountInput(''); if (onTreatInitiated) onTreatInitiated(e.target.checked); }}
               className="w-4 h-4 rounded accent-emerald-600 cursor-pointer shrink-0"
             />
             <div>
@@ -2861,6 +2861,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const [auditGate, setAuditGate]   = useState(null); // { authorityLabel } when active, else null
   const fileInputRef                = React.useRef(null);
   const paymentSectionRef           = React.useRef(null);
+  const [accountPaymentMode, setAccountPaymentMode] = useState(false); // true when Account checks 'Set Payment Amount'
 
   useEffect(() => {
     let cancelled = false;
@@ -3517,6 +3518,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                     detail={detail}
                     user={user}
                     departments={departments}
+                    onTreatInitiated={setAccountPaymentMode}
                     onDone={() => {
                       getRequisitionDetail(req.id).then(d => setDetail(d));
                       onAction();
@@ -3639,7 +3641,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               )}
 
               {/* ── Post-Creation Attachment Upload ── */}
-              {!isTaggedObserver && !loading && !approveChecked && user?.role !== 'global_admin' && !['treated', 'published', 'vetting', 'approved'].includes(detail?.finalApprovalStatus) && (isIncoming || canApprove) && (() => {
+              {!isTaggedObserver && !loading && !approveChecked && !accountPaymentMode && user?.role !== 'global_admin' && !['treated', 'published', 'vetting', 'approved'].includes(detail?.finalApprovalStatus) && (isIncoming || canApprove) && (() => {
                 // Compute stage context for tagging
                 const fwdEvents = detail?.forwardEvents || [];
                 const approvals = detail?.approvals || [];
