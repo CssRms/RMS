@@ -2391,6 +2391,15 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
           {/* Forward / Return / KIV — hidden while Set Payment Amount is checked */}
           {!treatInitiated && <div className="pt-1 space-y-2 border-t border-blue-200">
             <p className="text-[9px] font-black text-blue-700/60 uppercase tracking-widest">Or Route to Another Department</p>
+            {/* Required comment before routing */}
+            <textarea
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder="Write reason for forwarding or returning (required)…"
+              rows={2}
+              className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs text-foreground placeholder-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"
+            />
+            {!comment.trim() && <p className="text-[9px] text-blue-500/70 italic">A comment is required to forward or return.</p>}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <select value={forwardDeptId} onChange={e => setForwardDeptId(e.target.value)}
@@ -2400,7 +2409,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
-                <button onClick={() => act('forward')} disabled={acting || !forwardDeptId}
+                <button onClick={() => act('forward')} disabled={acting || !forwardDeptId || !comment.trim()}
                   className="w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-all disabled:opacity-40 text-xs shadow-sm">
                   {acting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
                   Forward
@@ -2408,7 +2417,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
               </div>
               <div className="space-y-1">
                 <p className="text-[9px] text-amber-700/70 font-bold uppercase text-center tracking-wide">Returns to: {returnDestLabel}</p>
-                <button onClick={() => act('return')} disabled={acting}
+                <button onClick={() => act('return')} disabled={acting || !comment.trim()}
                   className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
                   {acting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
                   Return
