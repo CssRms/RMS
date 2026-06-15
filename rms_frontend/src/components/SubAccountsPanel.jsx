@@ -1021,7 +1021,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-black text-primary uppercase tracking-wider">
-              New Sub-Account / Unit{isAdmin && selectedDeptId ? ` — ${departments.find(d => String(d.id) === selectedDeptId)?.name || ''}` : ''}
+              Create Sub-Account{isAdmin && selectedDeptId ? ` — ${departments.find(d => String(d.id) === selectedDeptId)?.name || ''}` : ''}
             </p>
             <button onClick={() => { setShowCreate(false); resetCreateForm(); }} className="p-1 rounded-lg text-muted-foreground hover:text-foreground transition-all">
               <X size={14} />
@@ -1030,7 +1030,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
           {/* Unit name */}
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Unit Name <span className="text-red-400">*</span></label>
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Name <span className="text-red-400">*</span></label>
             <input
               autoFocus
               value={newName}
