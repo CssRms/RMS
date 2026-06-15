@@ -902,7 +902,9 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [availableUsers, setAvailableUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newFirstName, setNewFirstName] = useState('');
+  const [newSurname, setNewSurname] = useState('');
+  const [newOtherName, setNewOtherName] = useState('');
   const [newStaffId, setNewStaffId] = useState('');
   const [newHeadTitle, setNewHeadTitle] = useState('');
   const [newHeadEmail, setNewHeadEmail] = useState('');
@@ -950,22 +952,25 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   }, [selectedDeptId, isAdmin]);
 
   const resetCreateForm = () => {
-    setNewName('');
+    setNewFirstName('');
+    setNewSurname('');
+    setNewOtherName('');
     setNewStaffId('');
     setNewHeadTitle('');
     setNewHeadEmail('');
   };
 
   const create = async () => {
-    if (!newName.trim()) return;
+    if (!newFirstName.trim() || !newSurname.trim()) return;
+    const fullName = [newFirstName.trim(), newSurname.trim(), newOtherName.trim()].filter(Boolean).join(' ');
     setCreating(true);
     setConflict(null);
     try {
-      const extra = { headName: newName.trim() };
+      const extra = { headName: fullName };
       if (newStaffId.trim()) extra.staffId = newStaffId.trim().toUpperCase();
       if (newHeadTitle.trim()) extra.headTitle = newHeadTitle.trim();
       if (newHeadEmail.trim()) extra.headEmail = newHeadEmail.trim();
-      const res = await subAccountAPI.create(newName.trim(), parentId || undefined, extra);
+      const res = await subAccountAPI.create(fullName, parentId || undefined, extra);
       setNewCode(res.accessCode);
       setNewSubName(res.name);
       resetCreateForm();
@@ -979,9 +984,8 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
         setConflict(data);
         setAltName(data.suggestedName || '');
       } else if (err?.response?.status === 409 && data?.conflict === 'name_taken') {
-        // Name taken by a deleted record (different person) — auto-fill suggested name
-        setNewName(data.suggestedName || newName.trim());
-        toast.error(data.error || 'Name already taken — try the suggested name below.');
+        // Name taken by a deleted record (different person) — show the suggested name in a toast
+        toast.error(data.error || 'Name already taken — try a different name.');
       } else {
         toast.error(data?.error || 'Failed to create sub-account.');
       }
@@ -996,7 +1000,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
       setNewCode(res.accessCode);
       setNewSubName(res.name);
       setConflict(null);
-      setNewName('');
+      resetCreateForm();
       setShowCreate(false);
       load();
       toast.success(`"${res.name}" reactivated — all previous records restored.`);
@@ -1014,7 +1018,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
       setNewCode(res.accessCode);
       setNewSubName(res.name);
       setConflict(null);
-      setNewName('');
+      resetCreateForm();
       setShowCreate(false);
       load();
       toast.success(`"${res.name}" created as a new sub-account.`);
@@ -1094,16 +1098,40 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
             <p className="text-[9px] text-muted-foreground/60 italic">Unique identifier for this staff member. Used to track and restore records if the sub-account is ever deleted and re-created.</p>
           </div>
 
-          {/* Unit name */}
+          {/* Name — split into three parts */}
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Name <span className="text-red-400">*</span></label>
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+              Name <span className="text-red-400">*</span>
+              <span className="text-muted-foreground/50 font-normal normal-case ml-1">(First &amp; Surname required)</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={newFirstName}
+                onChange={e => setNewFirstName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { setShowCreate(false); resetCreateForm(); } }}
+                placeholder="First Name *"
+                className="w-full border border-border/50 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <input
+                value={newSurname}
+                onChange={e => setNewSurname(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { setShowCreate(false); resetCreateForm(); } }}
+                placeholder="Surname *"
+                className="w-full border border-border/50 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
             <input
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
+              value={newOtherName}
+              onChange={e => setNewOtherName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') { setShowCreate(false); resetCreateForm(); } }}
-              placeholder="e.g. Finance - Procurement"
-              className="w-full border border-border/50 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="Other Name (optional)"
+              className="w-full border border-border/50 rounded-xl px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20"
             />
+            {(newFirstName.trim() || newSurname.trim()) && (
+              <p className="text-[10px] text-primary/70 font-semibold">
+                Full name: {[newFirstName.trim(), newSurname.trim(), newOtherName.trim()].filter(Boolean).join(' ')}
+              </p>
+            )}
           </div>
 
           {/* Head details — pre-filled by the dept head so sub-account skips setup on first login */}
@@ -1134,7 +1162,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
           <button
             onClick={create}
-            disabled={creating || !newName.trim()}
+            disabled={creating || !newFirstName.trim() || !newSurname.trim()}
             className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
             {creating ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
