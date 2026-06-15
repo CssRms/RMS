@@ -380,6 +380,7 @@ const Login = () => {
   const [showForgotCode, setShowForgotCode] = useState(false);
   const [ictPhone, setIctPhone] = useState('');
   const [deptDropOpen, setDeptDropOpen] = useState(false);
+  const [deptActivated, setDeptActivated] = useState(null); // null=unknown, true=activated(PASSWORD), false=first-time(ACCESS CODE)
   const deptDropRef = useRef(null);
   const { deptLogin } = useAuth();
 
@@ -397,6 +398,22 @@ const Login = () => {
     if (window.matchMedia('(display-mode: standalone)').matches) setIsStandalone(true);
     return () => { document.removeEventListener('mousedown', handleOutside); window.removeEventListener('beforeinstallprompt', handleBIP); };
   }, []);
+
+  const selectDept = async (name) => {
+    setSelectedDept(name);
+    setDeptActivated(null);
+    if (!name || name === 'Super Admin') {
+      setDeptActivated(name === 'Super Admin' ? true : null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/departments/login-status?name=${encodeURIComponent(name)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDeptActivated(data.activated);
+      }
+    } catch (_) { /* leave as null */ }
+  };
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) { toast("Open browser menu → 'Add to Home Screen'", { icon: '📲' }); return; }
@@ -558,7 +575,7 @@ const Login = () => {
                       <Building2 size={16} className={selectedDept ? 'text-primary shrink-0' : 'text-muted-foreground/40 shrink-0'}/>
                       <span className="flex-1 text-left truncate text-[13px]">{selectedDept || 'Select your department…'}</span>
                       {selectedDept
-                        ? <X size={13} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={e => { e.stopPropagation(); setSelectedDept(''); }}/>
+                        ? <X size={13} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={e => { e.stopPropagation(); selectDept(''); }}/>
                         : <ChevronDown size={14} className={`shrink-0 transition-transform ${deptDropOpen ? 'rotate-180' : ''}`}/>}
                     </button>
                     {deptDropOpen && mainDepts.length > 0 && (
@@ -566,7 +583,7 @@ const Login = () => {
                         <div className="max-h-52 overflow-y-auto">
                           {mainDepts.map(d => (
                             <button key={d.id} type="button"
-                              onClick={() => { setSelectedDept(d.name); setDeptDropOpen(false); }}
+                              onClick={() => { selectDept(d.name); setDeptDropOpen(false); }}
                               className={`w-full text-left px-4 py-3 text-sm flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${selectedDept === d.name ? 'bg-primary/8 text-primary font-semibold' : 'text-foreground'}`}>
                               <Building2 size={13} className="text-muted-foreground/40 shrink-0"/>
                               <span className="truncate">{d.name}</span>
@@ -580,7 +597,13 @@ const Login = () => {
 
                 {/* Access code */}
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">Password</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
+                    {!selectedDept || deptActivated === null
+                      ? 'Password / Access Code'
+                      : deptActivated
+                        ? 'Password'
+                        : 'Access Code'}
+                  </label>
                   <div className="relative group">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within:text-primary transition-colors" size={17}/>
                     <input
