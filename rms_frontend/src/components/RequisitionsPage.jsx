@@ -3894,7 +3894,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           {(() => {
                             const name = user?.name || '';
                             const isThreshold = /ceo|chairman|general\s*manager|\bgm\b|\bhr\b|human\s*resource/i.test(name);
-                            const isAtMyDesk = detail?.targetDepartmentId === user?.deptId;
+                            const isAtMyDesk = parseInt(detail?.targetDepartmentId) === parseInt(user?.deptId);
                             if (!isThreshold || !isAtMyDesk || req.status !== 'pending') return null;
                             return (
                               <button
@@ -3910,7 +3910,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           {/* Mobile-only: scroll to payment panel for Account dept (first-time payment) */}
                           {(() => {
                             const isAccount = /\baccount\b/i.test(user?.name || '');
-                            const isAtMyDesk = detail?.targetDepartmentId === user?.deptId;
+                            const isAtMyDesk = parseInt(detail?.targetDepartmentId) === parseInt(user?.deptId);
                             const fas = detail?.finalApprovalStatus;
                             const readyForPayment = fas && !['none', 'treated', 'partial'].includes(fas);
                             if (!isAccount || !isAtMyDesk || !readyForPayment) return null;
