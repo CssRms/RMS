@@ -2863,6 +2863,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const [auditGate, setAuditGate]   = useState(null); // { authorityLabel } when active, else null
   const fileInputRef                = React.useRef(null);
   const paymentSectionRef           = React.useRef(null);
+  const approvalSectionRef          = React.useRef(null);
   const [accountPaymentMode, setAccountPaymentMode] = useState(false); // true when Account checks 'Set Payment Amount'
 
   useEffect(() => {
@@ -3765,7 +3766,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               {/* Final Approve Panel — below Attach Documents, for dept authority users */}
               {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isOnKiv &&
                !['treated', 'published', 'vetting'].includes(detail?.finalApprovalStatus) && (
-                <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
+                <div ref={approvalSectionRef} className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                   <FinalApprovePanel
                     req={req}
                     detail={detail}
@@ -3885,10 +3886,27 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-600">
                              <Building2 size={14} />
                           </div>
-                          <div>
+                          <div className="flex-1">
                             <p className="text-xs font-bold text-blue-700">Department Review</p>
                             <p className="text-[10px] text-blue-600/80 font-medium">{detail?.targetDepartment?.name || 'Target Department'}</p>
                           </div>
+                          {/* Mobile-only: scroll to approval panel for threshold depts */}
+                          {(() => {
+                            const name = user?.name || '';
+                            const isThreshold = /ceo|chairman|general\s*manager|\bgm\b|\bhr\b|human\s*resource/i.test(name);
+                            const isAtMyDesk = detail?.targetDepartmentId === user?.deptId;
+                            if (!isThreshold || !isAtMyDesk || req.status !== 'pending') return null;
+                            return (
+                              <button
+                                onClick={() => approvalSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                className="lg:hidden flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 text-[10px] font-black transition-all animate-bounce shadow-sm shrink-0"
+                                title="Go to approval panel"
+                              >
+                                <ArrowDownToLine size={12} />
+                                <span>Click to Approve</span>
+                              </button>
+                            );
+                          })()}
                         </div>
                      </div>
                    ) : (
