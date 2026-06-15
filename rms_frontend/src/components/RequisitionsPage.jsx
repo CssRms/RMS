@@ -3907,6 +3907,24 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                               </button>
                             );
                           })()}
+                          {/* Mobile-only: scroll to payment panel for Account dept (first-time payment) */}
+                          {(() => {
+                            const isAccount = /\baccount\b/i.test(user?.name || '');
+                            const isAtMyDesk = detail?.targetDepartmentId === user?.deptId;
+                            const fas = detail?.finalApprovalStatus;
+                            const readyForPayment = fas && !['none', 'treated', 'partial'].includes(fas);
+                            if (!isAccount || !isAtMyDesk || !readyForPayment) return null;
+                            return (
+                              <button
+                                onClick={() => paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                className="lg:hidden flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 border border-blue-700 text-blue-100 text-[10px] font-black transition-all animate-bounce shadow-sm shrink-0"
+                                title="Go to payment panel"
+                              >
+                                <ArrowDownToLine size={12} />
+                                <span>Set Payment</span>
+                              </button>
+                            );
+                          })()}
                         </div>
                      </div>
                    ) : (
