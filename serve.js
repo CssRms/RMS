@@ -2652,9 +2652,10 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
     });
     await prisma.activityLog.create({ data: { action: 'Sub-Account Created', details: `${name.trim()} created under ${parent.name}` } });
 
-    // Email parent dept head with creation details and password
+    // Email parent dept head and sub-account (if email provided) with creation details
+    const createdBy = req.user?.name || req.user?.email || 'Administrator';
+    const createdDate = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
     if (parent.headEmail && !parent.headEmail.endsWith('@cssgroup.local')) {
-      const createdBy = req.user?.name || req.user?.email || 'Administrator';
       const { text, html } = buildEmailContent({
         title: `New Sub-Account Created — ${name.trim()}`,
         lines: [
@@ -2663,12 +2664,28 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
           `Parent Department: ${parent.name}`,
           `Login Password: ${plainCode}`,
           `Created by: ${createdBy}`,
-          `Date: ${new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })}`,
+          `Date: ${createdDate}`,
           ``,
           `Please share the login password securely with the relevant unit staff. They can log in using the unit name and this password, and change it from their profile settings.`
         ]
       });
       sendEmail({ to: parent.headEmail, subject: `[RMS] New Sub-Account Created — ${name.trim()}`, text, html }).catch(() => {});
+    }
+    const subEmailAddr = hEmail?.trim();
+    if (subEmailAddr && !subEmailAddr.endsWith('@cssgroup.local') && subEmailAddr !== parent.headEmail) {
+      const { text, html } = buildEmailContent({
+        title: `Your Sub-Account Has Been Created — ${name.trim()}`,
+        lines: [
+          `A sub-account has been created for you under ${parent.name}.`,
+          `Account Name: ${name.trim()}`,
+          `Login Password: ${plainCode}`,
+          `Created by: ${createdBy}`,
+          `Date: ${createdDate}`,
+          ``,
+          `You can log in to the RMS portal using your unit name and this password. You may change your password from your profile settings after logging in.`
+        ]
+      });
+      sendEmail({ to: subEmailAddr, subject: `[RMS] Sub-Account Created — ${name.trim()}`, text, html }).catch(() => {});
     }
 
     res.json({ id: sub.id, name: sub.name, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
@@ -2694,7 +2711,7 @@ app.patch('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, 
         ...(name?.trim() ? { name: name.trim() } : {}),
         headName: headName ?? sub.headName,
         headTitle: headTitle ?? sub.headTitle,
-        headEmail: headEmail ?? sub.headEmail
+        headEmail: headEmail !== undefined ? (headEmail?.trim() || null) : sub.headEmail
       }
     });
     res.json({ id: updated.id, name: updated.name, headName: updated.headName, headTitle: updated.headTitle, headEmail: updated.headEmail });

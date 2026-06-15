@@ -3,7 +3,7 @@ import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
   Check, Loader2, Copy, UserPlus, UserMinus,
   ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
-  FileText, User, Clock, Route, Globe, Lock
+  FileText, User, Mail, Clock, Route, Globe, Lock
 } from 'lucide-react';
 import { subAccountAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -596,6 +596,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
+  const [editEmail, setEditEmail] = useState(sub.headEmail || '');
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -606,10 +607,16 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
   const [loadingReqs, setLoadingReqs] = useState(false);
 
   const saveEdit = async () => {
-    if (!editName.trim() || editName.trim() === sub.name) { setEditing(false); return; }
+    if (!editName.trim()) { setEditing(false); return; }
+    const nameChanged = editName.trim() !== sub.name;
+    const emailChanged = editEmail.trim() !== (sub.headEmail || '');
+    if (!nameChanged && !emailChanged) { setEditing(false); return; }
     setSaving(true);
     try {
-      await subAccountAPI.update(sub.id, { name: editName.trim() });
+      await subAccountAPI.update(sub.id, {
+        name: editName.trim(),
+        headEmail: editEmail.trim() || null,
+      });
       toast.success('Sub-account updated.');
       onRefresh();
       setEditing(false);
@@ -663,20 +670,34 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
 
         <div className="flex-1 min-w-0">
           {editing ? (
-            <div className="flex items-center gap-1.5">
-              <input
-                autoFocus
-                value={editName}
-                onChange={e => setEditName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }}
-                className="flex-1 text-sm font-bold border border-primary/40 rounded-lg px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/30"
-              />
-              <button onClick={saveEdit} disabled={saving} className="text-primary hover:text-primary/80 disabled:opacity-40">
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-              </button>
-              <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
-                <X size={13} />
-              </button>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }}
+                  placeholder="Sub-account name"
+                  className="flex-1 text-sm font-bold border border-primary/40 rounded-lg px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/30"
+                />
+                <button onClick={saveEdit} disabled={saving} className="text-primary hover:text-primary/80 disabled:opacity-40">
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                </button>
+                <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
+                  <X size={13} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Mail size={11} className="text-muted-foreground/50 shrink-0" />
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }}
+                  placeholder="Email for password reset notifications"
+                  className="flex-1 text-xs border border-border/50 rounded-lg px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/30 text-muted-foreground"
+                />
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
@@ -694,6 +715,12 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
                 ? <span className="font-semibold text-foreground/70">{sub.headName}</span>
                 : <span className="italic text-muted-foreground/60">Not set yet</span>}
             </span>
+            {sub.headEmail && (
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Mail size={10} />
+                <span className="text-foreground/60 truncate max-w-[140px]">{sub.headEmail}</span>
+              </span>
+            )}
             <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
               <FileText size={10} />
               <span className={sub.reqCount > 0 ? 'font-bold text-primary' : ''}>
