@@ -3812,7 +3812,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                          <div className="w-7 h-7 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-600">
                            <Award size={14} />
                          </div>
-                         <div>
+                         <div className="flex-1">
                            <p className="text-xs font-bold text-purple-700">Under Vetting</p>
                            <p className="text-[10px] text-purple-600/80 font-medium">
                              {(() => {
@@ -3823,6 +3823,23 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                              })()}
                            </p>
                          </div>
+                         {/* Mobile-only: Account dept scroll to payment panel while vetting */}
+                         {(() => {
+                           const isAccount = /\baccount\b/i.test(user?.name || '');
+                           const cvId = detail?.currentVettingDeptId ? parseInt(detail.currentVettingDeptId) : null;
+                           const isMyVetting = cvId && parseInt(user?.deptId) === cvId;
+                           if (!isAccount || !isMyVetting) return null;
+                           return (
+                             <button
+                               onClick={() => paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                               className="lg:hidden flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 border border-blue-700 text-blue-100 text-[10px] font-black transition-all animate-bounce shadow-sm shrink-0"
+                               title="Go to payment panel"
+                             >
+                               <ArrowDownToLine size={12} />
+                               <span>Set Payment</span>
+                             </button>
+                           );
+                         })()}
                        </div>
                      </div>
                    ) : detail?.finalApprovalStatus === 'approved' ? (
@@ -3892,8 +3909,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           </div>
                           {/* Mobile-only: scroll to approval panel for threshold depts */}
                           {(() => {
-                            const name = user?.name || '';
-                            const isThreshold = /ceo|chairman|general\s*manager|\bgm\b|\bhr\b|human\s*resource/i.test(name);
+                            const deptName = user?.name || '';
+                            const isThreshold = /ceo|chairman|general\s*manager|\bgm\b|\bhr\b|human\s*resource/i.test(deptName);
                             const isAtMyDesk = parseInt(detail?.targetDepartmentId) === parseInt(user?.deptId);
                             if (!isThreshold || !isAtMyDesk || req.status !== 'pending') return null;
                             return (
@@ -3933,10 +3950,28 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           <div className="w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-600">
                              <Clock size={14} />
                           </div>
-                          <div>
+                          <div className="flex-1">
                             <p className="text-xs font-bold text-amber-700">Awaiting Approval</p>
                             <p className="text-[10px] text-amber-600/80 font-medium">{req.currentStageName || detail?.currentStage?.name}</p>
                           </div>
+                          {/* Mobile-only: threshold dept scroll to approval panel via workflow stage */}
+                          {(() => {
+                            const deptName = user?.name || '';
+                            const isThreshold = /ceo|chairman|general\s*manager|\bgm\b|\bhr\b|human\s*resource/i.test(deptName);
+                            const stageRole = (detail?.currentStage?.role || '').toLowerCase();
+                            const isMyStage = isThreshold && (stageRole.includes('hr') || stageRole.includes('gm') || stageRole.includes('ceo') || stageRole.includes('general manager') || stageRole.includes('human resource') || stageRole.includes('chairman'));
+                            if (!isMyStage || req.status !== 'pending') return null;
+                            return (
+                              <button
+                                onClick={() => approvalSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                className="lg:hidden flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 text-emerald-100 text-[10px] font-black transition-all animate-bounce shadow-sm shrink-0"
+                                title="Go to approval panel"
+                              >
+                                <ArrowDownToLine size={12} />
+                                <span>Click to Approve</span>
+                              </button>
+                            );
+                          })()}
                         </div>
                         {detail?.currentStage?.role && (
                           <div className="text-[9px] font-black uppercase text-amber-800 tracking-widest px-2 py-0.5 bg-amber-500/20 rounded-md inline-block">
