@@ -2655,37 +2655,50 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
     // Email parent dept head and sub-account (if email provided) with creation details
     const createdBy = req.user?.name || req.user?.email || 'Administrator';
     const createdDate = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+    const subEmailAddr = hEmail?.trim();
+
+    // — Email to PARENT HEAD —
     if (parent.headEmail && !parent.headEmail.endsWith('@cssgroup.local')) {
       const { text, html } = buildEmailContent({
-        title: `New Sub-Account Created — ${name.trim()}`,
+        title: `✅ Sub-Account Successfully Created — ${name.trim()}`,
         lines: [
-          `A new sub-account has been created under your department.`,
+          `A new sub-account has been successfully created under your department.`,
+          ``,
           `Unit Name: ${name.trim()}`,
           `Parent Department: ${parent.name}`,
+          ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`] : []),
+          ...(subEmailAddr ? [`Unit Email: ${subEmailAddr}`] : []),
           `Login Password: ${plainCode}`,
           `Created by: ${createdBy}`,
           `Date: ${createdDate}`,
           ``,
-          `Please share the login password securely with the relevant unit staff. They can log in using the unit name and this password, and change it from their profile settings.`
-        ]
+          `The sub-account can now log in to the RMS portal using the unit name and the password above. Please ensure the login details are shared securely with the unit staff. They can update their password from their profile settings after first login.`
+        ],
+        actionLabel: 'Open RMS Portal'
       });
-      sendEmail({ to: parent.headEmail, subject: `[RMS] New Sub-Account Created — ${name.trim()}`, text, html }).catch(() => {});
+      sendEmail({ to: parent.headEmail, subject: `[RMS] ✅ Sub-Account Created — ${name.trim()}`, text, html }).catch(() => {});
     }
-    const subEmailAddr = hEmail?.trim();
+
+    // — Welcome email to SUB-ACCOUNT —
     if (subEmailAddr && !subEmailAddr.endsWith('@cssgroup.local') && subEmailAddr !== parent.headEmail) {
       const { text, html } = buildEmailContent({
-        title: `Your Sub-Account Has Been Created — ${name.trim()}`,
+        title: `Welcome to CSS Group RMS — ${name.trim()}`,
         lines: [
-          `A sub-account has been created for you under ${parent.name}.`,
-          `Account Name: ${name.trim()}`,
-          `Login Password: ${plainCode}`,
-          `Created by: ${createdBy}`,
-          `Date: ${createdDate}`,
+          `Welcome! Your sub-account has been set up on the CSS Group Requisition Management System (RMS).`,
           ``,
-          `You can log in to the RMS portal using your unit name and this password. You may change your password from your profile settings after logging in.`
-        ]
+          `Account Name: ${name.trim()}`,
+          `Parent Department: ${parent.name}`,
+          ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`] : []),
+          `Login Password: ${plainCode}`,
+          `Date Created: ${createdDate}`,
+          ``,
+          `To log in, visit the RMS portal and select your unit name from the department list, then enter the password above. For security, you are encouraged to change your password from your profile settings after your first login.`,
+          ``,
+          `If you did not expect this message or need help, contact your department head (${parent.name}).`
+        ],
+        actionLabel: 'Log In to RMS Portal'
       });
-      sendEmail({ to: subEmailAddr, subject: `[RMS] Sub-Account Created — ${name.trim()}`, text, html }).catch(() => {});
+      sendEmail({ to: subEmailAddr, subject: `[RMS] Welcome — Your Sub-Account is Ready: ${name.trim()}`, text, html }).catch(() => {});
     }
 
     res.json({ id: sub.id, name: sub.name, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
