@@ -2586,7 +2586,8 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
     });
     const isAdmin = role === 'global_admin';
     res.json(subs.map(s => ({
-      id: s.id, name: s.name, headName: s.headName, headEmail: s.headEmail,
+      id: s.id, name: s.name, staffId: s.staffId || null,
+      headName: s.headName, headEmail: s.headEmail,
       headTitle: s.headTitle, isDisabled: s.isDisabled, createdAt: s.createdAt,
       userCount: s.users.length, users: s.users, reqCount: s._count.requisitions,
       // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
@@ -2607,6 +2608,7 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
   try {
     const parsed = z.object({
       name:      z.string().min(2),
+      staffId:   z.string().optional(),
       parentId:  z.number().int().optional(),
       headName:  z.string().optional(),
       headTitle: z.string().optional(),
@@ -2617,23 +2619,39 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
     if (!parentId) return res.status(400).json({ error: 'parentId is required for admin requests.' });
     const parent = await prisma.department.findUnique({ where: { id: parentId } });
     if (!parent) return res.status(404).json({ error: 'Parent department not found.' });
-    const { name } = parsed.data;
+    const { name, staffId: staffIdRaw } = parsed.data;
+    const staffId = staffIdRaw?.trim() || null;
+
+    // ── 1. Staff ID conflict (primary identifier) ─────────────────────────
+    if (staffId) {
+      // Ensure staffId column exists (may not exist in older DB yet)
+      try { await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "staffId" TEXT`; } catch (_) {}
+      try { await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "Department_staffId_key" ON "Department"("staffId") WHERE "staffId" IS NOT NULL`; } catch (_) {}
+      const staffIdRows = await prisma.$queryRaw`SELECT id, name, "isDeleted", "parentId", "headName", "createdAt", "staffId" FROM "Department" WHERE "staffId" = ${staffId} AND "isSubAccount" = true LIMIT 1`;
+      const staffIdMatch = staffIdRows?.[0];
+      if (staffIdMatch) {
+        if (staffIdMatch.isDeleted && parseInt(staffIdMatch.parentId) === parentId) {
+          return res.status(409).json({
+            conflict: 'deleted',
+            deletedSub: { id: staffIdMatch.id, name: staffIdMatch.name, staffId: staffIdMatch.staffId, headName: staffIdMatch.headName, createdAt: staffIdMatch.createdAt },
+          });
+        }
+        return res.status(409).json({ error: `Staff ID "${staffId}" is already assigned to "${staffIdMatch.name}".` });
+      }
+    }
+
+    // ── 2. Name uniqueness check (still required for login lookup) ────────
     const existing = await prisma.department.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' } } });
     if (existing) {
-      // Deleted sub-account under the same parent → offer reactivate or suggest alternative name
+      // Deleted sub-account with same name but different person → suggest a renamed version
       if (existing.isDeleted && existing.isSubAccount && existing.parentId === parentId) {
-        // Generate a safe alternative name: "DAVID (2)", "DAVID (3)", …
         let suggestedName = null;
         for (let n = 2; n <= 20; n++) {
           const candidate = `${name.trim()} (${n})`;
           const clash = await prisma.department.findFirst({ where: { name: { equals: candidate, mode: 'insensitive' } } });
           if (!clash) { suggestedName = candidate; break; }
         }
-        return res.status(409).json({
-          conflict: 'deleted',
-          deletedSub: { id: existing.id, name: existing.name, headName: existing.headName, createdAt: existing.createdAt },
-          suggestedName,
-        });
+        return res.status(409).json({ conflict: 'name_taken', suggestedName, error: `The name "${name.trim()}" is taken by a deleted record. Try "${suggestedName || name.trim() + ' (2)'}" instead.` });
       }
       return res.status(409).json({ error: 'A department or sub-account with that name already exists.' });
     }
@@ -2645,6 +2663,7 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
         name: name.trim(), type: 'Sub-Account',
         isSubAccount: true, parentId, createdByDeptId: parentId,
         accessCodeHash: hash, accessCodeLabel: plainCode,
+        ...(staffId ? { staffId } : {}),
         ...(hName  ? { headName:  hName.trim()  } : {}),
         ...(hTitle ? { headTitle: hTitle.trim() } : {}),
         ...(hEmail ? { headEmail: hEmail.trim() } : {}),
@@ -2701,7 +2720,7 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
       sendEmail({ to: subEmailAddr, subject: `[RMS] Welcome — Your Sub-Account is Ready: ${name.trim()}`, text, html }).catch(() => {});
     }
 
-    res.json({ id: sub.id, name: sub.name, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
+    res.json({ id: sub.id, name: sub.name, staffId: sub.staffId || null, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
   } catch (err) { sendError(res, 500, err.message); }
 });
 
@@ -2713,21 +2732,27 @@ app.patch('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, 
     if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
     const parentId = resolveParentId(req);
     if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'Access denied.' });
-    const { name, headName, headTitle, headEmail } = req.body;
+    const { name, staffId: staffIdRaw, headName, headTitle, headEmail } = req.body;
+    const staffId = staffIdRaw !== undefined ? (staffIdRaw?.trim() || null) : undefined;
     if (name?.trim()) {
       const clash = await prisma.department.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' }, NOT: { id: subId } } });
       if (clash) return res.status(409).json({ error: 'That name is already taken.' });
+    }
+    if (staffId) {
+      const staffIdClash = await prisma.department.findFirst({ where: { staffId, NOT: { id: subId } } });
+      if (staffIdClash) return res.status(409).json({ error: `Staff ID "${staffId}" is already assigned to "${staffIdClash.name}".` });
     }
     const updated = await prisma.department.update({
       where: { id: subId },
       data: {
         ...(name?.trim() ? { name: name.trim() } : {}),
+        ...(staffId !== undefined ? { staffId } : {}),
         headName: headName ?? sub.headName,
         headTitle: headTitle ?? sub.headTitle,
         headEmail: headEmail !== undefined ? (headEmail?.trim() || null) : sub.headEmail
       }
     });
-    res.json({ id: updated.id, name: updated.name, headName: updated.headName, headTitle: updated.headTitle, headEmail: updated.headEmail });
+    res.json({ id: updated.id, name: updated.name, staffId: updated.staffId || null, headName: updated.headName, headTitle: updated.headTitle, headEmail: updated.headEmail });
   } catch (err) { sendError(res, 500, err.message); }
 });
 

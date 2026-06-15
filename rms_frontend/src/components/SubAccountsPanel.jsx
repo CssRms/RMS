@@ -3,7 +3,7 @@ import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
   Check, Loader2, Copy, UserPlus, UserMinus,
   ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
-  FileText, User, Mail, Clock, Route, Globe, Lock
+  FileText, User, Mail, Hash, Clock, Route, Globe, Lock
 } from 'lucide-react';
 import { subAccountAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -596,6 +596,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
+  const [editStaffId, setEditStaffId] = useState(sub.staffId || '');
   const [editEmail, setEditEmail] = useState(sub.headEmail || '');
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -609,12 +610,14 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
   const saveEdit = async () => {
     if (!editName.trim()) { setEditing(false); return; }
     const nameChanged = editName.trim() !== sub.name;
+    const staffIdChanged = editStaffId.trim().toUpperCase() !== (sub.staffId || '');
     const emailChanged = editEmail.trim() !== (sub.headEmail || '');
-    if (!nameChanged && !emailChanged) { setEditing(false); return; }
+    if (!nameChanged && !staffIdChanged && !emailChanged) { setEditing(false); return; }
     setSaving(true);
     try {
       await subAccountAPI.update(sub.id, {
         name: editName.trim(),
+        staffId: editStaffId.trim().toUpperCase() || null,
         headEmail: editEmail.trim() || null,
       });
       toast.success('Sub-account updated.');
@@ -688,6 +691,16 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
                 </button>
               </div>
               <div className="flex items-center gap-1.5">
+                <Hash size={11} className="text-muted-foreground/50 shrink-0" />
+                <input
+                  value={editStaffId}
+                  onChange={e => setEditStaffId(e.target.value.toUpperCase())}
+                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }}
+                  placeholder="Staff ID (e.g. CSS001)"
+                  className="flex-1 text-xs border border-border/50 rounded-lg px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/30 font-mono uppercase tracking-wider"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
                 <Mail size={11} className="text-muted-foreground/50 shrink-0" />
                 <input
                   type="email"
@@ -708,6 +721,11 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {showParent && sub.parentDept?.name && (
               <span className="text-[10px] text-violet-600 font-semibold">{sub.parentDept.name} ·</span>
+            )}
+            {sub.staffId && (
+              <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-primary/70 bg-primary/8 px-1.5 py-0.5 rounded-md">
+                {sub.staffId}
+              </span>
             )}
             <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
               <User size={10} />
@@ -885,6 +903,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newStaffId, setNewStaffId] = useState('');
   const [newHeadTitle, setNewHeadTitle] = useState('');
   const [newHeadEmail, setNewHeadEmail] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -932,6 +951,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
   const resetCreateForm = () => {
     setNewName('');
+    setNewStaffId('');
     setNewHeadTitle('');
     setNewHeadEmail('');
   };
@@ -942,6 +962,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     setConflict(null);
     try {
       const extra = { headName: newName.trim() };
+      if (newStaffId.trim()) extra.staffId = newStaffId.trim().toUpperCase();
       if (newHeadTitle.trim()) extra.headTitle = newHeadTitle.trim();
       if (newHeadEmail.trim()) extra.headEmail = newHeadEmail.trim();
       const res = await subAccountAPI.create(newName.trim(), parentId || undefined, extra);
@@ -954,9 +975,13 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     } catch (err) {
       const data = err?.response?.data;
       if (err?.response?.status === 409 && data?.conflict === 'deleted') {
-        // Deleted sub-account with same name exists — show resolution panel
+        // Same Staff ID found in a deleted sub-account → same person coming back
         setConflict(data);
         setAltName(data.suggestedName || '');
+      } else if (err?.response?.status === 409 && data?.conflict === 'name_taken') {
+        // Name taken by a deleted record (different person) — auto-fill suggested name
+        setNewName(data.suggestedName || newName.trim());
+        toast.error(data.error || 'Name already taken — try the suggested name below.');
       } else {
         toast.error(data?.error || 'Failed to create sub-account.');
       }
@@ -1055,11 +1080,24 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
             </button>
           </div>
 
+          {/* Staff ID — primary identifier */}
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Staff ID <span className="text-red-400">*</span></label>
+            <input
+              autoFocus
+              value={newStaffId}
+              onChange={e => setNewStaffId(e.target.value.toUpperCase())}
+              onKeyDown={e => { if (e.key === 'Escape') { setShowCreate(false); resetCreateForm(); } }}
+              placeholder="e.g. CSS001"
+              className="w-full border border-border/50 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-primary/20 font-mono tracking-wider uppercase"
+            />
+            <p className="text-[9px] text-muted-foreground/60 italic">Unique identifier for this staff member. Used to track and restore records if the sub-account is ever deleted and re-created.</p>
+          </div>
+
           {/* Unit name */}
           <div className="space-y-1">
             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Name <span className="text-red-400">*</span></label>
             <input
-              autoFocus
               value={newName}
               onChange={e => setNewName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') { setShowCreate(false); resetCreateForm(); } }}
@@ -1117,10 +1155,10 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
               <ShieldAlert size={15} className="text-amber-600" />
             </div>
             <div>
-              <p className="text-[11px] font-black text-amber-800 uppercase tracking-wide">Name Conflict Detected</p>
+              <p className="text-[11px] font-black text-amber-800 uppercase tracking-wide">Same Staff ID — Existing Record Found</p>
               <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                A deleted sub-account named <span className="font-black">"{conflict.deletedSub.name}"</span> already exists under this department.
-                Choose what you'd like to do:
+                Staff ID <span className="font-black">"{conflict.deletedSub.staffId}"</span> belongs to a deleted sub-account named <span className="font-black">"{conflict.deletedSub.name}"</span>.
+                This appears to be the same person. Choose what you'd like to do:
               </p>
             </div>
             <button onClick={() => setConflict(null)} className="ml-auto p-1 rounded-lg text-amber-500 hover:text-amber-700 flex-shrink-0">

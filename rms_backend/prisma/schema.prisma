@@ -70,6 +70,8 @@ model Department {
   canPrint             Boolean          @default(true)
   subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
   storeRecords         StoreRecord[]
+  // Sub-account identity — staff ID is the primary unique identifier per person
+  staffId              String?  @unique // Staff ID (e.g. CSS001) — primary identifier, replaces name-based conflict detection
   // Sub-account privilege delegation (set by parent dept head or admin)
   privilegeAmount      Float?   // Max amount sub-account can CREATE a request for
   approvalLimit        Float?   // Max amount of incoming request sub-account can APPROVE on head's behalf
