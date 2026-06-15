@@ -3837,11 +3837,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                          {/* Mobile-only: tap to jump down to payment entry section */}
                          <button
                            onClick={() => paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                           className="lg:hidden ml-auto flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-700 text-[10px] font-black transition-all animate-bounce"
+                           className="lg:hidden ml-auto flex items-center gap-1 px-2 py-1 rounded-lg bg-red-600 hover:bg-red-700 border border-red-700 text-red-100 text-[10px] font-black transition-all animate-bounce shadow-sm"
                            title="Go to payment entry"
                          >
                            <ArrowDownToLine size={12} />
-                           <span>Enter Amount</span>
+                           <span>Continue Payment</span>
                          </button>
                        </div>
                        {detail.amount > 0 && (() => {
