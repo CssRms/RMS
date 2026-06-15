@@ -2386,8 +2386,8 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
             </div>
           )}
 
-          {/* Forward / Return — always available for Account */}
-          <div className="pt-1 space-y-2 border-t border-blue-200">
+          {/* Forward / Return / KIV — hidden while Set Payment Amount is checked */}
+          {!treatInitiated && <div className="pt-1 space-y-2 border-t border-blue-200">
             <p className="text-[9px] font-black text-blue-700/60 uppercase tracking-widest">Or Route to Another Department</p>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -2432,7 +2432,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone }) => {
                 Hold (KIV)
               </button>
             )}
-          </div>
+          </div>}
         </div>
       ) : (
         /* ── Non-Account: existing vetting form ─────────────────────── */
