@@ -665,14 +665,18 @@ const Login = () => {
 
           {/* Feature rows */}
           <div className="w-full flex flex-col gap-2">
-            {['End-to-end approval tracking','Offline draft capability','Multi-department oversight'].map((item,i) => (
-              <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl" style={{background:'#f97316',border:'1px solid #fb923c'}}>
-                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{background:'rgba(255,255,255,0.25)',border:'1px solid rgba(255,255,255,0.35)'}}>
+            {[
+              { text:'End-to-end approval tracking',  bg:'#ffffff',  border:'rgba(255,255,255,0.9)', textColor:'#166534', iconStroke:'#166534', iconBg:'rgba(22,101,52,0.12)', iconBorder:'rgba(22,101,52,0.25)' },
+              { text:'Offline draft capability',       bg:'#14532d',  border:'#166534',              textColor:'#ffffff', iconStroke:'#ffffff', iconBg:'rgba(255,255,255,0.15)', iconBorder:'rgba(255,255,255,0.3)' },
+              { text:'Multi-department oversight',     bg:'#f97316',  border:'#fb923c',              textColor:'#ffffff', iconStroke:'#ffffff', iconBg:'rgba(255,255,255,0.25)', iconBorder:'rgba(255,255,255,0.35)' },
+            ].map(({ text, bg, border, textColor, iconStroke, iconBg, iconBorder }, i) => (
+              <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl" style={{background:bg, border:`1px solid ${border}`}}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{background:iconBg, border:`1px solid ${iconBorder}`}}>
                   <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                    <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M1 3.5L3.5 6L8 1" stroke={iconStroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
-                <span className="text-[11.5px] font-semibold text-white tracking-wide text-left">{item}</span>
+                <span className="text-[11.5px] font-semibold tracking-wide text-left" style={{color:textColor}}>{text}</span>
               </div>
             ))}
           </div>
