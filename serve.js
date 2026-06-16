@@ -3961,14 +3961,19 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
       // Note: mode:'insensitive' is not supported inside `not` in Prisma v6 — filter in JS instead
       const allDepts = await prisma.department.findMany({
         where: { isSubAccount: false },
-        select: { id: true, name: true, accessCodeLabel: true }
+        select: { id: true, name: true, accessCodeLabel: true, accessCode: true }
       });
       const depts = allDepts.filter(d => d.name.toLowerCase() !== 'super admin');
       let deptCount = 0;
       for (const d of depts) {
+        // Prefer accessCodeLabel (the "original code" store); fall back to the legacy
+        // plain-text accessCode column for departments that predate the label column.
+        const codeToRestore = d.accessCodeLabel || d.accessCode;
         const data = { headName: null, headTitle: null, headEmail: null, phone: null, address: null, codeChangedByDept: false };
-        if (d.accessCodeLabel) {
-          data.accessCodeHash = await bcrypt.hash(d.accessCodeLabel, 10);
+        if (codeToRestore) {
+          data.accessCodeHash = await bcrypt.hash(codeToRestore, 10);
+          // Backfill accessCodeLabel so future resets always work without the fallback
+          if (!d.accessCodeLabel) data.accessCodeLabel = codeToRestore;
         }
         await prisma.department.update({ where: { id: d.id }, data });
         deptCount++;
