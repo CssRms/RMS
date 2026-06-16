@@ -3958,10 +3958,12 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
 
     if (deptActivations) {
       // Restore each dept's original admin-set access code (rehash accessCodeLabel) and wipe personal info
-      const depts = await prisma.department.findMany({
-        where: { isSubAccount: false, name: { not: { equals: 'Super Admin', mode: 'insensitive' } } },
-        select: { id: true, accessCodeLabel: true }
+      // Note: mode:'insensitive' is not supported inside `not` in Prisma v6 — filter in JS instead
+      const allDepts = await prisma.department.findMany({
+        where: { isSubAccount: false },
+        select: { id: true, name: true, accessCodeLabel: true }
       });
+      const depts = allDepts.filter(d => d.name.toLowerCase() !== 'super admin');
       let deptCount = 0;
       for (const d of depts) {
         const data = { headName: null, headTitle: null, headEmail: null, codeChangedByDept: false };
