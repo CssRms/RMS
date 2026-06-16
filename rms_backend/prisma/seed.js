@@ -54,11 +54,16 @@ async function main() {
 
   console.log('Seeding departments...');
   for (const dept of departments) {
+    // Check by name OR code — handles departments that were renamed after first seed
+    const existing = await prisma.department.findFirst({
+      where: { OR: [{ name: dept.name }, { code: dept.code }] },
+      select: { id: true },
+    });
+    if (existing) continue; // already exists under some name/code — skip
+
     const accessCodeHash = dept.accessCode ? await hashAccessCode(dept.accessCode) : null;
-    await prisma.department.upsert({
-      where: { name: dept.name },
-      update: {},
-      create: {
+    await prisma.department.create({
+      data: {
         name: dept.name,
         type: dept.type,
         code: dept.code,
