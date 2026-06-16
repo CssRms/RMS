@@ -3905,7 +3905,7 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
   if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only.' });
   try {
     const { confirmText, options = {} } = req.body;
-    if (confirmText !== 'HARD RESET') return res.status(400).json({ error: 'Type "HARD RESET" exactly to confirm.' });
+    if (confirmText !== 'CONFIRM HARD RESET') return res.status(400).json({ error: 'Type "CONFIRM HARD RESET" exactly to confirm.' });
 
     const { requisitions = false, subAccounts = false, deptActivations = false,
             activityLogs = false, chatMessages = false, storeRecords = false, notifications = false } = options;
