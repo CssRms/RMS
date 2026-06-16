@@ -723,8 +723,8 @@ const DepartmentManager = ({ onViewChange }) => {
     if (!anySelected) { toast.error('Select at least one option to reset.'); return; }
     setResetting(true);
     try {
-      const summary = await adminAPI.hardReset({ confirmText: resetConfirmText, options: resetOptions });
-      setResetSummary(summary);
+      const result = await adminAPI.hardReset({ confirmText: resetConfirmText, options: resetOptions });
+      setResetSummary(result?.summary ?? result);
       setResetConfirmText('');
       toast.success('Hard reset completed successfully.');
       // Reload depts list to reflect activation resets

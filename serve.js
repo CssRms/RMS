@@ -3966,7 +3966,7 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
       const depts = allDepts.filter(d => d.name.toLowerCase() !== 'super admin');
       let deptCount = 0;
       for (const d of depts) {
-        const data = { headName: null, headTitle: null, headEmail: null, codeChangedByDept: false };
+        const data = { headName: null, headTitle: null, headEmail: null, phone: null, address: null, codeChangedByDept: false };
         if (d.accessCodeLabel) {
           data.accessCodeHash = await bcrypt.hash(d.accessCodeLabel, 10);
         }
