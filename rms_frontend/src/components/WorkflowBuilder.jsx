@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail } from 'lucide-react';
+import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail, Eye, X, AlertTriangle, Zap, BadgeCheck, ArrowRight, Clock } from 'lucide-react';
 
 const WorkflowStage = ({ stage, onUpdate, onDelete, isFirst }) => {
   return (
@@ -62,6 +62,67 @@ import ConfirmModal from './ConfirmModal';
 
 const DEFAULT_THRESHOLDS = { hr_ceiling: 50000, chairman_min: 100000 };
 
+// ── Deleted Record Detail Modal ───────────────────────────────────────────────
+const DeletedRecordModal = ({ rec, onClose }) => {
+  const s = rec.snapshot || {};
+  const fmtDate = (d) => d ? new Date(d).toLocaleString() : '—';
+  const fmtMoney = (v) => v != null ? `₦${Number(v).toLocaleString()}` : null;
+  const typeColor = s.type === 'Cash' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+    : s.type === 'Memo' ? 'text-amber-700 bg-amber-50 border-amber-200'
+    : 'text-blue-700 bg-blue-50 border-blue-200';
+
+  const handlePrint = () => {
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
+    const trail = (s.forwardEvents || []).map(e => `<tr><td>${new Date(e.createdAt).toLocaleString()}</td><td style="text-transform:uppercase;font-weight:700">${e.action}</td><td>${e.fromDepartment?.name || '—'}</td><td>${e.toDepartment?.name || 'N/A'}</td><td>${e.actorName || '—'}</td><td>${e.note || '—'}</td></tr>`).join('');
+    const approvals = (s.approvals || []).map(a => `<tr><td>${a.stage?.name || '—'}</td><td style="color:${a.action==='approved'?'green':'red'};font-weight:700;text-transform:uppercase">${a.action}</td><td>${a.user?.name || '—'}</td><td>${a.remarks || '—'}</td><td>${new Date(a.createdAt).toLocaleString()}</td><td>${a.signature?.verificationCode || '—'}</td></tr>`).join('');
+    const vetting = (s.vettingEvents || []).map(v => `<tr><td>${new Date(v.createdAt).toLocaleString()}</td><td>${v.deptName || '—'}</td><td style="font-weight:700;text-transform:uppercase">${v.action}</td><td>${v.actorName || '—'}</td><td>${v.comment || '—'}</td></tr>`).join('');
+    const atts = (s.attachments || []).map(a => `<tr><td>${a.filename}</td><td>${a.fileType || '—'}</td><td>${a.stageName || '—'}</td><td>${a.size ? (a.size/1024).toFixed(1)+' KB' : '—'}</td><td>${new Date(a.createdAt).toLocaleString()}</td></tr>`).join('');
+    win.document.write(`<!DOCTYPE html><html><head><title>Deleted Record #${rec.originalId}</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#111;font-size:12px}h1{font-size:20px;font-weight:900;margin-bottom:4px}h2{font-size:13px;font-weight:800;margin:24px 0 8px;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid #ddd;padding-bottom:4px}.badge{display:inline-block;padding:2px 10px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase}.grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin-bottom:12px}.label{font-size:9px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.1em}.val{font-size:12px;font-weight:600;color:#111}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#f5f5f5;padding:6px 8px;font-weight:700;text-align:left;font-size:9px;text-transform:uppercase;border-bottom:2px solid #ddd}td{padding:5px 8px;border-bottom:1px solid #eee}.del-box{background:#fff3f3;border:1px solid #fca5a5;border-radius:8px;padding:12px 16px;margin-top:24px}@media print{button{display:none}}</style></head><body><h1>Deleted Record #${rec.originalId}</h1><span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5">${s.type||'Record'}</span>&nbsp;&nbsp;<span style="font-size:11px;color:#666">Archived on ${fmtDate(rec.deletedAt)} by ${rec.deletedByName||'Unknown'}</span><h2>Record Details</h2><div class="grid"><div><p class="label">Title</p><p class="val">${s.title||'—'}</p></div><div><p class="label">Amount</p><p class="val">${fmtMoney(s.amount)||'Non-financial'}</p></div><div><p class="label">Origin Department</p><p class="val">${s.department?.name||'—'}</p></div><div><p class="label">Target Department</p><p class="val">${s.targetDepartment?.name||'—'}</p></div><div><p class="label">Status at Deletion</p><p class="val">${s.status||'—'} / ${s.finalApprovalStatus||'none'}</p></div><div><p class="label">Creator</p><p class="val">${s.creator?.name||'—'}</p></div></div>${s.description?`<p class="label">Description</p><pre style="font-size:12px;color:#333;border:1px solid #eee;border-radius:4px;padding:10px;background:#fafafa;white-space:pre-wrap">${s.description}</pre>`:''}${trail?`<h2>Processing Trail</h2><table><thead><tr><th>Date/Time</th><th>Action</th><th>From</th><th>To</th><th>Actor</th><th>Note</th></tr></thead><tbody>${trail}</tbody></table>`:''}${approvals?`<h2>Approvals</h2><table><thead><tr><th>Stage</th><th>Decision</th><th>Officer</th><th>Remarks</th><th>Date/Time</th><th>Sig. Code</th></tr></thead><tbody>${approvals}</tbody></table>`:''}${vetting?`<h2>Vetting Events</h2><table><thead><tr><th>Date/Time</th><th>Department</th><th>Action</th><th>Actor</th><th>Comment</th></tr></thead><tbody>${vetting}</tbody></table>`:''}${atts?`<h2>Attachments (metadata only)</h2><table><thead><tr><th>Filename</th><th>Type</th><th>Stage</th><th>Size</th><th>Uploaded</th></tr></thead><tbody>${atts}</tbody></table>`:''}<div class="del-box"><strong>⚠ Deletion Record</strong><br/>Deleted by <strong>${rec.deletedByName||'Unknown'}</strong> from <strong>${rec.departmentName||'—'}</strong> on ${fmtDate(rec.deletedAt)}. This is an archived copy stored only in the super admin bin.</div><script>window.onload=()=>window.print();</script></body></html>`);
+    win.document.close();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-start justify-center overflow-y-auto py-6 px-4">
+      <div className="bg-white rounded-3xl border border-border/50 shadow-2xl w-full max-w-4xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-6 border-b border-border/30">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center">
+              <FileText size={18} className="text-red-500" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-foreground tracking-tight">Archived Record <span className="text-red-500">#{rec.originalId}</span></h2>
+              <p className="text-[10px] text-muted-foreground/70 font-medium mt-0.5">Deleted by {rec.deletedByName || '—'} · {new Date(rec.deletedAt).toLocaleString()}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest hover:bg-primary/90 transition-all active:scale-95 shadow-md">
+              <Printer size={13} />Print Record
+            </button>
+            <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="p-6 space-y-6 overflow-y-auto max-h-[75vh] custom-scrollbar">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-muted/20 rounded-2xl border border-border/30">
+            {[['Type', <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${typeColor}`}>{s.type||'—'}</span>],['Title', s.title||'—'],['Amount', fmtMoney(s.amount)||<span className="text-muted-foreground/50 text-xs italic font-normal">Non-financial</span>],['Origin Dept', s.department?.name||rec.departmentName||'—'],['Target Dept', s.targetDepartment?.name||'—'],['Urgency', s.urgency||'Normal'],['Status at Deletion', `${s.status||'—'} / ${s.finalApprovalStatus||'none'}`],['Creator', s.creator?.name||'—'],['Created', fmtDate(s.createdAt)]].map(([label, val], i) => (
+              <div key={i}><p className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-widest mb-1">{label}</p><p className="text-sm font-bold text-foreground leading-tight">{val}</p></div>
+            ))}
+          </div>
+          {s.description && <div><p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest mb-2">Description / Content</p><p className="text-sm text-foreground leading-relaxed bg-muted/20 border border-border/30 rounded-xl p-4 whitespace-pre-wrap">{s.description}</p></div>}
+          {(s.forwardEvents||[]).length > 0 && <div><p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest mb-3 flex items-center gap-2"><ArrowRight size={12}/> Processing Trail ({s.forwardEvents.length} events)</p><div className="space-y-2">{s.forwardEvents.map((e,i)=>(<div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-muted/20 border border-border/20"><div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-black shrink-0 mt-0.5">{i+1}</div><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg border ${e.action==='forwarded'?'bg-blue-50 border-blue-200 text-blue-700':e.action==='created'?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-amber-50 border-amber-200 text-amber-700'}`}>{e.action}</span><span className="text-[10px] font-bold text-foreground">{e.fromDepartment?.name||'—'}</span>{e.toDepartment?.name&&<><ArrowRight size={10} className="text-muted-foreground/40"/><span className="text-[10px] font-black text-primary">{e.toDepartment.name}</span></>}{e.actorName&&<span className="text-[9px] text-muted-foreground/70 ml-auto">by {e.actorName}</span>}</div>{e.note&&<p className="text-[10px] text-muted-foreground/80 mt-1 italic">"{e.note}"</p>}<p className="text-[9px] font-mono text-muted-foreground/50 mt-1">{fmtDate(e.createdAt)}</p></div></div>))}</div></div>}
+          {(s.approvals||[]).length > 0 && <div><p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest mb-3 flex items-center gap-2"><ShieldCheck size={12}/> Stage Approvals ({s.approvals.length})</p><div className="overflow-x-auto"><table className="w-full text-left border-separate border-spacing-y-1"><thead><tr className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-widest"><th className="pb-2 px-3">Stage</th><th className="pb-2 px-3">Decision</th><th className="pb-2 px-3">Officer</th><th className="pb-2 px-3">Remarks</th><th className="pb-2 px-3">Date</th><th className="pb-2 px-3">Sig. Code</th></tr></thead><tbody>{s.approvals.map((a,i)=>(<tr key={i}><td className="py-2 px-3 bg-muted/20 border-y border-l border-border/20 rounded-l-lg text-[10px] font-bold text-foreground">{a.stage?.name||'—'}</td><td className="py-2 px-3 bg-muted/20 border-y border-border/20"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg border ${a.action==='approved'?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-red-50 border-red-200 text-red-700'}`}>{a.action}</span></td><td className="py-2 px-3 bg-muted/20 border-y border-border/20 text-[10px] font-medium text-foreground">{a.user?.name||'—'}</td><td className="py-2 px-3 bg-muted/20 border-y border-border/20 text-[10px] text-muted-foreground max-w-[140px] truncate">{a.remarks||'—'}</td><td className="py-2 px-3 bg-muted/20 border-y border-border/20 text-[9px] font-mono text-muted-foreground/70">{fmtDate(a.createdAt)}</td><td className="py-2 px-3 bg-muted/20 border-y border-r border-border/20 rounded-r-lg text-[9px] font-mono text-primary/70">{a.signature?.verificationCode||'—'}</td></tr>))}</tbody></table></div></div>}
+          {(s.vettingEvents||[]).length > 0 && <div><p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest mb-3 flex items-center gap-2"><Clock size={12}/> Vetting Events ({s.vettingEvents.length})</p><div className="space-y-2">{s.vettingEvents.map((v,i)=>(<div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/40 border border-purple-100/60"><div><div className="flex items-center gap-2 flex-wrap"><span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg bg-purple-100 border border-purple-200 text-purple-700">{v.action}</span><span className="text-[10px] font-bold text-foreground">{v.deptName||'—'}</span>{v.actorName&&<span className="text-[9px] text-muted-foreground/70 ml-auto">by {v.actorName}</span>}</div>{v.comment&&<p className="text-[10px] text-muted-foreground/80 mt-1 italic">"{v.comment}"</p>}<p className="text-[9px] font-mono text-muted-foreground/50 mt-1">{fmtDate(v.createdAt)}</p></div></div>))}</div></div>}
+          {(s.attachments||[]).length > 0 && <div><p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest mb-2 flex items-center gap-2"><BadgeCheck size={12}/> Attachments — metadata only ({s.attachments.length})</p><div className="space-y-1.5">{s.attachments.map((a,i)=>(<div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/20 border border-border/20"><FileText size={12} className="text-muted-foreground/50 shrink-0"/><span className="text-[11px] font-bold text-foreground flex-1 truncate">{a.filename}</span><span className="text-[9px] text-muted-foreground/60">{a.fileType||'—'}</span>{a.stageName&&<span className="text-[9px] px-2 py-0.5 rounded-lg bg-muted border border-border/40 text-muted-foreground">{a.stageName}</span>}{a.size&&<span className="text-[9px] font-mono text-muted-foreground/50">{(a.size/1024).toFixed(1)} KB</span>}</div>))}</div></div>}
+          <div className="flex items-start gap-3 p-4 bg-red-50/60 border border-red-200/60 rounded-2xl">
+            <Trash2 size={16} className="text-red-500 shrink-0 mt-0.5" />
+            <div><p className="text-[11px] font-black text-red-700 uppercase tracking-widest">Archived by Department Deletion</p><p className="text-[10px] text-red-600/80 mt-0.5">Deleted by <strong>{rec.deletedByName||'—'}</strong> ({rec.departmentName||'—'}) on {fmtDate(rec.deletedAt)}. All active records and file data have been permanently removed. This snapshot exists only in the super admin bin.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const WorkflowBuilder = ({ onViewChange }) => {
   const { user } = useAuth();
   const [stages, setStages] = useState([]);
@@ -119,6 +180,48 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [emailTestAddr, setEmailTestAddr]     = useState('');
   const [emailTesting, setEmailTesting]       = useState(false);
   const [emailTestResult, setEmailTestResult] = useState(null);
+
+  // Deleted Records Bin + Hard Reset state
+  const [deletedRecords, setDeletedRecords] = useState([]);
+  const [loadingBin, setLoadingBin] = useState(false);
+  const [purgingId, setPurgingId] = useState(null);
+  const [pendingPurgeId, setPendingPurgeId] = useState(null);
+  const [viewingRecord, setViewingRecord] = useState(null);
+  const [resetOptions, setResetOptions] = useState({
+    requisitions: true, subAccounts: true, deptActivations: true,
+    activityLogs: true, chatMessages: false, storeRecords: false, notifications: false,
+  });
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetSummary, setResetSummary] = useState(null);
+
+  const loadDeletedRecords = async () => {
+    setLoadingBin(true);
+    try {
+      const res = await adminAPI.get('/deleted-records');
+      setDeletedRecords(Array.isArray(res?.data) ? res.data : []);
+    } catch { setDeletedRecords([]); } finally { setLoadingBin(false); }
+  };
+
+  const confirmPurgeRecord = (id) => setPendingPurgeId(id);
+
+  const handlePurgeRecord = async (id) => {
+    setPurgingId(id); setPendingPurgeId(null);
+    try { await adminAPI.delete(`/deleted-records/${id}`); setDeletedRecords(p => p.filter(r => r.id !== id)); }
+    catch (e) { alert(e?.response?.data?.error || 'Failed to purge record'); }
+    finally { setPurgingId(null); }
+  };
+
+  const handleHardReset = async () => {
+    if (resetConfirmText !== 'CONFIRM HARD RESET') return;
+    setResetting(true); setResetSummary(null);
+    try {
+      const res = await adminAPI.post('/hard-reset', { options: resetOptions });
+      setResetSummary(res?.data?.summary || null);
+      setResetConfirmText('');
+    } catch (e) { alert(e?.response?.data?.error || 'Reset failed'); }
+    finally { setResetting(false); }
+  };
 
   const loadData = async () => {
     const [workflowData, typeData] = await Promise.all([
@@ -354,6 +457,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         loadPrintSettings(),
         loadIctPhone(),
         loadEmailStatus(),
+        loadDeletedRecords(),
       ]);
     })();
   }, []);
@@ -458,6 +562,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
               { id: 'ai',       label: 'AI Features' },
               { id: 'print',    label: 'Print & Stamp' },
               { id: 'contact',  label: 'Contact & Email' },
+              { id: 'bin',      label: 'Deleted Records' },
+              { id: 'reset',    label: 'Danger Zone' },
             ].map(({ id, label }) => (
               <button
                 key={id}
@@ -1217,6 +1323,138 @@ const WorkflowBuilder = ({ onViewChange }) => {
             </div>
           </div>
 
+        ) : activeTab === 'bin' ? (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                    <Trash2 size={16} className="text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Deleted Records Bin</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Records archived when departments were deleted. Purge to remove permanently.</p>
+                  </div>
+                </div>
+                <button onClick={loadDeletedRecords} disabled={loadingBin} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border/40 text-muted-foreground hover:bg-muted/60 text-[10px] font-bold transition-all">
+                  {loadingBin ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+                  Refresh
+                </button>
+              </div>
+              {loadingBin ? (
+                <div className="flex justify-center py-10"><Loader2 size={22} className="animate-spin text-muted-foreground/40" /></div>
+              ) : deletedRecords.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground/50 text-sm">No deleted records in bin.</div>
+              ) : (
+                <div className="space-y-2.5">
+                  {deletedRecords.map(rec => (
+                    <div key={rec.id} className="flex items-center gap-4 p-4 rounded-2xl bg-muted/20 border border-border/30 hover:bg-muted/30 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-foreground">#{rec.originalId}</span>
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg bg-red-50 border border-red-200 text-red-700">{rec.snapshot?.type || 'Record'}</span>
+                          <span className="text-[11px] font-semibold text-foreground truncate max-w-[200px]">{rec.snapshot?.title || '—'}</span>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground/60 mt-1">From <strong>{rec.departmentName || '—'}</strong> · deleted by {rec.deletedByName || '—'} · {new Date(rec.deletedAt).toLocaleDateString()}</p>
+                      </div>
+                      <button onClick={() => setViewingRecord(rec)} className="p-2 rounded-xl border border-border/40 text-muted-foreground hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all" title="View details">
+                        <Eye size={13} />
+                      </button>
+                      {pendingPurgeId === rec.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] text-red-600 font-bold">Purge permanently?</span>
+                          <button onClick={() => handlePurgeRecord(rec.id)} className="px-2.5 py-1 rounded-lg bg-red-600 text-white text-[9px] font-black uppercase hover:bg-red-700 transition-all">Yes</button>
+                          <button onClick={() => setPendingPurgeId(null)} className="px-2.5 py-1 rounded-lg border border-border/40 text-muted-foreground text-[9px] font-bold hover:bg-muted/60 transition-all">Cancel</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => confirmPurgeRecord(rec.id)} disabled={purgingId === rec.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-[9px] font-black uppercase hover:bg-red-100 transition-all disabled:opacity-50">
+                          {purgingId === rec.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                          Purge
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+        ) : activeTab === 'reset' ? (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="glass bg-white/70 rounded-3xl border border-red-200/60 p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                  <Zap size={16} className="text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-red-700">Danger Zone — Hard Reset</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Selectively wipe data categories. This cannot be undone.</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-red-50/60 border border-red-200/60 rounded-2xl mb-5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-red-700 leading-relaxed">
+                    A Hard Reset permanently deletes the selected data categories from the live database. There is no undo. Department structure, user accounts, and system settings are <strong>never</strong> affected.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                {[
+                  { key: 'requisitions', label: 'All Requisitions', desc: 'Clears every request, approval, attachment, and audit record' },
+                  { key: 'subAccounts', label: 'Sub-Accounts', desc: 'Removes staff sub-account users (keeps head accounts)' },
+                  { key: 'deptActivations', label: 'Dept Activations', desc: 'Resets all department activation timestamps' },
+                  { key: 'activityLogs', label: 'Activity Logs', desc: 'Wipes the full audit trail / activity history' },
+                  { key: 'chatMessages', label: 'Chat Messages', desc: 'Deletes all inter-department chat history' },
+                  { key: 'storeRecords', label: 'Store Records', desc: 'Clears store inventory and transaction records' },
+                  { key: 'notifications', label: 'Notifications', desc: 'Removes all unread and read notifications' },
+                ].map(({ key, label, desc }) => (
+                  <label key={key} className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${resetOptions[key] ? 'bg-red-50/60 border-red-200 text-red-800' : 'bg-muted/20 border-border/30 text-muted-foreground'}`}>
+                    <input type="checkbox" checked={resetOptions[key]} onChange={e => setResetOptions(p => ({ ...p, [key]: e.target.checked }))} className="mt-0.5 accent-red-600" />
+                    <div>
+                      <p className="text-[11px] font-black">{label}</p>
+                      <p className="text-[9px] mt-0.5 opacity-70">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-[10px] font-black text-foreground uppercase tracking-widest">Type <span className="text-red-600 font-mono">CONFIRM HARD RESET</span> to proceed</p>
+                <input
+                  type="text"
+                  value={resetConfirmText}
+                  onChange={e => setResetConfirmText(e.target.value)}
+                  placeholder="CONFIRM HARD RESET"
+                  className="w-full bg-muted/20 border border-border/50 rounded-xl px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-red-200 outline-none"
+                />
+                <button
+                  onClick={handleHardReset}
+                  disabled={resetting || resetConfirmText !== 'CONFIRM HARD RESET' || !Object.values(resetOptions).some(Boolean)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase tracking-widest transition-all disabled:opacity-50 shadow-md"
+                >
+                  {resetting ? <><Loader2 size={13} className="animate-spin" />Running reset…</> : <><Zap size={13} />Execute Hard Reset</>}
+                </button>
+              </div>
+
+              {resetSummary && (
+                <div className="mt-5 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                  <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-2">Reset Complete</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(resetSummary).map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between text-[10px]">
+                        <span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
+                        <span className="font-black text-emerald-700">{v} removed</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
         ) : (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
              <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl overflow-hidden relative">
@@ -1259,18 +1497,22 @@ const WorkflowBuilder = ({ onViewChange }) => {
         )}
       </div>
 
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={confirmDelete}
         size="lg"
         isProcessing={isProcessing}
         title={activeTab === 'stages' ? "Delete Workflow Stage" : "Delete Requisition Type"}
-        message={activeTab === 'stages' 
+        message={activeTab === 'stages'
           ? `Are you sure you want to delete the "${pendingStage?.name}" stage? This will re-sequence the approval chain.`
           : `Are you sure you want to delete the "${pendingType?.name}" requisition type? This cannot be undone.`
         }
       />
+
+      {viewingRecord && (
+        <DeletedRecordModal rec={viewingRecord} onClose={() => setViewingRecord(null)} />
+      )}
     </>
   );
 };
