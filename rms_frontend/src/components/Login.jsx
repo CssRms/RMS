@@ -488,6 +488,8 @@ const Login = () => {
   const [showForgotCode, setShowForgotCode] = useState(false);
   const [ictPhone, setIctPhone] = useState('');
   const [deptDropOpen, setDeptDropOpen] = useState(false);
+  const [deptSearch, setDeptSearch] = useState('');
+  const deptSearchRef = useRef(null);
   const [deptActivated, setDeptActivated] = useState(null); // null=unknown, true=activated(PASSWORD), false=first-time(ACCESS CODE)
   // First-time activation flow
   const [activation, setActivation] = useState(null); // { token, deptName } when requiresActivation
@@ -503,6 +505,14 @@ const Login = () => {
   const { deptLogin } = useAuth();
 
   const mainDepts = departments.filter(d => d.type !== 'Sub-Account' && !d.isSubAccount);
+
+  useEffect(() => {
+    if (deptDropOpen) {
+      setTimeout(() => deptSearchRef.current?.focus(), 50);
+    } else {
+      setDeptSearch('');
+    }
+  }, [deptDropOpen]);
 
   useEffect(() => {
     getDepartments().then(setDepartments);
@@ -745,20 +755,54 @@ const Login = () => {
                         ? <X size={13} className="text-muted-foreground hover:text-red-500 shrink-0" onClick={e => { e.stopPropagation(); selectDept(''); }}/>
                         : <ChevronDown size={14} className={`shrink-0 transition-transform ${deptDropOpen ? 'rotate-180' : ''}`}/>}
                     </button>
-                    {deptDropOpen && mainDepts.length > 0 && (
-                      <div className="absolute top-full left-0 w-full mt-1.5 z-50 bg-white border border-border/60 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="max-h-52 overflow-y-auto">
-                          {mainDepts.map(d => (
-                            <button key={d.id} type="button"
-                              onClick={() => { selectDept(d.name); setDeptDropOpen(false); }}
-                              className={`w-full text-left px-4 py-3 text-sm flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${selectedDept === d.name ? 'bg-primary/8 text-primary font-semibold' : 'text-foreground'}`}>
-                              <Building2 size={13} className="text-muted-foreground/40 shrink-0"/>
-                              <span className="truncate">{d.name}</span>
-                            </button>
-                          ))}
+                    {deptDropOpen && mainDepts.length > 0 && (() => {
+                      const filtered = mainDepts.filter(d => d.name.toLowerCase().includes(deptSearch.toLowerCase()));
+                      return (
+                        <div className="absolute top-full left-0 w-full mt-1.5 z-50 bg-white border border-border/60 rounded-2xl shadow-2xl overflow-hidden">
+                          {/* Search box */}
+                          <div className="px-3 pt-3 pb-2 border-b border-border/30">
+                            <div className="relative">
+                              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                              </svg>
+                              <input
+                                ref={deptSearchRef}
+                                type="text"
+                                value={deptSearch}
+                                onChange={e => setDeptSearch(e.target.value)}
+                                placeholder="Search departments…"
+                                className="w-full pl-8 pr-3 py-2 text-[12px] border border-border/50 rounded-xl bg-muted/30 outline-none focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all placeholder-muted-foreground/40"
+                                onKeyDown={e => {
+                                  if (e.key === 'Escape') { setDeptDropOpen(false); }
+                                  if (e.key === 'Enter' && filtered.length === 1) { selectDept(filtered[0].name); setDeptDropOpen(false); }
+                                }}
+                              />
+                              {deptSearch && (
+                                <button type="button" onClick={() => setDeptSearch('')}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors">
+                                  <X size={11}/>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {/* Results list */}
+                          <div className="max-h-48 overflow-y-auto">
+                            {filtered.length > 0 ? filtered.map(d => (
+                              <button key={d.id} type="button"
+                                onClick={() => { selectDept(d.name); setDeptDropOpen(false); }}
+                                className={`w-full text-left px-4 py-3 text-sm flex items-center gap-2.5 hover:bg-primary/5 transition-colors ${selectedDept === d.name ? 'bg-primary/8 text-primary font-semibold' : 'text-foreground'}`}>
+                                <Building2 size={13} className="text-muted-foreground/40 shrink-0"/>
+                                <span className="truncate">{d.name}</span>
+                              </button>
+                            )) : (
+                              <div className="px-4 py-6 text-center text-xs text-muted-foreground/50 italic">
+                                No departments match "<span className="font-semibold not-italic text-muted-foreground">{deptSearch}</span>"
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
 
