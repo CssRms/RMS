@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail, Eye, X, AlertTriangle, Zap, BadgeCheck, ArrowRight, Clock } from 'lucide-react';
+import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail, Eye, X, AlertTriangle, Zap, BadgeCheck, ArrowRight, Clock, PenTool } from 'lucide-react';
 
 const WorkflowStage = ({ stage, onUpdate, onDelete, isFirst }) => {
   return (
@@ -167,9 +167,11 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [savingAI, setSavingAI]   = useState(false);
 
   // ── Print settings ─────────────────────────────────────────────────────────
-  const [canPrintIds, setCanPrintIds]     = useState(null);
-  const [showStampOnPdf, setShowStampOnPdf] = useState(true);
-  const [savingPrint, setSavingPrint]     = useState(false);
+  const [canPrintIds, setCanPrintIds]         = useState(null);
+  const [showStampOnPdf, setShowStampOnPdf]   = useState(true);
+  const [showSignatureOnPdf, setShowSignatureOnPdf] = useState(true);
+  const [requireGovernanceSetup, setRequireGovernanceSetup] = useState(true);
+  const [savingPrint, setSavingPrint]         = useState(false);
 
   // ── ICT support phone ──────────────────────────────────────────────────────
   const [ictPhone, setIctPhone]     = useState('');
@@ -355,13 +357,15 @@ const WorkflowBuilder = ({ onViewChange }) => {
       const data = await adminAPI.getPrintSettings();
       setCanPrintIds((data?.departments || []).filter(d => d.canPrint).map(d => d.id));
       setShowStampOnPdf(data?.showStamp !== false);
+      setShowSignatureOnPdf(data?.showSignature !== false);
+      setRequireGovernanceSetup(data?.requireGovernance !== false);
     } catch { setCanPrintIds([]); }
   };
   const savePrintSettings = async () => {
     if (canPrintIds === null) return;
     setSavingPrint(true);
     try {
-      await adminAPI.savePrintSettings(canPrintIds, showStampOnPdf);
+      await adminAPI.savePrintSettings(canPrintIds, showStampOnPdf, showSignatureOnPdf, requireGovernanceSetup);
       toast.success('Print settings saved.');
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to save print settings.');
@@ -1210,6 +1214,103 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
                   <p className="text-[10px] text-muted-foreground/80 font-medium italic">
                     This setting takes effect on all print records generated after saving. Existing saved PDFs are not affected.
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* Signature on PDF */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shrink-0">
+                    <PenTool size={16} className="text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Signature on PDF</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Show or hide the department head's biological signature on all print records.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={savePrintSettings}
+                  disabled={savingPrint || canPrintIds === null}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-indigo-200 active:scale-[0.98]"
+                >
+                  {savingPrint ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="flex-1 flex flex-col justify-center space-y-6">
+                <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-foreground uppercase tracking-tight">
+                      {showSignatureOnPdf ? 'Signature Visible' : 'Signature Hidden'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {showSignatureOnPdf
+                        ? 'Department head signatures appear on all generated print record PDFs.'
+                        : 'Signatures are hidden from all print record PDFs organisation-wide.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowSignatureOnPdf(v => !v)}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${showSignatureOnPdf ? 'bg-indigo-500' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${showSignatureOnPdf ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div className="p-4 bg-muted/20 rounded-xl border border-border/10 flex items-start gap-3">
+                  <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-muted-foreground/80 font-medium italic">
+                    This controls whether the head official's wet signature image is embedded in the PDF processing trail. The name and title are also hidden when disabled.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Governance Setup Requirement */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={16} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Governance Setup Requirement</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Require departments to register their head official profile and signature before initiating requisitions.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={savePrintSettings}
+                  disabled={savingPrint || canPrintIds === null}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-amber-200 active:scale-[0.98]"
+                >
+                  {savingPrint ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="flex-1 flex flex-col justify-center space-y-6">
+                <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-foreground uppercase tracking-tight">
+                      {requireGovernanceSetup ? 'Setup Required' : 'Setup Optional'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {requireGovernanceSetup
+                        ? 'Departments see a mandatory "Governance Setup Required" banner and cannot initiate requests until their head official is registered.'
+                        : 'Departments can initiate requisitions without completing governance setup.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setRequireGovernanceSetup(v => !v)}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${requireGovernanceSetup ? 'bg-amber-500' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${requireGovernanceSetup ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div className="p-4 bg-muted/20 rounded-xl border border-border/10 flex items-start gap-3">
+                  <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-muted-foreground/80 font-medium italic">
+                    When disabled, the "Governance Setup Required" banner is hidden from all department dashboards organisation-wide, regardless of each department's completion status.
                   </p>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardStats, getRequisitions, isMemoRecord, isOperationalRequisition } from '../lib/store';
-import { reqAPI } from '../lib/api';
+import { reqAPI, settingsAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText } from 'lucide-react';
 
@@ -149,8 +149,12 @@ const Dashboard = ({ onViewChange }) => {
   const [isDeptReady, setIsDeptReady] = useState(true);
   useEffect(() => {
     if (user?.role === 'department') {
-      reqAPI.getDeptProfile().then(p => {
-        setIsDeptReady(p.hasSignature && p.headEmail && p.headName);
+      Promise.all([
+        reqAPI.getDeptProfile(),
+        settingsAPI.get('require_governance_setup').catch(() => ({ value: 'true' })),
+      ]).then(([p, setting]) => {
+        const required = (setting?.value ?? setting?.data?.value ?? 'true') !== 'false';
+        setIsDeptReady(!required || !!(p.hasSignature && p.headEmail && p.headName));
       }).catch(() => {});
     }
   }, [user]);

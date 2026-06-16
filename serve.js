@@ -3866,15 +3866,19 @@ app.patch('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
 app.get('/api/admin/print-settings', authenticateToken, async (req, res) => {
   if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
   try {
-    const [depts, stampRows] = await Promise.all([
+    const [depts, stampRows, sigRows, govRows] = await Promise.all([
       prisma.department.findMany({
         select: { id: true, name: true, canPrint: true },
         orderBy: { name: 'asc' }
       }),
-      prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`.catch(() => [])
+      prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`.catch(() => []),
+      prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_signature_on_pdf' LIMIT 1`.catch(() => []),
+      prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'require_governance_setup' LIMIT 1`.catch(() => [])
     ]);
     const showStamp = (stampRows?.[0]?.value ?? 'true') !== 'false';
-    res.json({ departments: depts, showStamp });
+    const showSignature = (sigRows?.[0]?.value ?? 'true') !== 'false';
+    const requireGovernance = (govRows?.[0]?.value ?? 'true') !== 'false';
+    res.json({ departments: depts, showStamp, showSignature, requireGovernance });
   } catch (error) { sendError(res, 500, error.message); }
 });
 
@@ -4017,11 +4021,11 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
   } catch (error) { sendError(res, 500, error.message); }
 });
 
-// POST /api/admin/print-settings  — bulk-save canPrint list + showStamp flag
+// POST /api/admin/print-settings  — bulk-save canPrint list + stamp/signature/governance flags
 app.post('/api/admin/print-settings', authenticateToken, async (req, res) => {
   if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
   try {
-    const { canPrintIds, showStamp } = req.body || {};
+    const { canPrintIds, showStamp, showSignature, requireGovernance } = req.body || {};
     if (!Array.isArray(canPrintIds)) return res.status(400).json({ error: 'canPrintIds must be an array' });
     // Update all departments: enable canPrint for those in the list, disable for the rest
     const allDepts = await prisma.department.findMany({ select: { id: true } });
@@ -4031,14 +4035,19 @@ app.post('/api/admin/print-settings', authenticateToken, async (req, res) => {
         data: { canPrint: canPrintIds.includes(d.id) }
       }))
     );
-    // Update global stamp flag
-    if (typeof showStamp === 'boolean') {
-      await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "SystemSetting" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL DEFAULT '')`;
+    await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "SystemSetting" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL DEFAULT '')`;
+    const upsertSetting = async (key, val) => {
+      if (typeof val !== 'boolean') return;
       await prisma.$executeRaw`
-        INSERT INTO "SystemSetting" ("key", "value") VALUES ('show_stamp_on_pdf', ${showStamp ? 'true' : 'false'})
+        INSERT INTO "SystemSetting" ("key", "value") VALUES (${key}, ${val ? 'true' : 'false'})
         ON CONFLICT ("key") DO UPDATE SET "value" = EXCLUDED."value"
       `;
-    }
+    };
+    await Promise.all([
+      upsertSetting('show_stamp_on_pdf', showStamp),
+      upsertSetting('show_signature_on_pdf', showSignature),
+      upsertSetting('require_governance_setup', requireGovernance),
+    ]);
     res.json({ ok: true });
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -5776,11 +5785,16 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     let sealBgImg = null;
     if (sealBgBytes) sealBgImg = await embedSafe(sealBgBytes);
 
-    // ── Global show-stamp setting ────────────────────────────
+    // ── Global show-stamp + show-signature settings ──────────
     let showStampOnPdf = true;
+    let showSignatureOnPdf = true;
     try {
-      const stampRows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`;
+      const [stampRows, sigRows] = await Promise.all([
+        prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_stamp_on_pdf' LIMIT 1`,
+        prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'show_signature_on_pdf' LIMIT 1`,
+      ]);
       showStampOnPdf = (stampRows?.[0]?.value ?? 'true') !== 'false';
+      showSignatureOnPdf = (sigRows?.[0]?.value ?? 'true') !== 'false';
     } catch { /* default true */ }
 
     // ── Load dept head signatures for processing + vetting chains ───
@@ -6327,7 +6341,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
 
         // Signature image — positioned from row top
         let sigBot = rowTopY - 3;
-        if (sigData?.sigBytes) {
+        if (showSignatureOnPdf && sigData?.sigBytes) {
           try {
             const sigImg = await embedSafe(sigData.sigBytes);
             if (sigImg) {
@@ -6340,7 +6354,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         }
 
         // Head name + title below signature
-        if (sigData?.headName) {
+        if (showSignatureOnPdf && sigData?.headName) {
           page.drawText(sigData.headName, { x: sigColX, y: sigBot - 8, size: 7, font: italicFont, color: rgb(0.15, 0.15, 0.15) });
           sigBot -= 10;
           if (sigData.headTitle) {
@@ -6435,7 +6449,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         }).toUpperCase();
 
         let sigBot = rowTopY - 3;
-        if (sigData?.sigBytes) {
+        if (showSignatureOnPdf && sigData?.sigBytes) {
           try {
             const sigImg = await embedSafe(sigData.sigBytes);
             if (sigImg) {
@@ -6446,7 +6460,7 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
             }
           } catch { }
         }
-        if (sigData?.headName) {
+        if (showSignatureOnPdf && sigData?.headName) {
           page.drawText(sigData.headName, { x: vSigColX, y: sigBot - 8, size: 7, font: italicFont, color: rgb(0.15, 0.15, 0.15) });
           sigBot -= 10;
           if (sigData.headTitle) {

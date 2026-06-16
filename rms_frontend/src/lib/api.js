@@ -343,7 +343,7 @@ export const adminAPI = {
   getDeletedRecords: () => api.get('/admin/deleted-records'),
   purgeDeletedRecord: (id) => api.delete(`/admin/deleted-records/${id}`),
   getPrintSettings: () => api.get('/admin/print-settings'),
-  savePrintSettings: (canPrintIds, showStamp) => api.post('/admin/print-settings', { canPrintIds, showStamp }),
+  savePrintSettings: (canPrintIds, showStamp, showSignature, requireGovernance) => api.post('/admin/print-settings', { canPrintIds, showStamp, showSignature, requireGovernance }),
   hardReset: (options) => api.post('/admin/hard-reset', options),
 };
 
