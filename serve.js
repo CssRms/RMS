@@ -1492,6 +1492,28 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       }
     }
 
+    // ── First-time activation gate — dept head ────────────────────────────────
+    if (!isSuperAdmin && !matchedSubAccount && !resolved.codeChangedByDept) {
+      clearLoginAttempts(deptKey);
+      const activationToken = jwt.sign(
+        { purpose: 'activation', deptId: resolved.id, deptName: resolved.name },
+        JWT_SECRET,
+        { expiresIn: '30m' }
+      );
+      return res.json({ requiresActivation: true, activationToken, deptName: resolved.name });
+    }
+
+    // ── First-time activation gate — sub-account ──────────────────────────────
+    if (!isSuperAdmin && matchedSubAccount && !matchedSubAccount.codeChangedByDept) {
+      clearLoginAttempts(deptKey);
+      const activationToken = jwt.sign(
+        { purpose: 'activation', deptId: matchedSubAccount.id, deptName: matchedSubAccount.name, isSubAccount: true, parentDeptId: dept.id, parentDeptName: dept.name },
+        JWT_SECRET,
+        { expiresIn: '30m' }
+      );
+      return res.json({ requiresActivation: true, activationToken, deptName: matchedSubAccount.name, isSubAccount: true });
+    }
+
     // Unified Role Logic: "Super Admin" department gets 'global_admin' role
     const adminUser = isSuperAdmin
       ? await prisma.user.findFirst({ where: { role: 'global_admin' } })
@@ -1519,6 +1541,83 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
     const logLabel = matchedSubAccount ? `${matchedSubAccount.name} (sub-account of ${dept.name})` : dept.name;
     await prisma.activityLog.create({ data: { action: 'Login', details: `${logLabel} authenticated via unified portal` } });
+    res.cookie('rms_token', token, cookieOptions);
+    res.json({ token, user: userData });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// First-time department activation — called after first login with admin-given access code
+app.post('/api/departments/activate', async (req, res) => {
+  try {
+    const { activationToken, headName, headTitle, headEmail, newPassword, confirmPassword } = req.body;
+    if (!activationToken) return res.status(400).json({ error: 'Activation token missing.' });
+    if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (newPassword !== confirmPassword) return res.status(400).json({ error: 'Passwords do not match.' });
+
+    let payload;
+    try { payload = jwt.verify(activationToken, JWT_SECRET); }
+    catch { return res.status(401).json({ error: 'Activation session expired. Please log in again.' }); }
+    if (payload.purpose !== 'activation') return res.status(401).json({ error: 'Invalid activation token.' });
+
+    const isSub = !!payload.isSubAccount;
+
+    // Dept head requires a name; sub-accounts already have their name set by the head
+    if (!isSub && !headName?.trim()) return res.status(400).json({ error: 'Name is required.' });
+
+    const dept = await prisma.department.findUnique({ where: { id: payload.deptId } });
+    if (!dept) return res.status(404).json({ error: 'Department not found.' });
+
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    if (isSub) {
+      // Sub-account activation: set new password only, store plain-text in accessCodeLabel so admin can always see it
+      const updated = await prisma.department.update({
+        where: { id: dept.id },
+        data: { accessCodeHash: hash, accessCodeLabel: newPassword, codeChangedByDept: true }
+      });
+      const userData = {
+        id: `dept_${updated.id}`,
+        name: updated.name,
+        role: 'department',
+        deptId: updated.id,
+        email: updated.headEmail || `${updated.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
+        isSubAccount: true,
+        parentDeptId: payload.parentDeptId,
+        parentDeptName: payload.parentDeptName,
+        directRoute: updated.directRoute ?? false,
+        allowedRouteDeptIds: (() => { try { return JSON.parse(updated.allowedRouteDeptIds || 'null') || []; } catch { return []; } })(),
+        ...(updated.privilegeAmount != null ? { privilegeAmount: updated.privilegeAmount } : {}),
+        ...(updated.approvalLimit   != null ? { approvalLimit: updated.approvalLimit }     : {}),
+        ...(updated.memoPrivilege           ? { memoPrivilege: true }                      : {}),
+        ...(updated.materialPrivilege       ? { materialPrivilege: true }                  : {}),
+      };
+      const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
+      await prisma.activityLog.create({ data: { action: 'Sub-Account Activation', details: `${updated.name} completed first-time password setup` } });
+      res.cookie('rms_token', token, cookieOptions);
+      return res.json({ token, user: userData });
+    }
+
+    // Dept head activation
+    const updated = await prisma.department.update({
+      where: { id: dept.id },
+      data: {
+        headName:          headName.trim(),
+        headTitle:         headTitle?.trim() || dept.headTitle || null,
+        headEmail:         headEmail?.trim() || dept.headEmail || null,
+        accessCodeHash:    hash,
+        accessCodeLabel:   null,
+        codeChangedByDept: true,
+      }
+    });
+    const userData = {
+      id: `dept_${updated.id}`,
+      name: updated.name,
+      role: 'department',
+      deptId: updated.id,
+      email: updated.headEmail || `${updated.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
+    };
+    const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
+    await prisma.activityLog.create({ data: { action: 'Activation', details: `${updated.name} completed first-time account activation` } });
     res.cookie('rms_token', token, cookieOptions);
     res.json({ token, user: userData });
   } catch (error) { sendError(res, 500, error.message); }
@@ -2589,6 +2688,7 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
       id: s.id, name: s.name, staffId: s.staffId || null,
       headName: s.headName, headEmail: s.headEmail,
       headTitle: s.headTitle, isDisabled: s.isDisabled, createdAt: s.createdAt,
+      codeChangedByDept: s.codeChangedByDept ?? false,
       userCount: s.users.length, users: s.users, reqCount: s._count.requisitions,
       // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
       ...(isAdmin ? { accessCodeLabel: s.accessCodeLabel } : {}),
@@ -2685,13 +2785,18 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
           ``,
           `Unit Name: ${name.trim()}`,
           `Parent Department: ${parent.name}`,
-          ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`] : []),
-          ...(subEmailAddr ? [`Unit Email: ${subEmailAddr}`] : []),
-          `Login Password: ${plainCode}`,
+          ...(hName?.trim()  ? [`Full Name: ${hName.trim()}`]           : []),
+          ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`]   : []),
+          ...(subEmailAddr   ? [`Unit Email: ${subEmailAddr}`]           : []),
+          ``,
+          `ACCESS CODE: ${plainCode}`,
+          ``,
           `Created by: ${createdBy}`,
           `Date: ${createdDate}`,
           ``,
-          `The sub-account can now log in to the RMS portal using the unit name and the password above. Please ensure the login details are shared securely with the unit staff. They can update their password from their profile settings after first login.`
+          `IMPORTANT: This Access Code is for first-time login only. When the unit member logs in for the first time, they will be prompted to create their own personal password which will replace this code.`,
+          ``,
+          `Please share this Access Code securely with the unit staff.`
         ],
         actionLabel: 'Open RMS Portal'
       });
@@ -2708,16 +2813,19 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
           `Account Name: ${name.trim()}`,
           `Parent Department: ${parent.name}`,
           ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`] : []),
-          `Login Password: ${plainCode}`,
           `Date Created: ${createdDate}`,
           ``,
-          `To log in, visit the RMS portal and select your unit name from the department list, then enter the password above. For security, you are encouraged to change your password from your profile settings after your first login.`,
+          `YOUR ACCESS CODE: ${plainCode}`,
+          ``,
+          `IMPORTANT: This Access Code is for first-time login only. When you log in for the first time, you will be asked to create your own personal password. Keep this code safe until you complete your first login.`,
+          ``,
+          `To log in: visit the RMS portal, select "${parent.name}" from the department list, then enter the Access Code above.`,
           ``,
           `If you did not expect this message or need help, contact your department head (${parent.name}).`
         ],
         actionLabel: 'Log In to RMS Portal'
       });
-      sendEmail({ to: subEmailAddr, subject: `[RMS] Welcome — Your Sub-Account is Ready: ${name.trim()}`, text, html }).catch(() => {});
+      sendEmail({ to: subEmailAddr, subject: `[RMS] Welcome — Your Sub-Account Access Code: ${name.trim()}`, text, html }).catch(() => {});
     }
 
     res.json({ id: sub.id, name: sub.name, staffId: sub.staffId || null, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
@@ -2862,35 +2970,41 @@ app.post('/api/sub-accounts/:id/reset-code', authenticateToken, requireSubAccoun
 
     if (parentEmail && !parentEmail.endsWith('@cssgroup.local')) {
       const { text, html } = buildEmailContent({
-        title: `Sub-Account Password Reset — ${sub.name}`,
+        title: `Sub-Account Access Code Reset — ${sub.name}`,
         lines: [
-          `The login password for one of your sub-accounts has been reset.`,
+          `The login access code for one of your sub-accounts has been reset.`,
+          ``,
           `Unit: ${sub.name}`,
           `Parent Department: ${sub.parent?.name || '—'}`,
-          `New Password: ${plainCode}`,
+          ``,
+          `NEW ACCESS CODE: ${plainCode}`,
+          ``,
           `Reset by: ${resetBy}`,
           `Date: ${resetDate}`,
           ``,
-          `Please share this password securely with the unit staff. They can change it themselves from their profile settings.`
+          `IMPORTANT: This is a first-time access code. The unit member will be prompted to create a new personal password when they log in with it. Please share this code securely with the unit staff.`
         ]
       });
-      sendEmail({ to: parentEmail, subject: `[RMS] Sub-Account Password Reset — ${sub.name}`, text, html }).catch(() => {});
+      sendEmail({ to: parentEmail, subject: `[RMS] Sub-Account Access Code Reset — ${sub.name}`, text, html }).catch(() => {});
     }
 
     if (subEmail && !subEmail.endsWith('@cssgroup.local') && subEmail !== parentEmail) {
       const { text, html } = buildEmailContent({
-        title: `Your Login Password Has Been Reset — ${sub.name}`,
+        title: `Your Access Code Has Been Reset — ${sub.name}`,
         lines: [
-          `Your sub-account login password has been reset by your department head.`,
+          `Your sub-account access code has been reset by your department head.`,
+          ``,
           `Account: ${sub.name}`,
-          `New Password: ${plainCode}`,
+          ``,
+          `NEW ACCESS CODE: ${plainCode}`,
+          ``,
           `Reset by: ${resetBy}`,
           `Date: ${resetDate}`,
           ``,
-          `You can log in with this new password. If you did not expect this reset, contact your department head immediately.`
+          `IMPORTANT: This is a one-time access code. You will be asked to create your own personal password when you log in with it. If you did not expect this reset, contact your department head immediately.`
         ]
       });
-      sendEmail({ to: subEmail, subject: `[RMS] Your Password Has Been Reset — ${sub.name}`, text, html }).catch(() => {});
+      sendEmail({ to: subEmail, subject: `[RMS] Your Access Code Has Been Reset — ${sub.name}`, text, html }).catch(() => {});
     }
 
     res.json({ accessCode: plainCode });

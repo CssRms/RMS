@@ -61,7 +61,16 @@ export const authAPI = {
     return api.post('/auth/login', { email, password });
   },
   deptLogin: async (departmentName, accessCode, mfaCode) => {
-    return api.post('/auth/dept-login', { departmentName, accessCode, mfaCode });
+    const data = await api.post('/auth/dept-login', { departmentName, accessCode, mfaCode });
+    if (data?.requiresActivation) {
+      const err = new Error('REQUIRES_ACTIVATION');
+      err.activationToken = data.activationToken;
+      err.activationDeptName = data.deptName;
+      err.isSubAccount = !!data.isSubAccount;
+      err.response = { status: 200 }; // prevent AuthContext offline handler from catching this
+      throw err;
+    }
+    return data;
   },
   async checkSession() {
     return api.get('/auth/me');

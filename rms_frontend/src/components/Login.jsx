@@ -381,6 +381,16 @@ const Login = () => {
   const [ictPhone, setIctPhone] = useState('');
   const [deptDropOpen, setDeptDropOpen] = useState(false);
   const [deptActivated, setDeptActivated] = useState(null); // null=unknown, true=activated(PASSWORD), false=first-time(ACCESS CODE)
+  // First-time activation flow
+  const [activation, setActivation] = useState(null); // { token, deptName } when requiresActivation
+  const [actName, setActName] = useState('');
+  const [actTitle, setActTitle] = useState('');
+  const [actEmail, setActEmail] = useState('');
+  const [actPassword, setActPassword] = useState('');
+  const [actConfirm, setActConfirm] = useState('');
+  const [actShowPwd, setActShowPwd] = useState(false);
+  const [actSubmitting, setActSubmitting] = useState(false);
+  const [actError, setActError] = useState('');
   const deptDropRef = useRef(null);
   const { deptLogin } = useAuth();
 
@@ -430,6 +440,11 @@ const Login = () => {
       if (!selectedDept) throw new Error("Please select a department");
       await deptLogin(selectedDept, accessCode, mfaCode);
     } catch (err) {
+      if (err.message === 'REQUIRES_ACTIVATION') {
+        setActivation({ token: err.activationToken, deptName: err.activationDeptName, isSubAccount: err.isSubAccount });
+        setIsSubmitting(false);
+        return;
+      }
       const s = err.response?.status;
       setError(
         s === 401 ? (err.response?.data?.error || 'Incorrect password. Please try again.') :
@@ -439,6 +454,37 @@ const Login = () => {
         (err.response?.data?.error || err.message || 'Authentication failed.')
       );
       setIsSubmitting(false);
+    }
+  };
+
+  const handleActivate = async e => {
+    e.preventDefault();
+    setActError('');
+    if (!activation.isSubAccount && !actName.trim()) { setActError('Please enter your name.'); return; }
+    if (actPassword.length < 6) { setActError('Password must be at least 6 characters.'); return; }
+    if (actPassword !== actConfirm) { setActError('Passwords do not match.'); return; }
+    setActSubmitting(true);
+    try {
+      const res = await fetch('/api/departments/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          activationToken: activation.token,
+          headName: actName,
+          headTitle: actTitle,
+          headEmail: actEmail,
+          newPassword: actPassword,
+          confirmPassword: actConfirm,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setActError(data.error || 'Activation failed.'); setActSubmitting(false); return; }
+      // Activation succeeded — re-login with new password to get full session (selectedDept = parent dept for sub-accounts)
+      await deptLogin(selectedDept, actPassword, null);
+    } catch (err) {
+      setActError(err.message || 'Activation failed. Please try again.');
+      setActSubmitting(false);
     }
   };
 
@@ -666,6 +712,147 @@ const Login = () => {
           </div>
         </div>
       </div>
+
+      {/* ── First-Time Activation Modal ── */}
+      {activation && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 relative my-4">
+            {/* Top accent */}
+            <div className="h-1.5 bg-gradient-to-r from-primary via-primary/70 to-primary/30 rounded-t-3xl"/>
+            <div className="p-8">
+              {/* Header */}
+              <div className="flex flex-col items-center text-center mb-7">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                  <CheckCircle2 size={26} className="text-primary"/>
+                </div>
+                <h2 className="text-xl font-bold text-foreground">
+                  {activation.isSubAccount ? 'Create Your Password' : 'Activate Your Account'}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-[280px]">
+                  Welcome, <span className="font-semibold text-primary">{activation.deptName}</span>!{' '}
+                  {activation.isSubAccount
+                    ? 'You\'re logging in for the first time. Create a personal password to replace your access code.'
+                    : 'Set up your personal details and create a new password to activate your dashboard.'}
+                </p>
+              </div>
+
+              {actError && (
+                <div className="bg-destructive/8 border border-destructive/20 text-destructive text-xs px-4 py-3 rounded-2xl mb-5 flex items-start gap-2.5">
+                  <div className="w-2 h-2 rounded-full bg-destructive animate-pulse mt-0.5 shrink-0"/>
+                  <span className="leading-snug">{actError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleActivate} className="space-y-4">
+                {/* Name / Title / Email — dept heads only */}
+                {!activation.isSubAccount && (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
+                        Full Name <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={actName}
+                        onChange={e => setActName(e.target.value)}
+                        disabled={actSubmitting}
+                        placeholder="e.g. John Adeyemi"
+                        className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
+                        Position / Title
+                      </label>
+                      <input
+                        type="text"
+                        value={actTitle}
+                        onChange={e => setActTitle(e.target.value)}
+                        disabled={actSubmitting}
+                        placeholder="e.g. Head of Accounts"
+                        className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={actEmail}
+                        onChange={e => setActEmail(e.target.value)}
+                        disabled={actSubmitting}
+                        placeholder="you@cssgroup.com"
+                        className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Password row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
+                      New Password <span className="text-destructive">*</span>
+                    </label>
+                    <div className="relative group">
+                      <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within:text-primary transition-colors"/>
+                      <input
+                        type={actShowPwd ? 'text' : 'password'}
+                        value={actPassword}
+                        onChange={e => setActPassword(e.target.value)}
+                        disabled={actSubmitting}
+                        placeholder="Min 6 chars"
+                        className="w-full bg-white border border-border/70 rounded-2xl pl-8 pr-9 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50 font-mono tracking-widest"
+                        required
+                        minLength={6}
+                      />
+                      <button type="button" onClick={() => setActShowPwd(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-primary transition-colors">
+                        {actShowPwd ? <EyeOff size={14}/> : <Eye size={14}/>}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
+                      Confirm <span className="text-destructive">*</span>
+                    </label>
+                    <div className="relative group">
+                      <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within:text-primary transition-colors"/>
+                      <input
+                        type={actShowPwd ? 'text' : 'password'}
+                        value={actConfirm}
+                        onChange={e => setActConfirm(e.target.value)}
+                        disabled={actSubmitting}
+                        placeholder="Repeat"
+                        className={`w-full bg-white border rounded-2xl pl-8 pr-3 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:ring-2 transition-all disabled:opacity-50 font-mono tracking-widest ${actConfirm && actPassword !== actConfirm ? 'border-destructive/50 focus:border-destructive focus:ring-destructive/10' : 'border-border/70 focus:border-primary focus:ring-primary/10'}`}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+                {actPassword && actPassword.length < 6 && (
+                  <p className="text-[10px] text-amber-500 -mt-1">Password must be at least 6 characters.</p>
+                )}
+                {actConfirm && actPassword !== actConfirm && (
+                  <p className="text-[10px] text-destructive -mt-1">Passwords do not match.</p>
+                )}
+
+                <div className="pt-2">
+                  <button type="submit"
+                    disabled={actSubmitting || (!activation.isSubAccount && !actName.trim()) || actPassword.length < 6 || actPassword !== actConfirm}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2.5 disabled:opacity-50 text-sm">
+                    {actSubmitting
+                      ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>{activation.isSubAccount ? 'Setting up…' : 'Activating…'}</span></>
+                      : <><CheckCircle2 size={16}/><span>{activation.isSubAccount ? 'Set Password & Enter Dashboard' : 'Activate & Enter Dashboard'}</span></>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Forgot Code Modal ── */}
       {showForgotCode && (

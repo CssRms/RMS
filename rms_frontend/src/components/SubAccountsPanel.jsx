@@ -33,7 +33,7 @@ const CodeBox = ({ code, onDismiss }) => {
   };
   return (
     <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
-      <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">New Password — Copy now, it won't show again</p>
+      <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Access Code — Copy now, it won't show again</p>
       <div className="flex items-center gap-2">
         <code className="flex-1 font-mono text-lg font-black text-amber-900 tracking-[0.25em] bg-white border border-amber-200 rounded-xl px-4 py-2 text-center select-all">
           {code}
@@ -644,7 +644,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
     try {
       const res = await subAccountAPI.resetCode(sub.id);
       setNewCode(res.accessCode);
-      toast.success('New password generated.');
+      toast.success('New access code generated.');
       // Do NOT call onRefresh() here — it triggers setLoading(true) which unmounts this card
       // and destroys the newCode state before the user can copy it. Refresh happens on dismiss.
     } catch (err) {
@@ -753,7 +753,7 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
           <button onClick={() => setEditing(true)} title="Rename" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all">
             <Pencil size={13} />
           </button>
-          <button onClick={resetCode} disabled={resetting} title="Reset password" className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all disabled:opacity-40">
+          <button onClick={resetCode} disabled={resetting} title="Reset access code" className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all disabled:opacity-40">
             {resetting ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
           </button>
           <button onClick={toggle} disabled={toggling} title={sub.isDisabled ? 'Enable' : 'Disable'} className="p-1.5 rounded-lg transition-all disabled:opacity-40 text-muted-foreground hover:text-foreground">
@@ -777,15 +777,24 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
         </div>
       </div>
 
-      {/* Admin — permanent password always visible */}
+      {/* Admin — current access code / password always visible */}
       {isAdmin && !newCode && sub.accessCodeLabel && (
-        <div className="px-4 pb-3 pt-1 flex items-center justify-between gap-3 bg-amber-50/60 border-t border-amber-100">
-          <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest shrink-0">Password</span>
-          <code className="font-mono text-sm font-black text-amber-900 tracking-[0.25em] flex-1 text-center select-all">{sub.accessCodeLabel}</code>
+        <div className={`px-4 pb-3 pt-2 flex items-center justify-between gap-3 border-t ${sub.codeChangedByDept ? 'bg-green-50/60 border-green-100' : 'bg-amber-50/60 border-amber-100'}`}>
+          <div className="shrink-0">
+            <span className={`text-[9px] font-black uppercase tracking-widest ${sub.codeChangedByDept ? 'text-green-700' : 'text-amber-700'}`}>
+              {sub.codeChangedByDept ? 'Password' : 'Access Code'}
+            </span>
+            <p className={`text-[8px] ${sub.codeChangedByDept ? 'text-green-600/60' : 'text-amber-600/60'}`}>
+              {sub.codeChangedByDept ? 'Self-set by user' : 'First-time code'}
+            </p>
+          </div>
+          <code className={`font-mono text-sm font-black tracking-[0.25em] flex-1 text-center select-all ${sub.codeChangedByDept ? 'text-green-900' : 'text-amber-900'}`}>
+            {sub.accessCodeLabel}
+          </code>
           <button
-            onClick={() => { navigator.clipboard.writeText(sub.accessCodeLabel); toast.success('Code copied!'); }}
-            className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-100 transition-all"
-            title="Copy code"
+            onClick={() => { navigator.clipboard.writeText(sub.accessCodeLabel); toast.success('Copied!'); }}
+            className={`p-1.5 rounded-lg transition-all ${sub.codeChangedByDept ? 'text-green-600 hover:bg-green-100' : 'text-amber-600 hover:bg-amber-100'}`}
+            title="Copy"
           >
             <Copy size={12} />
           </button>
@@ -1169,7 +1178,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
             Create Sub-Account
           </button>
           <p className="text-[10px] text-muted-foreground/60 italic text-center">
-            A login password is auto-generated and shown once after creation.
+            A one-time Access Code is auto-generated. The sub-account creates their own password on first login.
           </p>
         </div>
       )}
@@ -1248,7 +1257,10 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
       {/* New code reveal after creation */}
       {newCode && (
         <div>
-          <p className="text-[10px] font-bold text-muted-foreground mb-1">Access code for <span className="text-foreground">{newSubName}</span></p>
+          <p className="text-[10px] font-bold text-muted-foreground mb-1">
+            Access Code for <span className="text-foreground">{newSubName}</span>
+            <span className="text-muted-foreground/50 font-normal ml-1">— share this with the unit member for their first login</span>
+          </p>
           <CodeBox code={newCode} onDismiss={() => { setNewCode(null); setNewSubName(''); }} />
         </div>
       )}
