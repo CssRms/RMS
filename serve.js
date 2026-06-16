@@ -1500,7 +1500,14 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
         JWT_SECRET,
         { expiresIn: '30m' }
       );
-      return res.json({ requiresActivation: true, activationToken, deptName: resolved.name });
+      return res.json({
+        requiresActivation: true,
+        activationToken,
+        deptName: resolved.name,
+        headName:  resolved.headName  || '',
+        headTitle: resolved.headTitle || '',
+        headEmail: resolved.headEmail || '',
+      });
     }
 
     // ── First-time activation gate — sub-account ──────────────────────────────

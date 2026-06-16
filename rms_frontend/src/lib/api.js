@@ -67,6 +67,9 @@ export const authAPI = {
       err.activationToken = data.activationToken;
       err.activationDeptName = data.deptName;
       err.isSubAccount = !!data.isSubAccount;
+      err.headName  = data.headName  || '';
+      err.headTitle = data.headTitle || '';
+      err.headEmail = data.headEmail || '';
       err.response = { status: 200 }; // prevent AuthContext offline handler from catching this
       throw err;
     }

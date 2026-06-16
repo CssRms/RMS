@@ -559,7 +559,7 @@ const Login = () => {
       await deptLogin(selectedDept, accessCode, mfaCode);
     } catch (err) {
       if (err.message === 'REQUIRES_ACTIVATION') {
-        setActivation({ token: err.activationToken, deptName: err.activationDeptName, isSubAccount: err.isSubAccount });
+        setActivation({ token: err.activationToken, deptName: err.activationDeptName, isSubAccount: err.isSubAccount, headName: err.headName || '', headTitle: err.headTitle || '', headEmail: err.headEmail || '' });
         setIsSubmitting(false);
         return;
       }
@@ -586,8 +586,6 @@ const Login = () => {
   const handleActivate = async e => {
     e.preventDefault();
     setActError('');
-    if (!activation.isSubAccount && !actName.trim()) { setActError('Please enter your name.'); return; }
-    if (!activation.isSubAccount && !actEmail.trim()) { setActError('Email address is required.'); return; }
     if (actPassword.length < 6) { setActError('Password must be at least 6 characters.'); return; }
     if (actPassword !== actConfirm) { setActError('Passwords do not match.'); return; }
     setActSubmitting(true);
@@ -598,9 +596,9 @@ const Login = () => {
         credentials: 'include',
         body: JSON.stringify({
           activationToken: activation.token,
-          headName: actName,
-          headTitle: actTitle,
-          headEmail: actEmail,
+          headName:  activation.headName  || '',
+          headTitle: activation.headTitle || '',
+          headEmail: activation.headEmail || '',
           newPassword: actPassword,
           confirmPassword: actConfirm,
         }),
@@ -919,50 +917,25 @@ const Login = () => {
               )}
 
               <form onSubmit={handleActivate} className="space-y-4">
-                {/* Name / Title / Email — dept heads only */}
+                {/* Name / Title / Email — dept heads only, always read-only */}
                 {!activation.isSubAccount && (
                   <>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
-                        Full Name <span className="text-destructive">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={actName}
-                        onChange={e => setActName(e.target.value)}
-                        disabled={actSubmitting}
-                        placeholder="e.g. John Adeyemi"
-                        className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
-                        Position / Title
-                      </label>
-                      <input
-                        type="text"
-                        value={actTitle}
-                        onChange={e => setActTitle(e.target.value)}
-                        disabled={actSubmitting}
-                        placeholder="e.g. Head of Accounts"
-                        className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
-                        Email Address <span className="text-destructive">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        value={actEmail}
-                        onChange={e => setActEmail(e.target.value)}
-                        disabled={actSubmitting}
-                        placeholder="you@cssgroup.com"
-                        className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
-                        required
-                      />
-                    </div>
+                    {[
+                      { label: 'Full Name', value: activation.headName },
+                      { label: 'Position / Title', value: activation.headTitle },
+                      { label: 'Email Address', value: activation.headEmail },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">{label}</label>
+                        <div className="w-full bg-muted/40 border border-border/50 rounded-2xl px-4 py-3 text-sm flex items-center gap-2">
+                          {value
+                            ? <span className="text-foreground font-medium">{value}</span>
+                            : <span className="text-muted-foreground/50 italic">Not set</span>
+                          }
+                          <span className="ml-auto text-[9px] font-black text-muted-foreground/40 uppercase tracking-widest">Read only</span>
+                        </div>
+                      </div>
+                    ))}
                   </>
                 )}
 
@@ -1017,7 +990,7 @@ const Login = () => {
 
                 <div className="pt-2 space-y-3">
                   <button type="submit"
-                    disabled={actSubmitting || (!activation.isSubAccount && (!actName.trim() || !actEmail.trim())) || actPassword.length < 6 || actPassword !== actConfirm}
+                    disabled={actSubmitting || actPassword.length < 6 || actPassword !== actConfirm}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2.5 disabled:opacity-50 text-sm">
                     {actSubmitting
                       ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>{activation.isSubAccount ? 'Setting up…' : 'Activating…'}</span></>
