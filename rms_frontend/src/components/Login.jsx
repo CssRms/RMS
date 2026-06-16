@@ -223,6 +223,96 @@ const GrassTuftIcon = ({ color = '#4ade80', size = 32 }) => (
   </svg>
 );
 
+const FishIcon = ({ color = '#38bdf8', size = 32 }) => (
+  <svg width={size*1.55} height={size} viewBox="0 0 50 32" fill="none">
+    <path d="M4 16 Q0 8 9 10 Q4 16 9 22 Q0 24 4 16Z" fill={color} opacity=".7"/>
+    <ellipse cx="27" cy="16" rx="18" ry="10" fill={color} opacity=".9"/>
+    <path d="M22 10 Q29 13 22 16" stroke="rgba(255,255,255,.22)" strokeWidth="1.1" fill="none"/>
+    <path d="M16 12 Q23 15 16 18" stroke="rgba(255,255,255,.16)" strokeWidth="1" fill="none"/>
+    <path d="M19 7 Q25 11 19 15" fill={color} opacity=".55" stroke="none"/>
+    <path d="M19 7 Q26 9 24 15 Q19 14 19 7Z" fill={color} opacity=".55"/>
+    <circle cx="39" cy="13" r="3.5" fill="white" opacity=".9"/>
+    <circle cx="39.5" cy="13" r="1.8" fill="#1a1a1a"/>
+    <circle cx="40" cy="12.3" r=".6" fill="white"/>
+    <path d="M46 15 Q49 16 46 17.5" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+  </svg>
+);
+
+const GoatIcon = ({ color = '#e2e8f0', size = 40 }) => (
+  <svg width={size*1.25} height={size} viewBox="0 0 50 40" fill="none">
+    <ellipse cx="22" cy="26" rx="17" ry="10" fill={color} opacity=".85"/>
+    <ellipse cx="40" cy="19" rx="8" ry="7" fill={color} opacity=".9"/>
+    <ellipse cx="35" cy="13" rx="3.5" ry="2.5" fill={color} opacity=".75" transform="rotate(-30 35 13)"/>
+    <ellipse cx="45" cy="12" rx="3" ry="2.2" fill={color} opacity=".75" transform="rotate(20 45 12)"/>
+    <path d="M38 13 Q36 7 33 6 Q35 10 38 13Z" fill={color} opacity=".65"/>
+    <path d="M43 12 Q45 6 48 6 Q47 10 43 12Z" fill={color} opacity=".65"/>
+    <path d="M32 23 Q35 19 39 21 Q37 25 32 25Z" fill={color} opacity=".8"/>
+    <rect x="10" y="34" width="4" height="6" rx="2" fill={color} opacity=".75"/>
+    <rect x="17" y="34" width="4" height="6" rx="2" fill={color} opacity=".75"/>
+    <rect x="26" y="34" width="4" height="6" rx="2" fill={color} opacity=".75"/>
+    <rect x="32" y="34" width="4" height="6" rx="2" fill={color} opacity=".75"/>
+    <path d="M5 24 Q1 20 3 18 Q8 20 8 25Z" fill={color} opacity=".6"/>
+    <circle cx="44" cy="17" r="2" fill="#1a1a1a" opacity=".75"/>
+    <circle cx="44.5" cy="16.5" r=".7" fill="white"/>
+    <path d="M38 25 Q37 29 35 31" stroke={color} strokeWidth="1.6" strokeLinecap="round" fill="none" opacity=".65"/>
+  </svg>
+);
+
+const MangoIcon = ({ color = '#f97316', size = 34 }) => (
+  <svg width={size*.85} height={size} viewBox="0 0 29 36" fill="none">
+    <path d="M14 5 Q12 1 10 0" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+    <path d="M14 5 Q17 1 21 3" stroke="#4ade80" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+    <path d="M14 5 Q19 2 23 7 Q19 9 14 5Z" fill="#4ade80" opacity=".82"/>
+    <path d="M14 6 C4 6 1 14 2 22 C3 30 8 35 14 35 C20 35 26 30 27 22 C28 14 24 6 14 6Z" fill={color} opacity=".9"/>
+    <path d="M8 14 Q10 10 14 12" stroke="rgba(255,255,255,.38)" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+    <path d="M9 21 Q11 17 14 18" stroke="rgba(255,255,255,.22)" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+  </svg>
+);
+
+const AppleIcon = ({ color = '#ef4444', size = 34 }) => (
+  <svg width={size*.95} height={size} viewBox="0 0 32 36" fill="none">
+    <path d="M16 5 Q15 1 13 0" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+    <path d="M16 5 Q20 2 22 6 Q19 7.5 16 5Z" fill="#4ade80" opacity=".85"/>
+    <path d="M16 7 C6 7 2 15 2 22 C2 30 8 36 16 36 C24 36 30 30 30 22 C30 15 26 7 16 7Z" fill={color} opacity=".88"/>
+    <path d="M13 8 Q16 5 19 8" stroke="#1a1a1a" strokeWidth="2" fill="none" strokeLinecap="round" opacity=".12"/>
+    <path d="M8 15 Q10 11 14 13" stroke="rgba(255,255,255,.38)" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+    <path d="M9 22 Q11 19 14 20" stroke="rgba(255,255,255,.22)" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+  </svg>
+);
+
+const PineappleIcon = ({ color = '#fbbf24', size = 42 }) => (
+  <svg width={size*.7} height={size} viewBox="0 0 30 46" fill="none">
+    <path d="M15 14 Q13 6 11 4 Q13 9 15 14Z" fill="#4ade80" opacity=".85"/>
+    <path d="M15 14 Q15 5 15 2 Q15 8 15 14Z" fill="#4ade80" opacity=".9"/>
+    <path d="M15 14 Q17 6 19 4 Q17 9 15 14Z" fill="#4ade80" opacity=".85"/>
+    <path d="M15 14 Q10 7 7 7 Q10 11 15 14Z" fill="#4ade80" opacity=".7"/>
+    <path d="M15 14 Q20 7 23 8 Q20 12 15 14Z" fill="#4ade80" opacity=".7"/>
+    <path d="M15 16 C6 16 3 22 3 28 C3 36 8 44 15 44 C22 44 27 36 27 28 C27 22 24 16 15 16Z" fill={color} opacity=".88"/>
+    {[[15,22],[11,25],[19,25],[8,29],[15,29],[22,29],[11,33],[19,33],[15,37]].map(([x,y],i)=>(
+      <ellipse key={i} cx={x} cy={y} rx="2.5" ry="1.8" fill="rgba(0,0,0,.13)" transform={`rotate(45 ${x} ${y})`}/>
+    ))}
+    <path d="M8 22 Q9 19 12 20" stroke="rgba(255,255,255,.32)" strokeWidth="2" strokeLinecap="round" fill="none"/>
+  </svg>
+);
+
+const DragonflyIcon = ({ color = '#a78bfa', size = 32 }) => (
+  <svg width={size*1.9} height={size} viewBox="0 0 61 32" fill="none">
+    <ellipse cx="18" cy="12" rx="16" ry="6" fill="rgba(255,255,255,.48)" transform="rotate(-15 18 12)"/>
+    <ellipse cx="18" cy="22" rx="13" ry="5" fill="rgba(255,255,255,.32)" transform="rotate(15 18 22)"/>
+    <ellipse cx="43" cy="12" rx="16" ry="6" fill="rgba(255,255,255,.48)" transform="rotate(15 43 12)"/>
+    <ellipse cx="43" cy="22" rx="13" ry="5" fill="rgba(255,255,255,.32)" transform="rotate(-15 43 22)"/>
+    <ellipse cx="30.5" cy="17" rx="4" ry="13" fill={color} opacity=".85"/>
+    <circle cx="30.5" cy="5" r="4.5" fill={color} opacity=".9"/>
+    <circle cx="28.5" cy="4" r="2" fill="#1a1a1a" opacity=".8"/>
+    <circle cx="32.5" cy="4" r="2" fill="#1a1a1a" opacity=".8"/>
+    <circle cx="29" cy="3.4" r=".7" fill="white"/>
+    <circle cx="33" cy="3.4" r=".7" fill="white"/>
+    {[20,23.5,27].map((y,i)=>(
+      <ellipse key={i} cx="30.5" cy={y} rx={3.5-i*.3} ry="1.8" stroke="rgba(0,0,0,.14)" strokeWidth=".8" fill="none"/>
+    ))}
+  </svg>
+);
+
 // ── Watermark scrolling text ──────────────────────────────────────────────────
 const WatermarkBg = () => {
   const phrase = 'CSS RMS • CSS RMS • CSS RMS • CSS RMS • CSS RMS • ';
@@ -238,14 +328,14 @@ const WatermarkBg = () => {
     { top:'91%', dur:23, dir:'normal',  delay:'-12s' },
   ];
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" style={{opacity:0.06}}>
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" style={{opacity:0.13}}>
       {rows.map((r,i)=>(
         <div key={i} style={{
           position:'absolute', top:r.top, left:0, whiteSpace:'nowrap',
           animation:`rmsMarquee ${r.dur}s linear infinite`,
           animationDirection:r.dir, animationDelay:r.delay,
-          fontSize:'14px', fontWeight:900, color:'white',
-          letterSpacing:'0.28em', textTransform:'uppercase',
+          fontSize:'18px', fontWeight:900, color:'white',
+          letterSpacing:'0.3em', textTransform:'uppercase',
           fontFamily:'system-ui,sans-serif',
           transform:'rotate(-9deg)', transformOrigin:'left center',
         }}>
@@ -346,6 +436,24 @@ const BG_ELS = [
   { C:DetailedTractorIcon,color:'#fde047', size:44, style:{bottom:'12%',left:'2%'   }, anim:'rmsDrive 5s ease-in-out infinite',            delay:'0s'   },
   { C:DetailedTractorIcon,color:'#ffffff', size:30, style:{bottom:'40%',right:'1%'  }, anim:'rmsDrive 7s ease-in-out infinite reverse',    delay:'3.5s' },
   { C:DetailedTractorIcon,color:'#fb923c', size:24, style:{top:'72%',  left:'28%'   }, anim:'rmsBobble 6s ease-in-out infinite',           delay:'2s'   },
+  { C:DetailedTractorIcon,color:'#86efac', size:36, style:{top:'52%',  right:'3%'   }, anim:'rmsDrive 8s ease-in-out infinite',            delay:'5s'   },
+  // ── Fish ──
+  { C:FishIcon,           color:'#38bdf8', size:34, style:{top:'20%',  right:'18%'  }, anim:'rmsFly 9s ease-in-out infinite',              delay:'1s'   },
+  { C:FishIcon,           color:'#fbbf24', size:26, style:{top:'60%',  left:'36%'   }, anim:'rmsFly 7s ease-in-out infinite reverse',      delay:'3.5s' },
+  { C:FishIcon,           color:'#f87171', size:20, style:{bottom:'22%',right:'30%' }, anim:'rmsBobble 6s ease-in-out infinite',           delay:'6s'   },
+  // ── Goats ──
+  { C:GoatIcon,           color:'#e2e8f0', size:38, style:{bottom:'16%',left:'32%'  }, anim:'rmsDrive 6s ease-in-out infinite',            delay:'2s'   },
+  { C:GoatIcon,           color:'#fde047', size:28, style:{bottom:'28%',right:'8%'  }, anim:'rmsBobble 5.5s ease-in-out infinite reverse', delay:'4s'   },
+  // ── Fruits ──
+  { C:MangoIcon,          color:'#f97316', size:36, style:{top:'37%',  right:'6%'   }, anim:'rmsFloat 5s ease-in-out infinite',            delay:'1.5s' },
+  { C:MangoIcon,          color:'#fbbf24', size:26, style:{top:'8%',   left:'20%'   }, anim:'rmsPulse 6s ease-in-out infinite reverse',    delay:'3s'   },
+  { C:AppleIcon,          color:'#ef4444', size:34, style:{bottom:'36%',left:'16%'  }, anim:'rmsFloat 7s ease-in-out infinite',            delay:'0.5s' },
+  { C:AppleIcon,          color:'#fb923c', size:22, style:{top:'63%',  right:'22%'  }, anim:'rmsPulse 5s ease-in-out infinite',            delay:'4.5s' },
+  { C:PineappleIcon,      color:'#fbbf24', size:44, style:{bottom:'6%', right:'6%'  }, anim:'rmsSway 6s ease-in-out infinite',             delay:'1s',   origin:'bottom center' },
+  { C:PineappleIcon,      color:'#fb923c', size:30, style:{top:'18%',  left:'72%'   }, anim:'rmsFloat 8s ease-in-out infinite reverse',    delay:'2.5s' },
+  // ── Dragonflies ──
+  { C:DragonflyIcon,      color:'#a78bfa', size:28, style:{top:'30%',  left:'8%'    }, anim:'rmsFly 8s ease-in-out infinite',              delay:'1s'   },
+  { C:DragonflyIcon,      color:'#38bdf8', size:22, style:{bottom:'50%',right:'16%' }, anim:'rmsFly 11s ease-in-out infinite reverse',     delay:'5s'   },
 ];
 
 const AnimBg = ({ mobile = false }) => (
@@ -457,6 +565,14 @@ const Login = () => {
     }
   };
 
+  const handleCancelActivation = () => {
+    setActivation(null);
+    setActName(''); setActTitle(''); setActEmail('');
+    setActPassword(''); setActConfirm(''); setActError('');
+    setSelectedDept(''); setAccessCode(''); setMfaCode('');
+    setDeptActivated(null);
+  };
+
   const handleActivate = async e => {
     e.preventDefault();
     setActError('');
@@ -550,13 +666,13 @@ const Login = () => {
           {/* Feature rows */}
           <div className="w-full flex flex-col gap-2">
             {['End-to-end approval tracking','Offline draft capability','Multi-department oversight'].map((item,i) => (
-              <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/7">
-                <div className="w-5 h-5 rounded-full bg-white/14 border border-white/12 flex items-center justify-center shrink-0">
+              <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl" style={{background:'#f97316',border:'1px solid #fb923c'}}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{background:'rgba(255,255,255,0.25)',border:'1px solid rgba(255,255,255,0.35)'}}>
                   <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                    <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity=".7"/>
+                    <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
-                <span className="text-[11.5px] font-semibold text-white/60 tracking-wide text-left">{item}</span>
+                <span className="text-[11.5px] font-semibold text-white tracking-wide text-left">{item}</span>
               </div>
             ))}
           </div>
@@ -720,6 +836,16 @@ const Login = () => {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 relative my-4">
             {/* Top accent */}
             <div className="h-1.5 bg-gradient-to-r from-primary via-primary/70 to-primary/30 rounded-t-3xl"/>
+            {/* Close / cancel button */}
+            <button
+              type="button"
+              onClick={handleCancelActivation}
+              disabled={actSubmitting}
+              title="Cancel and go back to login"
+              className="absolute top-4 right-4 p-1.5 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/8 transition-all disabled:opacity-40"
+            >
+              <X size={17}/>
+            </button>
             <div className="p-8">
               {/* Header */}
               <div className="flex flex-col items-center text-center mb-7">
@@ -841,13 +967,21 @@ const Login = () => {
                   <p className="text-[10px] text-destructive -mt-1">Passwords do not match.</p>
                 )}
 
-                <div className="pt-2">
+                <div className="pt-2 space-y-3">
                   <button type="submit"
                     disabled={actSubmitting || (!activation.isSubAccount && (!actName.trim() || !actEmail.trim())) || actPassword.length < 6 || actPassword !== actConfirm}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2.5 disabled:opacity-50 text-sm">
                     {actSubmitting
                       ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>{activation.isSubAccount ? 'Setting up…' : 'Activating…'}</span></>
                       : <><CheckCircle2 size={16}/><span>{activation.isSubAccount ? 'Set Password & Enter Dashboard' : 'Activate & Enter Dashboard'}</span></>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelActivation}
+                    disabled={actSubmitting}
+                    className="w-full border border-border/60 hover:border-destructive/40 hover:bg-destructive/5 text-muted-foreground hover:text-destructive font-semibold py-3 px-5 rounded-2xl transition-all text-xs flex items-center justify-center gap-2 disabled:opacity-40">
+                    <X size={13}/>
+                    Cancel — Go back to login
                   </button>
                 </div>
               </form>

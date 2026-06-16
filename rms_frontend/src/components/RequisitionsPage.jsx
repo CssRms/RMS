@@ -1946,12 +1946,12 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
           </div>
           {isItemized && (
             !showForm ? (
-              <button onClick={() => setShowForm(true)} className="text-[10px] font-bold text-purple-700 hover:text-purple-900 underline">
+              <button onClick={() => setShowForm(true)} className="text-[10px] font-bold text-purple-700 hover:text-purple-900 hover:bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg transition-all">
                 {detail?.hasAuditOverride ? 'Edit' : 'Alter Request'}
               </button>
             ) : (
               !detail?.hasAuditOverride && (
-                <button onClick={() => setShowForm(false)} className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline">Cancel</button>
+                <button onClick={() => setShowForm(false)} className="text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-border/40 px-2.5 py-1 rounded-lg transition-all">Cancel</button>
               )
             )
           )}
