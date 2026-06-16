@@ -930,11 +930,16 @@ const Login = () => {
                           </p>
                         </div>
                       )}
-                      {[
-                        { label: 'Full Name', value: activation.headName },
-                        { label: 'Position / Title', value: activation.headTitle },
-                        { label: 'Email Address', value: activation.headEmail },
-                      ].map(({ label, value }) => (
+                      {(() => {
+                        const nameParts = (activation.headName || '').trim().split(/\s+/);
+                        return [
+                          { label: 'Surname',          value: nameParts[0] || '' },
+                          { label: 'First Name',       value: nameParts[1] || '' },
+                          { label: 'Other Name',       value: nameParts.slice(2).join(' ') || '' },
+                          { label: 'Position / Title', value: activation.headTitle },
+                          { label: 'Email Address',    value: activation.headEmail },
+                        ];
+                      })().map(({ label, value }) => (
                         <div key={label} className="space-y-1.5">
                           <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">{label}</label>
                           <div className="w-full bg-muted/40 border border-border/50 rounded-2xl px-4 py-3 text-sm flex items-center gap-2">

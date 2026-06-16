@@ -168,10 +168,14 @@ const SealViewModal = ({ dept, onClose }) => {
 
 // ── Edit Department Modal ─────────────────────────────────────────────────────
 const EditDeptModal = ({ dept, onClose, onSaved }) => {
+  // Parse existing headName into surname / firstName / otherName parts
+  const existingParts = (dept.headName || '').trim().split(/\s+/);
   const [form, setForm] = useState({
     name: dept.name || '',
     type: dept.type || 'Operational',
-    headName: dept.headName || '',
+    headSurname:   existingParts[0] || '',
+    headFirstName: existingParts[1] || '',
+    headOtherName: existingParts.slice(2).join(' ') || '',
     headTitle: dept.headTitle || '',
     headEmail: dept.headEmail || '',
     phone: dept.phone || '',
@@ -185,9 +189,10 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('Department name is required.'); return; }
+    const combinedName = [form.headSurname, form.headFirstName, form.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
     setSaving(true);
     try {
-      await deptAPI.updateDepartment(dept.id, form);
+      await deptAPI.updateDepartment(dept.id, { ...form, headName: combinedName });
       toast.success(`${form.name} updated successfully.`);
       onSaved();
       onClose();
@@ -258,11 +263,13 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
           <div className="space-y-4">
             <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em]">Head Official</p>
             {[
-              { key: 'headName', label: 'Full Name', icon: User, placeholder: 'Dr. John Doe' },
-              { key: 'headTitle', label: 'Designation / Title', icon: BadgeCheck, placeholder: 'General Manager' },
-              { key: 'headEmail', label: 'Official Email', icon: Mail, placeholder: 'head@cssgroup.internal', type: 'email' },
-              { key: 'phone', label: 'Contact Phone', icon: Phone, placeholder: '+234 800 000 0000' },
-              { key: 'address', label: 'Office Address', icon: MapPin, placeholder: 'Floor 3, CSS Tower...' },
+              { key: 'headSurname',   label: 'Surname',          icon: User,       placeholder: 'e.g. Musa' },
+              { key: 'headFirstName', label: 'First Name',        icon: User,       placeholder: 'e.g. Chindo' },
+              { key: 'headOtherName', label: 'Other Name',        icon: User,       placeholder: 'e.g. James (optional)' },
+              { key: 'headTitle',     label: 'Designation / Title', icon: BadgeCheck, placeholder: 'General Manager' },
+              { key: 'headEmail',     label: 'Official Email',    icon: Mail,       placeholder: 'head@cssgroup.internal', type: 'email' },
+              { key: 'phone',         label: 'Contact Phone',     icon: Phone,      placeholder: '+234 800 000 0000' },
+              { key: 'address',       label: 'Office Address',    icon: MapPin,     placeholder: 'Floor 3, CSS Tower...' },
             ].map(({ key, label, icon: Icon, placeholder, type }) => (
               <div key={key} className="relative">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">{label}</label>
@@ -346,7 +353,7 @@ const DepartmentManager = ({ onViewChange }) => {
   const [pendingDept, setPendingDept] = useState(null);
   const [editingDept, setEditingDept] = useState(null);
   const [sealDept, setSealDept] = useState(null);
-  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headName: '', headTitle: '', headEmail: '' });
+  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '' });
 
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -384,14 +391,16 @@ const DepartmentManager = ({ onViewChange }) => {
       toast.error('Department name and password are required.');
       return;
     }
+    const headName = [newDeptData.headSurname, newDeptData.headFirstName, newDeptData.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
     setIsProcessing(true);
     await new Promise(r => setTimeout(r, 400));
-    await addDepartment(newDeptData);
+    await addDepartment({ ...newDeptData, headName });
     await loadDepts();
     setIsProcessing(false);
     setIsAddModalOpen(false);
-    setNewDeptData({ name: '', type: 'Operational', accessCode: '', headName: '', headTitle: '', headEmail: '' });
-    toast.success(`${newDeptData.name} Department added`);
+    const deptName = newDeptData.name;
+    setNewDeptData({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '' });
+    toast.success(`${deptName} Department added`);
   };
 
   const confirmDelete = async () => {
@@ -632,7 +641,7 @@ const DepartmentManager = ({ onViewChange }) => {
         footer={(
           <>
             <button onClick={() => setIsAddModalOpen(false)} className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">Cancel</button>
-            <button onClick={handleAddSubmit} disabled={isProcessing}
+            <button onClick={handleAddSubmit} disabled={isProcessing || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim()}
               className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
               {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
             </button>
@@ -672,13 +681,15 @@ const DepartmentManager = ({ onViewChange }) => {
           <div className="space-y-3 pt-1">
             <div className="flex items-center gap-2">
               <div className="h-px flex-1 bg-border/40" />
-              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] shrink-0">Head Official <span className="font-medium normal-case tracking-normal text-muted-foreground/40">(optional — can be set later)</span></p>
+              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] shrink-0">Head Official</p>
               <div className="h-px flex-1 bg-border/40" />
             </div>
             {[
-              { key: 'headName',  label: 'Full Name',         placeholder: 'e.g. Dr. John Adeyemi',      icon: User },
-              { key: 'headTitle', label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck },
-              { key: 'headEmail', label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email' },
+              { key: 'headSurname',   label: 'Surname',          placeholder: 'e.g. Adeyemi',               icon: User },
+              { key: 'headFirstName', label: 'First Name',        placeholder: 'e.g. John',                  icon: User },
+              { key: 'headOtherName', label: 'Other Name',        placeholder: 'e.g. Chukwuemeka (optional)', icon: User },
+              { key: 'headTitle',     label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck },
+              { key: 'headEmail',     label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email' },
             ].map(({ key, label, placeholder, icon: Icon, type }) => (
               <div key={key} className="space-y-1.5">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{label}</label>
@@ -702,7 +713,7 @@ const DepartmentManager = ({ onViewChange }) => {
               className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">
               Cancel
             </button>
-            <button type="button" onClick={handleAddSubmit} disabled={isProcessing}
+            <button type="button" onClick={handleAddSubmit} disabled={isProcessing || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim()}
               className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
               {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
             </button>
