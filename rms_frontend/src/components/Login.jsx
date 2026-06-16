@@ -461,6 +461,7 @@ const Login = () => {
     e.preventDefault();
     setActError('');
     if (!activation.isSubAccount && !actName.trim()) { setActError('Please enter your name.'); return; }
+    if (!activation.isSubAccount && !actEmail.trim()) { setActError('Email address is required.'); return; }
     if (actPassword.length < 6) { setActError('Password must be at least 6 characters.'); return; }
     if (actPassword !== actConfirm) { setActError('Passwords do not match.'); return; }
     setActSubmitting(true);
@@ -776,7 +777,7 @@ const Login = () => {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
-                        Email Address
+                        Email Address <span className="text-destructive">*</span>
                       </label>
                       <input
                         type="email"
@@ -785,6 +786,7 @@ const Login = () => {
                         disabled={actSubmitting}
                         placeholder="you@cssgroup.com"
                         className="w-full bg-white border border-border/70 rounded-2xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground/40 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50"
+                        required
                       />
                     </div>
                   </>
@@ -841,7 +843,7 @@ const Login = () => {
 
                 <div className="pt-2">
                   <button type="submit"
-                    disabled={actSubmitting || (!activation.isSubAccount && !actName.trim()) || actPassword.length < 6 || actPassword !== actConfirm}
+                    disabled={actSubmitting || (!activation.isSubAccount && (!actName.trim() || !actEmail.trim())) || actPassword.length < 6 || actPassword !== actConfirm}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2.5 disabled:opacity-50 text-sm">
                     {actSubmitting
                       ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>{activation.isSubAccount ? 'Setting up…' : 'Activating…'}</span></>

@@ -1597,15 +1597,17 @@ app.post('/api/departments/activate', async (req, res) => {
       return res.json({ token, user: userData });
     }
 
-    // Dept head activation
+    // Dept head activation — email is required
+    if (!headEmail?.trim()) return res.status(400).json({ error: 'Email address is required.' });
+
     const updated = await prisma.department.update({
       where: { id: dept.id },
       data: {
         headName:          headName.trim(),
         headTitle:         headTitle?.trim() || dept.headTitle || null,
-        headEmail:         headEmail?.trim() || dept.headEmail || null,
+        headEmail:         headEmail.trim(),
         accessCodeHash:    hash,
-        accessCodeLabel:   null,
+        // Keep accessCodeLabel (the original admin-set code) so hard-reset can restore it
         codeChangedByDept: true,
       }
     });
@@ -1614,10 +1616,32 @@ app.post('/api/departments/activate', async (req, res) => {
       name: updated.name,
       role: 'department',
       deptId: updated.id,
-      email: updated.headEmail || `${updated.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
+      email: updated.headEmail,
     };
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
     await prisma.activityLog.create({ data: { action: 'Activation', details: `${updated.name} completed first-time account activation` } });
+
+    // Welcome email to the newly activated dept head
+    const activatedDate = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+    const { text: wText, html: wHtml } = buildEmailContent({
+      title: `Welcome to CSS Group RMS — ${updated.name}`,
+      lines: [
+        `Your department account has been successfully activated on the CSS Group Requisition Management System (RMS).`,
+        ``,
+        `Department: ${updated.name}`,
+        `Name: ${updated.headName}`,
+        ...(updated.headTitle ? [`Position / Title: ${updated.headTitle}`] : []),
+        `Email: ${updated.headEmail}`,
+        `Activated: ${activatedDate}`,
+        ``,
+        `You can now log in to the RMS portal with your newly created password at any time. Keep your password secure and do not share it.`,
+        ``,
+        `If you did not perform this activation or need assistance, contact the ICT Department immediately.`
+      ],
+      actionLabel: 'Open RMS Portal'
+    });
+    sendEmail({ to: updated.headEmail, subject: `[RMS] Welcome — ${updated.name} Account Activated`, text: wText, html: wHtml }).catch(() => {});
+
     res.cookie('rms_token', token, cookieOptions);
     res.json({ token, user: userData });
   } catch (error) { sendError(res, 500, error.message); }
@@ -3851,6 +3875,104 @@ app.get('/api/admin/print-settings', authenticateToken, async (req, res) => {
     ]);
     const showStamp = (stampRows?.[0]?.value ?? 'true') !== 'false';
     res.json({ departments: depts, showStamp });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// POST /api/admin/hard-reset — nuclear option: wipe selected data categories
+app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
+  if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only.' });
+  try {
+    const { confirmText, options = {} } = req.body;
+    if (confirmText !== 'HARD RESET') return res.status(400).json({ error: 'Type "HARD RESET" exactly to confirm.' });
+
+    const { requisitions = false, subAccounts = false, deptActivations = false,
+            activityLogs = false, chatMessages = false, storeRecords = false, notifications = false } = options;
+
+    const summary = {};
+
+    if (requisitions) {
+      // Delete in FK-safe order (children before parents)
+      await prisma.fileAccessLog.deleteMany({});
+      await prisma.signatureRecord.deleteMany({});
+      await prisma.approval.deleteMany({});
+      await prisma.attachment.deleteMany({});
+      await prisma.vettingEvent.deleteMany({});
+      await prisma.forwardEvent.deleteMany({});
+      await prisma.requisitionTag.deleteMany({});
+      await prisma.requisitionSubVisibility.deleteMany({});
+      const { count: reqCount } = await prisma.requisition.deleteMany({});
+      const { count: memoCount } = await prisma.memo.deleteMany({});
+      summary.requisitions = reqCount;
+      summary.memos = memoCount;
+    }
+
+    if (subAccounts) {
+      // Remove FK-linked records for sub-accounts before deleting them
+      const subs = await prisma.department.findMany({ where: { isSubAccount: true }, select: { id: true } });
+      const subIds = subs.map(s => s.id);
+      if (subIds.length) {
+        await prisma.departmentKey.deleteMany({ where: { departmentId: { in: subIds } } });
+        await prisma.departmentStamp.deleteMany({ where: { departmentId: { in: subIds } } });
+        await prisma.notification.deleteMany({ where: { departmentId: { in: subIds } } });
+        await prisma.pushSubscription.deleteMany({ where: { deptId: { in: subIds } } });
+        const { count: subCount } = await prisma.department.deleteMany({ where: { id: { in: subIds } } });
+        summary.subAccounts = subCount;
+      } else {
+        summary.subAccounts = 0;
+      }
+    }
+
+    if (deptActivations) {
+      // Restore each dept's original admin-set access code (rehash accessCodeLabel) and wipe personal info
+      const depts = await prisma.department.findMany({
+        where: { isSubAccount: false, name: { not: { equals: 'Super Admin', mode: 'insensitive' } } },
+        select: { id: true, accessCodeLabel: true }
+      });
+      let deptCount = 0;
+      for (const d of depts) {
+        const data = { headName: null, headTitle: null, headEmail: null, codeChangedByDept: false };
+        if (d.accessCodeLabel) {
+          data.accessCodeHash = await bcrypt.hash(d.accessCodeLabel, 10);
+        }
+        await prisma.department.update({ where: { id: d.id }, data });
+        deptCount++;
+      }
+      summary.deptActivationsReset = deptCount;
+    }
+
+    if (activityLogs) {
+      const { count } = await prisma.activityLog.deleteMany({});
+      summary.activityLogs = count;
+    }
+
+    if (chatMessages) {
+      // Clear self-referential links before deleting
+      await prisma.chatMessage.updateMany({ where: {}, data: { replyToId: null } });
+      const { count } = await prisma.chatMessage.deleteMany({});
+      summary.chatMessages = count;
+    }
+
+    if (storeRecords) {
+      await prisma.storeRecordEntry.deleteMany({});
+      const { count } = await prisma.storeRecord.deleteMany({});
+      summary.storeRecords = count;
+    }
+
+    if (notifications) {
+      const { count: nCount } = await prisma.notification.deleteMany({});
+      const { count: psCount } = await prisma.pushSubscription.deleteMany({});
+      summary.notifications = nCount;
+      summary.pushSubscriptions = psCount;
+    }
+
+    // Clear deleted records bin if requisitions were cleared
+    if (requisitions) {
+      await prisma.deletedRecord.deleteMany({});
+    }
+
+    await prisma.activityLog.create({ data: { action: 'Hard Reset', details: `System hard reset executed by Super Admin. Summary: ${JSON.stringify(summary)}` } }).catch(() => {});
+    logger.warn('[HARD RESET] System reset executed', summary);
+    res.json({ success: true, summary });
   } catch (error) { sendError(res, 500, error.message); }
 });
 

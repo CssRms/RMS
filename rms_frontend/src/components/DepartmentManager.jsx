@@ -6,7 +6,7 @@ import {
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
   CheckCircle2, RotateCcw, Info, User, Mail, Phone, MapPin, BadgeCheck, Download,
   Printer, ArrowRight, FileText, Clock, ShieldCheck, Sparkles, Upload, PenTool, Award,
-  Send, AlertCircle, Wifi, WifiOff
+  Send, AlertCircle, Wifi, WifiOff, AlertTriangle, Zap
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
 import { deptAPI, settingsAPI, adminAPI, reqAPI } from '../lib/api';
@@ -682,6 +682,15 @@ const DepartmentManager = ({ onViewChange }) => {
   // Signature management (admin override)
   const [uploadingSigFor, setUploadingSigFor] = useState(null); // deptId currently uploading
   const [sigTimestamps, setSigTimestamps] = useState({});       // { [deptId]: ts } for cache-busting
+
+  // Hard Reset
+  const [resetOptions, setResetOptions] = useState({
+    requisitions: true, subAccounts: true, deptActivations: true,
+    activityLogs: true, chatMessages: false, storeRecords: false, notifications: false,
+  });
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetSummary, setResetSummary] = useState(null);
   const sigFileRef = useRef(null);
 
   const loadDeletedRecords = async () => {
@@ -706,6 +715,23 @@ const DepartmentManager = ({ onViewChange }) => {
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Upload failed.');
     } finally { setUploadingSigFor(null); }
+  };
+
+  const handleHardReset = async () => {
+    if (resetConfirmText !== 'HARD RESET') { toast.error('Type "HARD RESET" exactly to confirm.'); return; }
+    const anySelected = Object.values(resetOptions).some(Boolean);
+    if (!anySelected) { toast.error('Select at least one option to reset.'); return; }
+    setResetting(true);
+    try {
+      const summary = await adminAPI.hardReset({ confirmText: resetConfirmText, options: resetOptions });
+      setResetSummary(summary);
+      setResetConfirmText('');
+      toast.success('Hard reset completed successfully.');
+      // Reload depts list to reflect activation resets
+      if (resetOptions.deptActivations) await loadDepts();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Hard reset failed.');
+    } finally { setResetting(false); }
   };
 
   const handlePurgeRecord = (id) => {
@@ -1457,6 +1483,104 @@ const DepartmentManager = ({ onViewChange }) => {
             </table>
           </div>
         )}
+      </div>
+
+      {/* ── Danger Zone: Hard Reset ──────────────────────────────────────────── */}
+      <div className="rounded-3xl border-2 border-red-300 bg-red-50/60 p-6 shadow-sm space-y-5">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-100 border border-red-300 flex items-center justify-center shrink-0">
+            <AlertTriangle size={20} className="text-red-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-red-800 uppercase tracking-wide flex items-center gap-2">
+              Danger Zone — Hard Reset
+              <span className="text-[9px] font-black bg-red-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Irreversible</span>
+            </h3>
+            <p className="text-[10px] text-red-700/80 mt-0.5">
+              Permanently wipe selected system data. This cannot be undone. Check each category carefully before confirming.
+            </p>
+          </div>
+        </div>
+
+        {/* Options checkboxes */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {[
+            { key: 'requisitions',     label: 'All Requisitions & Records',     desc: 'Deletes every requisition, memo, approval, attachment, vetting event, tag, and deleted records bin.',   danger: true  },
+            { key: 'subAccounts',      label: 'All Sub-Accounts',               desc: 'Permanently removes all sub-account departments and their login credentials.',                            danger: true  },
+            { key: 'deptActivations',  label: 'Reset Department Activations',   desc: 'Clears head names, emails, titles and resets codeChangedByDept to false. Access codes remain intact.', danger: true  },
+            { key: 'activityLogs',     label: 'Activity Logs',                  desc: 'Clears the entire activity / audit trail log.',                                                           danger: false },
+            { key: 'chatMessages',     label: 'Chat Messages',                  desc: 'Deletes all inter-department chat conversations.',                                                         danger: false },
+            { key: 'storeRecords',     label: 'Store Records',                  desc: 'Wipes all store ledger records and their entries.',                                                        danger: false },
+            { key: 'notifications',    label: 'Notifications & Subscriptions',  desc: 'Clears all unread notifications and push subscriptions.',                                                  danger: false },
+          ].map(({ key, label, desc, danger }) => {
+            const checked = resetOptions[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setResetOptions(prev => ({ ...prev, [key]: !prev[key] }))}
+                className={`flex items-start gap-3 p-3.5 rounded-2xl border text-left transition-all ${
+                  checked
+                    ? danger ? 'bg-red-100 border-red-400' : 'bg-orange-50 border-orange-300'
+                    : 'bg-white border-border/40 hover:border-red-200'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                  checked ? (danger ? 'bg-red-600 border-red-600' : 'bg-orange-500 border-orange-500') : 'border-border/50 bg-white'
+                }`}>
+                  {checked && <CheckCircle2 size={11} className="text-white" />}
+                </div>
+                <div>
+                  <p className={`text-[11px] font-black ${checked ? (danger ? 'text-red-800' : 'text-orange-800') : 'text-foreground/70'}`}>{label}</p>
+                  <p className="text-[9px] text-muted-foreground/70 mt-0.5 leading-relaxed">{desc}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Confirmation input */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-red-700 uppercase tracking-wider">
+            Type <span className="font-mono bg-red-100 px-1.5 py-0.5 rounded text-red-900 border border-red-300">HARD RESET</span> to confirm
+          </label>
+          <input
+            type="text"
+            value={resetConfirmText}
+            onChange={e => setResetConfirmText(e.target.value)}
+            placeholder="HARD RESET"
+            className="w-full border-2 border-red-300 rounded-2xl px-4 py-3 text-sm font-mono font-bold text-red-900 bg-white outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200 placeholder-red-300/50 transition-all tracking-widest"
+          />
+        </div>
+
+        {/* Reset summary */}
+        {resetSummary && (
+          <div className="p-4 bg-green-50 border border-green-200 rounded-2xl space-y-1.5">
+            <p className="text-[10px] font-black text-green-700 uppercase tracking-wider flex items-center gap-1.5">
+              <CheckCircle2 size={12} /> Last Reset Summary
+            </p>
+            {Object.entries(resetSummary).map(([k, v]) => (
+              <p key={k} className="text-[10px] text-green-700 font-mono">
+                {k}: <span className="font-black">{v}</span>
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* Execute button */}
+        <button
+          onClick={handleHardReset}
+          disabled={resetting || resetConfirmText !== 'HARD RESET' || !Object.values(resetOptions).some(Boolean)}
+          className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-200 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {resetting
+            ? <><Loader2 size={16} className="animate-spin" /><span>Resetting System…</span></>
+            : <><Zap size={16} /><span>Execute Hard Reset</span></>}
+        </button>
+        <p className="text-[9px] text-red-600/60 text-center italic">
+          All selected data will be permanently and irreversibly deleted from the database. There is no undo.
+        </p>
       </div>
 
       {/* Deleted Record Detail Modal */}
