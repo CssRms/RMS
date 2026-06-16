@@ -346,7 +346,7 @@ const DepartmentManager = ({ onViewChange }) => {
   const [pendingDept, setPendingDept] = useState(null);
   const [editingDept, setEditingDept] = useState(null);
   const [sealDept, setSealDept] = useState(null);
-  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '' });
+  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headName: '', headTitle: '', headEmail: '' });
 
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -390,7 +390,7 @@ const DepartmentManager = ({ onViewChange }) => {
     await loadDepts();
     setIsProcessing(false);
     setIsAddModalOpen(false);
-    setNewDeptData({ name: '', type: 'Operational', accessCode: '' });
+    setNewDeptData({ name: '', type: 'Operational', accessCode: '', headName: '', headTitle: '', headEmail: '' });
     toast.success(`${newDeptData.name} Department added`);
   };
 
@@ -665,6 +665,34 @@ const DepartmentManager = ({ onViewChange }) => {
                 className={`p-4 rounded-xl border transition-all text-xs font-bold uppercase ${newDeptData.type === type ? 'bg-primary/10 border-primary/50 text-primary' : 'bg-white border-border/50 text-muted-foreground hover:border-border'}`}>
                 {type}
               </button>
+            ))}
+          </div>
+
+          {/* Head Official Details */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center gap-2">
+              <div className="h-px flex-1 bg-border/40" />
+              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] shrink-0">Head Official <span className="font-medium normal-case tracking-normal text-muted-foreground/40">(optional — can be set later)</span></p>
+              <div className="h-px flex-1 bg-border/40" />
+            </div>
+            {[
+              { key: 'headName',  label: 'Full Name',         placeholder: 'e.g. Dr. John Adeyemi',      icon: User },
+              { key: 'headTitle', label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck },
+              { key: 'headEmail', label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email' },
+            ].map(({ key, label, placeholder, icon: Icon, type }) => (
+              <div key={key} className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{label}</label>
+                <div className="flex items-center border border-border/50 rounded-xl focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 bg-white">
+                  <Icon size={14} className="text-muted-foreground ml-3 shrink-0" />
+                  <input
+                    value={newDeptData[key]}
+                    onChange={e => setNewDeptData(d => ({ ...d, [key]: e.target.value }))}
+                    type={type || 'text'}
+                    placeholder={placeholder}
+                    className="flex-1 px-3 py-3 text-sm font-medium bg-transparent outline-none"
+                  />
+                </div>
+              </div>
             ))}
           </div>
 

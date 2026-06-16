@@ -2494,14 +2494,25 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
     const parsed = z.object({
       name: z.string().min(1),
       type: z.string().min(1),
-      accessCode: z.string().min(4)
+      accessCode: z.string().min(4),
+      headName:  z.string().optional(),
+      headTitle: z.string().optional(),
+      headEmail: z.string().email().optional().or(z.literal('')),
     }).safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid department payload' });
     }
-    const { name, type, accessCode } = parsed.data;
+    const { name, type, accessCode, headName, headTitle, headEmail } = parsed.data;
     const accessCodeHash = await bcrypt.hash(accessCode, 10);
-    const dept = await prisma.department.create({ data: { name, type, accessCode: null, accessCodeHash, accessCodeLabel: accessCode } });
+    const dept = await prisma.department.create({
+      data: {
+        name, type,
+        accessCode: null, accessCodeHash, accessCodeLabel: accessCode,
+        headName:  headName?.trim()  || null,
+        headTitle: headTitle?.trim() || null,
+        headEmail: headEmail?.trim() || null,
+      }
+    });
     const { accessCode: _ac, accessCodeHash: _ach, accessCodeLabel: _acl, codeChangedByDept: _ccbd, ...safeDept } = dept;
     res.json(safeDept);
   } catch (error) { sendError(res, 500, error.message); }
