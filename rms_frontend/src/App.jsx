@@ -307,10 +307,10 @@ const AppContent = () => {
   const isHRView = ['hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment'].includes(currentView);
   // HR department users log in with role='department' — detect them by name
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
-  const isStoreDept = /\bstore\b/i.test(user?.name || '');
+  const isStoreDept = /\bstore\b/i.test(user?.name || '') || /\bstore\b/i.test(user?.parentDeptName || '');
   const canAccessHR    = user.role === 'hr' || user.role === 'global_admin' || isHRDept;
   const canAccessAdmin = user.role === 'global_admin';
-  const canAccessStore = user.role === 'global_admin' || isStoreDept || user?.isSubAccount;
+  const canAccessStore = user.role === 'global_admin' || isStoreDept;
   const activeView = (isAdminView && !canAccessAdmin) ? 'dashboard'
     : (isHRView && !canAccessHR) ? 'dashboard'
     : (currentView === 'store_records' && !canAccessStore) ? 'dashboard'

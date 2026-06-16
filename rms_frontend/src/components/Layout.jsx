@@ -1011,9 +1011,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
 
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
-  const isStoreDept = /\bstore\b/i.test(user?.name || '');
+  const isStoreDept = /\bstore\b/i.test(user?.name || '') || /\bstore\b/i.test(user?.parentDeptName || '');
   const showHRPortal     = (user?.role === 'hr' || user?.role === 'global_admin' || isHRDept) && hrPortalEnabled;
-  const showStoreRecords = (user?.role === 'global_admin' || isStoreDept || user?.isSubAccount) && storeRecordsEnabled;
+  const showStoreRecords = (user?.role === 'global_admin' || isStoreDept) && storeRecordsEnabled;
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-foreground selection:bg-primary/30 font-sans antialiased overflow-x-hidden">
