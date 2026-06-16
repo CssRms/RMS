@@ -350,9 +350,25 @@ const DepartmentManager = ({ onViewChange }) => {
 
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadingSigFor, setUploadingSigFor] = useState(null);
+  const [sigTimestamps, setSigTimestamps] = useState({});
 
   const sigFileRef = useRef(null);
 
+  const handleAdminSigUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !uploadingSigFor) return;
+    const deptId = uploadingSigFor;
+    setUploadingSigFor(`uploading_${deptId}`);
+    try {
+      await reqAPI.adminUploadDeptSignature(deptId, file);
+      setSigTimestamps(prev => ({ ...prev, [deptId]: Date.now() }));
+      toast.success('Signature updated and department notified.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Upload failed.');
+    } finally { setUploadingSigFor(null); }
+  };
 
   const loadDepts = async () => {
     const data = await getDepartments();
