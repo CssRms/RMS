@@ -677,8 +677,8 @@ const Login = () => {
           <div className="w-full flex flex-col gap-2">
             {[
               { text:'End-to-end approval tracking',  bg:'#ffffff',  border:'rgba(255,255,255,0.9)', textColor:'#166534', iconStroke:'#166534', iconBg:'rgba(22,101,52,0.12)', iconBorder:'rgba(22,101,52,0.25)' },
-              { text:'Offline draft capability',       bg:'#14532d',  border:'#166534',              textColor:'#ffffff', iconStroke:'#ffffff', iconBg:'rgba(255,255,255,0.15)', iconBorder:'rgba(255,255,255,0.3)' },
-              { text:'Multi-department oversight',     bg:'#f97316',  border:'#fb923c',              textColor:'#ffffff', iconStroke:'#ffffff', iconBg:'rgba(255,255,255,0.25)', iconBorder:'rgba(255,255,255,0.35)' },
+              { text:'Offline draft capability',       bg:'#f97316',  border:'#fb923c',              textColor:'#ffffff', iconStroke:'#ffffff', iconBg:'rgba(255,255,255,0.25)', iconBorder:'rgba(255,255,255,0.35)' },
+              { text:'Multi-department oversight',     bg:'#14532d',  border:'#166534',              textColor:'#ffffff', iconStroke:'#ffffff', iconBg:'rgba(255,255,255,0.15)', iconBorder:'rgba(255,255,255,0.3)' },
             ].map(({ text, bg, border, textColor, iconStroke, iconBg, iconBorder }, i) => (
               <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl" style={{background:bg, border:`1px solid ${border}`}}>
                 <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{background:iconBg, border:`1px solid ${iconBorder}`}}>

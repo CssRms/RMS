@@ -3911,6 +3911,40 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
       const subs = await prisma.department.findMany({ where: { isSubAccount: true }, select: { id: true } });
       const subIds = subs.map(s => s.id);
       if (subIds.length) {
+        // 1. Unlink users whose departmentId points to a sub-account (non-nullable FK blocker)
+        await prisma.user.updateMany({ where: { departmentId: { in: subIds } }, data: { departmentId: null } });
+
+        // 2. Chat messages: fromDeptId is non-nullable so we must delete them
+        //    Handle self-referential replyToId before deletion
+        const subMsgIds = (await prisma.chatMessage.findMany({
+          where: { OR: [{ fromDeptId: { in: subIds } }, { toDeptId: { in: subIds } }] },
+          select: { id: true }
+        })).map(m => m.id);
+        if (subMsgIds.length) {
+          await prisma.chatMessage.updateMany({ where: { replyToId: { in: subMsgIds } }, data: { replyToId: null } });
+          await prisma.chatMessage.deleteMany({ where: { id: { in: subMsgIds } } });
+        }
+
+        // 3. If requisitions weren't cleared globally, clear sub-account requisitions in FK-safe order
+        if (!requisitions) {
+          const subReqIds = (await prisma.requisition.findMany({ where: { departmentId: { in: subIds } }, select: { id: true } })).map(r => r.id);
+          if (subReqIds.length) {
+            await prisma.fileAccessLog.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.signatureRecord.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.approval.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.attachment.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.vettingEvent.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.forwardEvent.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.requisitionTag.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.requisitionSubVisibility.deleteMany({ where: { requisitionId: { in: subReqIds } } });
+            await prisma.requisition.deleteMany({ where: { id: { in: subReqIds } } });
+          }
+        }
+
+        // 4. ForwardEvents from sub-accounts not yet removed (if requisitions weren't cleared)
+        await prisma.forwardEvent.deleteMany({ where: { fromDeptId: { in: subIds } } });
+
+        // 5. Core FK records
         await prisma.departmentKey.deleteMany({ where: { departmentId: { in: subIds } } });
         await prisma.departmentStamp.deleteMany({ where: { departmentId: { in: subIds } } });
         await prisma.notification.deleteMany({ where: { departmentId: { in: subIds } } });
