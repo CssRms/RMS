@@ -289,7 +289,7 @@ const UserProfilePanel = ({ isOpen, onClose, onViewChange }) => {
 
               <div className="p-3 bg-muted/30 rounded-xl border border-border/30">
                 <p className="text-[10px] text-muted-foreground font-medium text-center leading-relaxed">
-                  Department credentials are managed by the System Administrator through System Studio.
+                  Department credentials are managed by the System Administrator through System Settings.
                 </p>
               </div>
             </>

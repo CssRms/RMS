@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash } from 'lucide-react';
+import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail } from 'lucide-react';
 
 const WorkflowStage = ({ stage, onUpdate, onDelete, isFirst }) => {
   return (
@@ -54,7 +54,8 @@ const WorkflowStage = ({ stage, onUpdate, onDelete, isFirst }) => {
 };
 
 import { getWorkflows, updateWorkflows, getRequisitionTypes, addRequisitionType, deleteRequisitionType } from '../lib/store';
-import { settingsAPI } from '../lib/api';
+import { settingsAPI, adminAPI } from '../lib/api';
+import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import Modal from './Modal';
 import ConfirmModal from './ConfirmModal';
@@ -91,6 +92,33 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(true);
   const [loginStyle, setLoginStyle]                 = useState('standard');
   const [savingFeatures, setSavingFeatures]         = useState(false);
+
+  // ── All departments (for chairman/print toggles) ───────────────────────────
+  const [allDepts, setAllDepts] = useState([]);
+
+  // ── Chairman / CEO routing access ─────────────────────────────────────────
+  const [chairmanAllowedIds, setChairmanAllowedIds] = useState([]);
+  const [savingChairman, setSavingChairman]         = useState(false);
+
+  // ── AIGC feature toggle ────────────────────────────────────────────────────
+  const { refreshAI } = useAIFeatures();
+  const [aiToggle, setAiToggle]   = useState(true);
+  const [savingAI, setSavingAI]   = useState(false);
+
+  // ── Print settings ─────────────────────────────────────────────────────────
+  const [canPrintIds, setCanPrintIds]     = useState(null);
+  const [showStampOnPdf, setShowStampOnPdf] = useState(true);
+  const [savingPrint, setSavingPrint]     = useState(false);
+
+  // ── ICT support phone ──────────────────────────────────────────────────────
+  const [ictPhone, setIctPhone]     = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+
+  // ── Email notifications ────────────────────────────────────────────────────
+  const [emailStatus, setEmailStatus]         = useState(null);
+  const [emailTestAddr, setEmailTestAddr]     = useState('');
+  const [emailTesting, setEmailTesting]       = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState(null);
 
   const loadData = async () => {
     const [workflowData, typeData] = await Promise.all([
@@ -180,6 +208,109 @@ const WorkflowBuilder = ({ onViewChange }) => {
     } finally { setSavingFeatures(false); }
   };
 
+  // ── Chairman/CEO routing ───────────────────────────────────────────────────
+  const loadChairmanSetting = async () => {
+    try {
+      const res = await settingsAPI.get('chairman_ceo_allowed_depts');
+      if (res?.value) setChairmanAllowedIds(JSON.parse(res.value));
+    } catch {}
+  };
+  const saveChairmanSetting = async () => {
+    setSavingChairman(true);
+    try {
+      await settingsAPI.set('chairman_ceo_allowed_depts', JSON.stringify(chairmanAllowedIds));
+      toast.success('Chairman/CEO routing access saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save setting.');
+    } finally { setSavingChairman(false); }
+  };
+  const toggleChairmanDept = (deptId) => {
+    setChairmanAllowedIds(prev => prev.includes(deptId) ? prev.filter(id => id !== deptId) : [...prev, deptId]);
+  };
+
+  // ── AI features ────────────────────────────────────────────────────────────
+  const loadAISetting = async () => {
+    try {
+      const res = await settingsAPI.get('ai_features_enabled');
+      setAiToggle(res?.value !== 'false');
+    } catch {}
+  };
+  const saveAISetting = async () => {
+    setSavingAI(true);
+    try {
+      await settingsAPI.set('ai_features_enabled', aiToggle ? 'true' : 'false');
+      await refreshAI();
+      toast.success(`AI features ${aiToggle ? 'enabled' : 'disabled'} for all departments.`);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save AI setting.');
+    } finally { setSavingAI(false); }
+  };
+
+  // ── Print settings ─────────────────────────────────────────────────────────
+  const loadPrintSettings = async () => {
+    try {
+      const data = await adminAPI.getPrintSettings();
+      setCanPrintIds((data?.departments || []).filter(d => d.canPrint).map(d => d.id));
+      setShowStampOnPdf(data?.showStamp !== false);
+    } catch { setCanPrintIds([]); }
+  };
+  const savePrintSettings = async () => {
+    if (canPrintIds === null) return;
+    setSavingPrint(true);
+    try {
+      await adminAPI.savePrintSettings(canPrintIds, showStampOnPdf);
+      toast.success('Print settings saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save print settings.');
+    } finally { setSavingPrint(false); }
+  };
+  const toggleCanPrintDept = (deptId) => {
+    setCanPrintIds(prev => (prev || []).includes(deptId) ? prev.filter(id => id !== deptId) : [...(prev || []), deptId]);
+  };
+
+  // ── ICT phone ──────────────────────────────────────────────────────────────
+  const loadIctPhone = async () => {
+    try {
+      const res = await settingsAPI.get('ict_support_phone');
+      if (res?.value) setIctPhone(res.value);
+    } catch {}
+  };
+  const saveIctPhone = async () => {
+    setSavingPhone(true);
+    try {
+      await settingsAPI.set('ict_support_phone', ictPhone.trim());
+      toast.success('Support phone number saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save phone number.');
+    } finally { setSavingPhone(false); }
+  };
+
+  // ── Email status ───────────────────────────────────────────────────────────
+  const loadEmailStatus = async () => {
+    try {
+      const res = await fetch('/api/email-status', { credentials: 'include' }).then(r => r.json());
+      setEmailStatus(res);
+    } catch { setEmailStatus({ configured: false, error: 'Could not fetch email status.' }); }
+  };
+  const sendTestEmail = async () => {
+    if (!emailTestAddr.trim()) return;
+    setEmailTesting(true);
+    setEmailTestResult(null);
+    try {
+      const res = await fetch('/api/test-email', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: emailTestAddr.trim() })
+      }).then(r => r.json());
+      setEmailTestResult(res);
+      if (res.success) toast.success('Test email sent!');
+      else toast.error(res.message || res.error || 'Failed');
+    } catch (err) {
+      setEmailTestResult({ success: false, error: err.message });
+      toast.error('Test failed: ' + err.message);
+    } finally { setEmailTesting(false); }
+  };
+
   const loadThresholds = async () => {
     try {
       const res = await settingsAPI.get('approval_thresholds');
@@ -212,10 +343,17 @@ const WorkflowBuilder = ({ onViewChange }) => {
         loadThresholds(),
         getDepartments()
       ]);
+      const deptsArr = Array.isArray(depts) ? depts : [];
+      setAllDepts(deptsArr);
       await Promise.all([
-        loadRecordAccess(Array.isArray(depts) ? depts : []),
+        loadRecordAccess(deptsArr),
         loadFeatureFlags(),
         loadRefPattern(),
+        loadChairmanSetting(),
+        loadAISetting(),
+        loadPrintSettings(),
+        loadIctPhone(),
+        loadEmailStatus(),
       ]);
     })();
   }, []);
@@ -298,50 +436,37 @@ const WorkflowBuilder = ({ onViewChange }) => {
           <div>
             <h1 className="text-3xl font-bold text-foreground tracking-tight flex items-center space-x-3">
               <Settings2 className="text-primary" />
-              <span>Studio <span className="text-primary">Configuration</span></span>
+              <span>System <span className="text-primary">Settings</span></span>
             </h1>
             <p className="text-muted-foreground text-sm mt-1 font-medium italic">
-              "Zero-Hardcoding" Hub: Define the rules and types of your organisation.
+              Central configuration hub for workflow rules, access control and system behaviour.
             </p>
           </div>
-          
-          <div className="flex bg-muted/40 p-1.5 rounded-2xl border border-border/50 shadow-inner">
-            <button
-              onClick={() => setActiveTab('stages')}
-              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'stages' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
-            >
-              Approval Workflow
-            </button>
-            <button
-              onClick={() => setActiveTab('types')}
-              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'types' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
-            >
-              Unit Types
-            </button>
-            <button
-              onClick={() => setActiveTab('authority')}
-              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'authority' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
-            >
-              Authority Bands
-            </button>
-            <button
-              onClick={() => setActiveTab('record')}
-              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'record' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
-            >
-              Record Access
-            </button>
-            <button
-              onClick={() => setActiveTab('features')}
-              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'features' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
-            >
-              Features
-            </button>
-            <button
-              onClick={() => setActiveTab('refcode')}
-              className={`px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'refcode' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
-            >
-              Ref Code
-            </button>
+        </div>
+
+        {/* Scrollable tab bar */}
+        <div className="overflow-x-auto pb-1 -mb-1">
+          <div className="flex bg-muted/40 p-1.5 rounded-2xl border border-border/50 shadow-inner min-w-max gap-0.5">
+            {[
+              { id: 'stages',   label: 'Approval Workflow' },
+              { id: 'types',    label: 'Unit Types' },
+              { id: 'authority',label: 'Authority Bands' },
+              { id: 'record',   label: 'Record Access' },
+              { id: 'features', label: 'Features' },
+              { id: 'refcode',  label: 'Ref Code' },
+              { id: 'chairman', label: 'CEO Routing' },
+              { id: 'ai',       label: 'AI Features' },
+              { id: 'print',    label: 'Print & Stamp' },
+              { id: 'contact',  label: 'Contact & Email' },
+            ].map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all whitespace-nowrap ${activeTab === id ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'text-muted-foreground hover:bg-muted/80'}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -794,6 +919,304 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </div>
             </div>
           </div>
+        ) : activeTab === 'chairman' ? (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={18} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Chairman / CEO Routing Access</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Control which departments can route requests directly to Chairman / CEO.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveChairmanSetting}
+                  disabled={savingChairman}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-amber-200 active:scale-[0.98]"
+                >
+                  {savingChairman ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="max-h-[420px] overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {allDepts.filter(d => !/ceo|chairman/i.test(d.name)).map(dept => {
+                  const allowed = chairmanAllowedIds.includes(dept.id);
+                  return (
+                    <button
+                      key={dept.id}
+                      onClick={() => toggleChairmanDept(dept.id)}
+                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${allowed ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-border/40 text-muted-foreground hover:border-amber-200'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${allowed ? 'bg-amber-500 border-amber-500' : 'border-border'}`}>
+                        {allowed && <CheckCircle2 size={10} className="text-white" />}
+                      </div>
+                      <span className="text-[11px] font-bold truncate">{dept.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+        ) : activeTab === 'ai' ? (
+          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center shrink-0">
+                    <Sparkles size={18} className="text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">AIGC Features</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Control organisation-wide AI tools.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveAISetting}
+                  disabled={savingAI}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-purple-200 active:scale-[0.98]"
+                >
+                  {savingAI ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="flex flex-col justify-center space-y-6">
+                <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-foreground uppercase tracking-tight">
+                      {aiToggle ? 'Neural Engines Active' : 'Neural Engines Suspended'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {aiToggle
+                        ? 'AI Refinement and Voice Dictation are enabled across the entire hierarchy.'
+                        : 'Organisation-wide AI capabilities have been restricted.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAiToggle(v => !v)}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${aiToggle ? 'bg-purple-600' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${aiToggle ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div className="p-4 bg-muted/20 rounded-xl border border-border/10 flex items-start gap-3">
+                  <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-muted-foreground/80 font-medium italic">
+                    Changes to AI status propagate to all active department sessions within seconds and do not require a system reboot.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        ) : activeTab === 'print' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {/* Print Record Access */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center shrink-0">
+                    <Printer size={18} className="text-sky-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Print Record Access</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Choose which departments can see the Print Record button.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={savePrintSettings}
+                  disabled={savingPrint || canPrintIds === null}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-sky-200 active:scale-[0.98]"
+                >
+                  {savingPrint ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              {canPrintIds === null ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 size={18} className="animate-spin text-muted-foreground/40" />
+                </div>
+              ) : (
+                <div className="flex-1 max-h-[320px] overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {allDepts.map(dept => {
+                    const allowed = canPrintIds.includes(dept.id);
+                    return (
+                      <button
+                        key={dept.id}
+                        onClick={() => toggleCanPrintDept(dept.id)}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${allowed ? 'bg-sky-50 border-sky-300 text-sky-800' : 'bg-white border-border/40 text-muted-foreground hover:border-sky-200'}`}
+                      >
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${allowed ? 'bg-sky-500 border-sky-500' : 'border-border'}`}>
+                          {allowed && <CheckCircle2 size={10} className="text-white" />}
+                        </div>
+                        <span className="text-[11px] font-bold truncate">{dept.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Seal Stamp on PDF */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center shrink-0">
+                    <Award size={18} className="text-teal-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Seal Stamp on PDF</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Show or hide the CSS Farms circular seal on all print records.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={savePrintSettings}
+                  disabled={savingPrint || canPrintIds === null}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-teal-200 active:scale-[0.98]"
+                >
+                  {savingPrint ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="flex-1 flex flex-col justify-center space-y-6">
+                <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-foreground uppercase tracking-tight">
+                      {showStampOnPdf ? 'Seal Stamp Visible' : 'Seal Stamp Hidden'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {showStampOnPdf
+                        ? 'The CSS Farms circular seal appears on all generated print record PDFs.'
+                        : 'The CSS Farms seal is hidden from all print record PDFs organisation-wide.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowStampOnPdf(v => !v)}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${showStampOnPdf ? 'bg-teal-500' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${showStampOnPdf ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div className="p-4 bg-muted/20 rounded-xl border border-border/10 flex items-start gap-3">
+                  <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-muted-foreground/80 font-medium italic">
+                    This setting takes effect on all print records generated after saving. Existing saved PDFs are not affected.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        ) : activeTab === 'contact' ? (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {/* ICT Support Phone */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+                    <Phone size={18} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Support Contact Phone</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Shown on the login forgot-code screen. Users tap to call ICT directly.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveIctPhone}
+                  disabled={savingPhone || !ictPhone.trim()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50 shrink-0"
+                >
+                  {savingPhone ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                  Save
+                </button>
+              </div>
+              <input
+                type="tel"
+                value={ictPhone}
+                onChange={(e) => setIctPhone(e.target.value)}
+                placeholder="e.g. +2348061629865"
+                className="w-full bg-muted/20 border border-border/50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-200 outline-none"
+              />
+              <p className="text-[10px] text-muted-foreground/70 mt-2 italic">
+                Include country code for tap-to-call to work on mobile devices.
+              </p>
+            </div>
+
+            {/* Email Notifications */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-5">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${emailStatus?.configured ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                  {emailStatus?.configured ? <Wifi size={16} className="text-emerald-600" /> : <WifiOff size={16} className="text-red-500" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Email Notifications</h3>
+                  <p className="text-[10px] text-muted-foreground/70 mt-0.5">Configure outgoing email so departments receive notifications</p>
+                </div>
+                <button onClick={loadEmailStatus} className="ml-auto p-2 rounded-xl border border-border/40 text-muted-foreground hover:bg-muted/60 transition-all">
+                  <RotateCcw size={12} />
+                </button>
+              </div>
+              {emailStatus ? (
+                <div className="space-y-4">
+                  <div className={`p-3 rounded-xl border text-xs flex items-start gap-3 ${emailStatus.configured ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                    {emailStatus.configured ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
+                    <div>
+                      {emailStatus.configured ? (
+                        <>
+                          <p className="font-bold">Email ready via Resend{emailStatus.fromAddress ? ` · ${emailStatus.fromAddress}` : ''}</p>
+                          {emailStatus.error && <p className="mt-1 text-amber-700">⚠ {emailStatus.error}</p>}
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-bold">Email is NOT configured — notifications will not be sent</p>
+                          {emailStatus.error && <p className="mt-1 opacity-80">{emailStatus.error}</p>}
+                          <div className="mt-2 space-y-1 opacity-90">
+                            <p className="font-semibold">Add to Railway Variables:</p>
+                            <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">RESEND_API_KEY = re_xxxxxxxxxxxx</code>
+                            <code className="block bg-red-100 px-2 py-1 rounded text-[10px] font-mono">RESEND_FROM_EMAIL = info@yourdomain.com</code>
+                            <p className="text-[10px] mt-1">Get a free key at <strong>resend.com</strong> (3000 emails/month free)</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Send Test Email</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="email"
+                        value={emailTestAddr}
+                        onChange={e => setEmailTestAddr(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && sendTestEmail()}
+                        placeholder="recipient@example.com"
+                        className="flex-1 text-sm border border-border/50 rounded-xl px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                      <button
+                        onClick={sendTestEmail}
+                        disabled={emailTesting || !emailTestAddr.trim()}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all"
+                      >
+                        {emailTesting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        Send
+                      </button>
+                    </div>
+                    {emailTestResult && (
+                      <div className={`p-2.5 rounded-xl text-xs border ${emailTestResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                        {emailTestResult.success ? `✓ ${emailTestResult.message}` : `✗ ${emailTestResult.message || emailTestResult.error}`}
+                        {emailTestResult.hint && <p className="mt-1 opacity-80 text-[10px]">{emailTestResult.hint}</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-muted-foreground/40" /></div>
+              )}
+            </div>
+          </div>
+
         ) : (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
              <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl overflow-hidden relative">
