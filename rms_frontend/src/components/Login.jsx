@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, HelpCircle, X, PhoneCall, ChevronDown, GitBranch } from 'lucide-react';
+import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, HelpCircle, X, PhoneCall, ChevronDown, GitBranch, AlertTriangle } from 'lucide-react';
 import { getDepartments } from '../lib/store';
 import { toast } from 'react-hot-toast';
 
@@ -918,28 +918,48 @@ const Login = () => {
 
               <form onSubmit={handleActivate} className="space-y-4">
                 {/* Name / Title / Email — dept heads only, always read-only */}
-                {!activation.isSubAccount && (
-                  <>
-                    {[
-                      { label: 'Full Name', value: activation.headName },
-                      { label: 'Position / Title', value: activation.headTitle },
-                      { label: 'Email Address', value: activation.headEmail },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">{label}</label>
-                        <div className="w-full bg-muted/40 border border-border/50 rounded-2xl px-4 py-3 text-sm flex items-center gap-2">
-                          {value
-                            ? <span className="text-foreground font-medium">{value}</span>
-                            : <span className="text-muted-foreground/50 italic">Not set</span>
-                          }
-                          <span className="ml-auto text-[9px] font-black text-muted-foreground/40 uppercase tracking-widest">Read only</span>
+                {!activation.isSubAccount && (() => {
+                  const profileIncomplete = !activation.headName?.trim() || !activation.headEmail?.trim();
+                  return (
+                    <>
+                      {profileIncomplete && (
+                        <div className="flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl">
+                          <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                          <p className="text-xs text-amber-700 leading-snug font-medium">
+                            Your profile has not been set up yet. Please contact your <strong>Super Admin</strong> to fill in your name and email before you can activate your account.
+                          </p>
                         </div>
-                      </div>
-                    ))}
-                  </>
-                )}
+                      )}
+                      {[
+                        { label: 'Full Name', value: activation.headName },
+                        { label: 'Position / Title', value: activation.headTitle },
+                        { label: 'Email Address', value: activation.headEmail },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="space-y-1.5">
+                          <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">{label}</label>
+                          <div className="w-full bg-muted/40 border border-border/50 rounded-2xl px-4 py-3 text-sm flex items-center gap-2">
+                            {value
+                              ? <span className="text-foreground font-medium">{value}</span>
+                              : <span className="text-muted-foreground/50 italic">Not set</span>
+                            }
+                            <span className="ml-auto text-[9px] font-black text-muted-foreground/40 uppercase tracking-widest">Read only</span>
+                          </div>
+                        </div>
+                      ))}
+                      {profileIncomplete && (
+                        <div className="pt-1">
+                          <button type="button" onClick={handleCancelActivation}
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-border/50 text-muted-foreground text-xs font-bold uppercase tracking-widest hover:bg-muted/60 transition-all">
+                            <X size={13} /> Go back to login
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
-                {/* Password row */}
+                {/* Password row — only shown when profile is complete */}
+                {(activation.isSubAccount || (activation.headName?.trim() && activation.headEmail?.trim())) && (<>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.12em]">
@@ -1005,6 +1025,7 @@ const Login = () => {
                     Cancel — Go back to login
                   </button>
                 </div>
+                </>)}
               </form>
             </div>
           </div>
