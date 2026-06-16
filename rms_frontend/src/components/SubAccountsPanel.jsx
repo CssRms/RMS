@@ -175,6 +175,32 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
   const [savingRoute, setSavingRoute]               = useState(false);
   const [selectedDeptToAdd, setSelectedDeptToAdd]   = useState('');
 
+  // ── Context-aware handling limit labels based on parent dept role ─────────
+  const parentName = sub.parentDept?.name || '';
+  const isAuditParent   = /\baudit\b/i.test(parentName);
+  const isAccountParent = /\baccount\b/i.test(parentName);
+  // Everything else (HR, GM, CEO, MD, Chairman, etc.) is a threshold/approver dept
+  const handlingLabel = isAuditParent ? 'Vetting Limit'
+    : isAccountParent ? 'Treatment Limit'
+    : 'Approval Limit';
+  const handlingDesc = isAuditParent
+    ? 'Max request amount they can vet on your behalf'
+    : isAccountParent
+    ? 'Max request amount they can treat & process on your behalf'
+    : `Max request amount they can approve on your behalf`;
+  const handlingColor = isAuditParent ? 'text-purple-700'
+    : isAccountParent ? 'text-emerald-700'
+    : 'text-amber-700';
+  const handlingRing = isAuditParent ? 'focus:ring-purple-200'
+    : isAccountParent ? 'focus:ring-emerald-200'
+    : 'focus:ring-amber-200';
+  const handlingBtn = isAuditParent ? 'bg-purple-600 hover:bg-purple-700'
+    : isAccountParent ? 'bg-emerald-600 hover:bg-emerald-700'
+    : 'bg-amber-600 hover:bg-amber-700';
+  const handlingNoAuth = isAuditParent ? 'No vetting authority set'
+    : isAccountParent ? 'No treatment authority set'
+    : 'No approval authority set';
+
   // Load departments when Direct Route is toggled on
   useEffect(() => {
     if (!directRouteOn || allDepts.length > 0) return;
@@ -407,22 +433,24 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
               )}
             </div>
 
-            {/* ── Handling Limit (Approval / Vetting / Payment) ── */}
+            {/* ── Handling Limit — label changes per parent dept role ── */}
             <div className="space-y-1 pt-2 border-t border-dashed border-border/20">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-foreground/70 uppercase tracking-wide">Handling limit <span className="font-normal text-muted-foreground/40 normal-case">(optional)</span></span>
+                <span className="text-[10px] font-black text-foreground/70 uppercase tracking-wide">
+                  {handlingLabel} <span className="font-normal text-muted-foreground/40 normal-case">(optional)</span>
+                </span>
                 {!editingApproval && (
-                  <button onClick={() => setEditingApproval(true)} className="text-[10px] font-bold text-primary hover:underline">
+                  <button onClick={() => setEditingApproval(true)} className="text-[10px] font-bold text-primary hover:bg-primary/8 border border-primary/25 px-2 py-0.5 rounded-lg transition-all">
                     {sub.approvalLimit != null ? 'Edit' : 'Set'}
                   </button>
                 )}
               </div>
-              <p className="text-[9px] text-muted-foreground/50 italic">Max request amount they can approve / vet / treat on your behalf</p>
+              <p className="text-[9px] text-muted-foreground/50 italic">{handlingDesc}</p>
               {!editingApproval ? (
                 <p className="text-[11px] text-muted-foreground/70">
                   {sub.approvalLimit != null
-                    ? <><span className="font-black text-violet-700">≤ {fmt(sub.approvalLimit)}</span> <span className="italic">per request</span></>
-                    : <span className="italic text-muted-foreground/40">No handling authority set</span>}
+                    ? <><span className={`font-black ${handlingColor}`}>≤ {fmt(sub.approvalLimit)}</span> <span className="italic">per request</span></>
+                    : <span className="italic text-muted-foreground/40">{handlingNoAuth}</span>}
                 </p>
               ) : (
                 <div className="flex gap-2 items-center">
@@ -431,9 +459,9 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
                     <input type="number" min="0" step="any" value={approvalInput}
                       onChange={e => setApprovalInput(e.target.value)} autoFocus placeholder="e.g. 30000"
                       onKeyDown={e => { if (e.key === 'Enter') saveApproval(); if (e.key === 'Escape') setEditingApproval(false); }}
-                      className="w-full border border-border/50 rounded-xl pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-violet-300" />
+                      className={`w-full border border-border/50 rounded-xl pl-8 pr-3 py-1.5 text-sm bg-white outline-none focus:ring-2 ${handlingRing}`} />
                   </div>
-                  <button onClick={saveApproval} disabled={savingApproval} className="p-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40">
+                  <button onClick={saveApproval} disabled={savingApproval} className={`p-2 rounded-xl ${handlingBtn} text-white disabled:opacity-40`}>
                     {savingApproval ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                   </button>
                   {sub.approvalLimit != null && (
