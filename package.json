@@ -5,7 +5,7 @@
   "scripts": {
     "frontend:install": "npm --prefix rms_frontend ci --cache ./.npm-cache --legacy-peer-deps --no-audit --no-fund --loglevel=warn",
     "build": "prisma generate --schema=rms_backend/prisma/schema.prisma && npm run frontend:install && npm --prefix rms_frontend run build",
-    "start": "prisma db push --schema=rms_backend/prisma/schema.prisma && node serve.js",
+    "start": "prisma db push --schema=rms_backend/prisma/schema.prisma --accept-data-loss && node serve.js",
     "seed": "node rms_backend/prisma/seed.js",
     "deploy-sync": "prisma db push --schema=rms_backend/prisma/schema.prisma && node rms_backend/prisma/seed.js"
   },
