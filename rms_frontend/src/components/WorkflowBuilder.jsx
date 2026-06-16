@@ -218,8 +218,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
     if (resetConfirmText !== 'CONFIRM HARD RESET') return;
     setResetting(true); setResetSummary(null);
     try {
-      const res = await adminAPI.post('/hard-reset', { confirmText: resetConfirmText, options: resetOptions });
-      setResetSummary(res?.data?.summary || null);
+      const res = await adminAPI.hardReset({ confirmText: resetConfirmText, options: resetOptions });
+      setResetSummary(res?.summary || null);
       setResetConfirmText('');
     } catch (e) { toast.error(e?.response?.data?.error || 'Reset failed'); }
     finally { setResetting(false); }
