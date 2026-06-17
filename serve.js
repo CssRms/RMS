@@ -93,7 +93,12 @@ async function broadcastUpdate(reqId, meta = {}) {
   const payload = `event: requisition_updated\ndata: ${JSON.stringify({ id: reqId, ts: Date.now(), ...meta })}\n\n`;
   for (const [, { res, user }] of sseClients) {
     const role = normalizeRole(user?.role);
-    if (role !== 'department' || involvedDeptIds.has(toIntOrNull(user?.deptId))) {
+    const isIcc = role === 'department' && isIccDept(user?.name);
+    const ownDeptInvolved = involvedDeptIds.has(toIntOrNull(user?.deptId));
+    // Sub-accounts often carry their own deptId (different from the parent's) —
+    // also match on parentDeptId so they get real-time updates for parent-routed requests.
+    const parentDeptInvolved = user?.isSubAccount && involvedDeptIds.has(toIntOrNull(user?.parentDeptId));
+    if (role !== 'department' || isIcc || ownDeptInvolved || parentDeptInvolved) {
       try { res.write(payload); } catch (_) {}
     }
   }
