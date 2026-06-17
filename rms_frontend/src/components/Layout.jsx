@@ -1193,6 +1193,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               {showStoreRecords && (
                 <SidebarItem icon={Package} label="Store" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} mobile />
               )}
+              {isIccDept && (
+                <SidebarItem icon={ScanEye} label="Oversight" active={currentView === 'icc_oversight'} onClick={() => onViewChange('icc_oversight')} mobile />
+              )}
               <SidebarItem icon={deptStatus.isReady ? Building2 : ShieldAlert} label="Profile" active={currentView === 'dept_profile'} onClick={() => onViewChange('dept_profile')} mobile />
             </>
           ) : showHRPortal ? (
