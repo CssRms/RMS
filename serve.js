@@ -3988,9 +3988,25 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
       // Note: mode:'insensitive' is not supported inside `not` in Prisma v6 — filter in JS instead
       const allDepts = await prisma.department.findMany({
         where: { isSubAccount: false },
-        select: { id: true, name: true, accessCodeLabel: true, accessCode: true }
+        select: { id: true, name: true, accessCodeLabel: true, accessCode: true, headEmail: true }
       });
       const depts = allDepts.filter(d => d.name.toLowerCase() !== 'super admin');
+
+      // Delete UserSignature records for all current head users before clearing headEmail
+      const headEmails = depts.map(d => d.headEmail).filter(Boolean);
+      if (headEmails.length) {
+        const headUsers = await prisma.user.findMany({
+          where: { email: { in: headEmails } },
+          select: { id: true },
+        });
+        const headUserIds = headUsers.map(u => u.id);
+        if (headUserIds.length) {
+          await prisma.userSignature.deleteMany({ where: { userId: { in: headUserIds } } });
+        }
+      }
+      // Also wipe DepartmentStamp (corporate seal overrides) for all non-super-admin depts
+      await prisma.departmentStamp.deleteMany({ where: { departmentId: { in: depts.map(d => d.id) } } });
+
       let deptCount = 0;
       for (const d of depts) {
         // Prefer accessCodeLabel (the "original code" store); fall back to the legacy
