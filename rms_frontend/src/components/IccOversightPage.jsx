@@ -1,0 +1,322 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { reqAPI } from '../lib/api';
+import { iccFreeze, iccUnfreeze, iccComment } from '../lib/store';
+import { toast } from 'react-hot-toast';
+import {
+  ScanEye, RefreshCcw, Lock, Unlock, MessageSquare, ChevronDown, ChevronUp,
+  X, Loader2, Search, Filter, Building2, Clock, CheckCircle2, XCircle,
+  AlertTriangle, FileText, Package, Banknote
+} from 'lucide-react';
+
+const statusColor = (s) => {
+  if (!s) return 'bg-muted text-muted-foreground';
+  const l = s.toLowerCase();
+  if (l === 'approved' || l === 'treated' || l === 'published') return 'bg-emerald-100 text-emerald-700';
+  if (l === 'rejected') return 'bg-red-100 text-red-700';
+  if (l === 'pending') return 'bg-amber-100 text-amber-700';
+  if (l === 'draft') return 'bg-muted text-muted-foreground';
+  return 'bg-sky-100 text-sky-700';
+};
+
+const typeIcon = (type) => {
+  const t = (type || '').toLowerCase();
+  if (t.includes('memo')) return <FileText size={13} className="shrink-0" />;
+  if (t.includes('material')) return <Package size={13} className="shrink-0" />;
+  return <Banknote size={13} className="shrink-0" />;
+};
+
+const fmt = (n) => n != null ? `₦${Number(n).toLocaleString()}` : '—';
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+// ── Per-request expanded row ──────────────────────────────────────────────────
+const RequestRow = ({ req, onRefresh }) => {
+  const [expanded, setExpanded]     = useState(false);
+  const [comment, setComment]       = useState('');
+  const [freezeNote, setFreezeNote] = useState('');
+  const [posting, setPosting]       = useState(false);
+  const [freezing, setFreezing]     = useState(false);
+
+  const frozen = !!req.iccFrozen;
+
+  const handleComment = async () => {
+    if (!comment.trim()) return;
+    setPosting(true);
+    try {
+      await iccComment(req.id, comment.trim());
+      toast.success('Comment posted.');
+      setComment('');
+      onRefresh();
+    } catch (e) { toast.error(e?.response?.data?.error || 'Could not post comment.'); }
+    finally { setPosting(false); }
+  };
+
+  const handleFreeze = async () => {
+    if (!freezeNote.trim()) { toast.error('A reason is required to freeze.'); return; }
+    setFreezing(true);
+    try {
+      await iccFreeze(req.id, freezeNote.trim());
+      toast.success('Request frozen — all actions are blocked.');
+      setFreezeNote('');
+      onRefresh();
+    } catch (e) { toast.error(e?.response?.data?.error || 'Could not freeze.'); }
+    finally { setFreezing(false); }
+  };
+
+  const handleUnfreeze = async () => {
+    setFreezing(true);
+    try {
+      await iccUnfreeze(req.id);
+      toast.success('Freeze lifted.');
+      onRefresh();
+    } catch (e) { toast.error(e?.response?.data?.error || 'Could not unfreeze.'); }
+    finally { setFreezing(false); }
+  };
+
+  return (
+    <div className={`rounded-2xl border transition-all duration-200 ${frozen ? 'border-red-300 bg-red-50/30' : 'border-border/60 bg-white'}`}>
+      {/* Summary row */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-start gap-3 p-4 text-left hover:bg-muted/20 rounded-2xl transition-colors"
+      >
+        <div className={`mt-0.5 shrink-0 ${frozen ? 'text-red-500' : 'text-muted-foreground/50'}`}>
+          {typeIcon(req.type)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-foreground truncate">{req.title || req.description || 'Untitled'}</span>
+            {frozen && <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1"><Lock size={9} /> Frozen</span>}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-1">
+            <span className="text-[10px] text-muted-foreground font-medium">{req.department || req.departmentName || '—'}</span>
+            {req.targetDepartmentName && <span className="text-[10px] text-muted-foreground">→ {req.targetDepartmentName}</span>}
+            <span className="text-[10px] text-muted-foreground">{fmtDate(req.createdAt)}</span>
+            {req.refCode && <span className="text-[10px] font-mono text-primary/70">{req.refCode}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {req.amount != null && <span className="text-xs font-bold text-foreground">{fmt(req.amount)}</span>}
+          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${statusColor(req.status)}`}>{req.status || '—'}</span>
+          {expanded ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+        </div>
+      </button>
+
+      {/* Expanded ICC actions */}
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3 border-t border-border/40 pt-3">
+          {/* Freeze / Unfreeze */}
+          <div className={`p-3 rounded-xl border space-y-2 ${frozen ? 'border-red-200 bg-red-50' : 'border-border/50 bg-muted/20'}`}>
+            <p className="text-[10px] font-black uppercase tracking-widest text-foreground/60">{frozen ? 'Freeze Active' : 'Freeze Request'}</p>
+            {frozen ? (
+              <button
+                onClick={handleUnfreeze}
+                disabled={freezing}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {freezing ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />}
+                Lift Freeze
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={freezeNote}
+                  onChange={e => setFreezeNote(e.target.value)}
+                  placeholder="Reason for freeze…"
+                  className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-red-200"
+                />
+                <button
+                  onClick={handleFreeze}
+                  disabled={freezing || !freezeNote.trim()}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {freezing ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
+                  Freeze
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Comment */}
+          <div className="p-3 rounded-xl border border-border/50 bg-muted/10 space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-foreground/60">ICC Comment</p>
+            <div className="flex gap-2">
+              <input
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Leave an observation note…"
+                className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <button
+                onClick={handleComment}
+                disabled={posting || !comment.trim()}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
+                Post
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function IccOversightPage() {
+  const { user } = useAuth();
+  const [records, setRecords]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterType, setFilterType]   = useState('all');
+  const [showFrozenOnly, setShowFrozenOnly] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await reqAPI.getRequisitions({});
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      setRecords(list);
+    } catch (e) {
+      toast.error('Could not load records.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = records.filter(r => {
+    if (showFrozenOnly && !r.iccFrozen) return false;
+    if (filterStatus !== 'all' && r.status?.toLowerCase() !== filterStatus) return false;
+    if (filterType !== 'all') {
+      const t = (r.type || '').toLowerCase();
+      if (filterType === 'cash' && !t.includes('cash')) return false;
+      if (filterType === 'material' && !t.includes('material')) return false;
+      if (filterType === 'memo' && !t.includes('memo')) return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        (r.title || r.description || '').toLowerCase().includes(q) ||
+        (r.department || r.departmentName || '').toLowerCase().includes(q) ||
+        (r.refCode || '').toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const frozenCount = records.filter(r => r.iccFrozen).length;
+
+  return (
+    <div className="min-h-screen bg-[#FAF9F6] p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-indigo-600/10 border border-indigo-200">
+            <ScanEye size={20} className="text-indigo-600" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-foreground">Oversight Console</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">ICC — Global observer view of all system requests</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {frozenCount > 0 && (
+            <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1.5">
+              <Lock size={10} /> {frozenCount} frozen
+            </span>
+          )}
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 text-xs font-bold hover:bg-muted transition-all disabled:opacity-50"
+          >
+            <RefreshCcw size={13} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Total', value: records.length, color: 'text-foreground' },
+          { label: 'Pending', value: records.filter(r => r.status === 'pending').length, color: 'text-amber-600' },
+          { label: 'Approved', value: records.filter(r => r.status === 'approved' || r.finalApprovalStatus === 'treated').length, color: 'text-emerald-600' },
+          { label: 'Frozen', value: frozenCount, color: 'text-red-600' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="bg-white rounded-2xl border border-border/50 p-4">
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{label}</p>
+            <p className={`text-2xl font-black mt-1 ${color}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by title, dept, ref code…"
+            className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-border/50 rounded-xl outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+        <select
+          value={filterStatus}
+          onChange={e => setFilterStatus(e.target.value)}
+          className="text-xs bg-white border border-border/50 rounded-xl px-3 py-2 outline-none"
+        >
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="draft">Draft</option>
+        </select>
+        <select
+          value={filterType}
+          onChange={e => setFilterType(e.target.value)}
+          className="text-xs bg-white border border-border/50 rounded-xl px-3 py-2 outline-none"
+        >
+          <option value="all">All Types</option>
+          <option value="cash">Cash</option>
+          <option value="material">Material</option>
+          <option value="memo">Memo</option>
+        </select>
+        <button
+          onClick={() => setShowFrozenOnly(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${showFrozenOnly ? 'bg-red-600 text-white border-red-600' : 'bg-white border-border/50 text-muted-foreground hover:border-red-300 hover:text-red-600'}`}
+        >
+          <Lock size={11} /> Frozen only
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="text-sm font-medium">Loading all records…</span>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+          <ScanEye size={36} className="text-muted-foreground/30" />
+          <p className="text-sm font-bold text-muted-foreground">No records match your filters</p>
+          <p className="text-xs text-muted-foreground/70">Try adjusting filters or refresh to load latest data</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+            {filtered.length} record{filtered.length !== 1 ? 's' : ''} — click to expand ICC actions
+          </p>
+          {filtered.map(req => (
+            <RequestRow key={req.id || req.clientId} req={req} onRefresh={load} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

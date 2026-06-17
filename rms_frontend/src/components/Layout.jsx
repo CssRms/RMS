@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Menu, Inbox, Clock, WifiOff, RefreshCcw,
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
   HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch,
-  Package, AlertTriangle
+  Package, AlertTriangle, ScanEye
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord, getDepartments } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
@@ -1012,6 +1012,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
   const isStoreDept = /\bstore\b/i.test(user?.name || '') || /\bstore\b/i.test(user?.parentDeptName || '');
+  const isIccDept   = /\bicc\b|internal.*control|control.*compliance/i.test(user?.name || '');
   const showHRPortal     = (user?.role === 'hr' || user?.role === 'global_admin' || isHRDept) && hrPortalEnabled;
   const showStoreRecords = (user?.role === 'global_admin' || isStoreDept) && storeRecordsEnabled;
 
@@ -1110,6 +1111,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               )}
               {showStoreRecords && (
                 <SidebarItem icon={Package} label="Store Records" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} isCollapsed={isCollapsed} />
+              )}
+              {isIccDept && (
+                <SidebarItem icon={ScanEye} label="Oversight" active={currentView === 'icc_oversight'} onClick={() => onViewChange('icc_oversight')} isCollapsed={isCollapsed} />
               )}
             </div>
 

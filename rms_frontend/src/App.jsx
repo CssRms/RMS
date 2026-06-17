@@ -63,6 +63,9 @@ const MyActivity = React.lazy(() => import('./components/MyActivity'))
 // ── Store Records ──────────────────────────────────────────────────────────────
 const StoreRecordsPage = React.lazy(() => import('./components/StoreRecordsPage'))
 
+// ── ICC Oversight Console ───────────────────────────────────────────────────────
+const IccOversightPage = React.lazy(() => import('./components/IccOversightPage'))
+
 // ── HR Portal modules ──────────────────────────────────────────────────────────
 const HRDashboard = React.lazy(() => import('./components/HRDashboard'))
 const EmployeeDirectory = React.lazy(() => import('./components/EmployeeDirectory'))
@@ -198,7 +201,9 @@ const VALID_VIEWS = [
   // HR Portal views
   'hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment',
   // Store Records
-  'store_records'
+  'store_records',
+  // ICC Oversight
+  'icc_oversight'
 ];
 
 const getViewFromHash = () => {
@@ -308,12 +313,15 @@ const AppContent = () => {
   // HR department users log in with role='department' — detect them by name
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
   const isStoreDept = /\bstore\b/i.test(user?.name || '') || /\bstore\b/i.test(user?.parentDeptName || '');
+  const isIccDept   = /\bicc\b|internal.*control|control.*compliance/i.test(user?.name || '');
   const canAccessHR    = user.role === 'hr' || user.role === 'global_admin' || isHRDept;
   const canAccessAdmin = user.role === 'global_admin';
   const canAccessStore = user.role === 'global_admin' || isStoreDept;
+  const canAccessIcc   = user.role === 'global_admin' || isIccDept;
   const activeView = (isAdminView && !canAccessAdmin) ? 'dashboard'
     : (isHRView && !canAccessHR) ? 'dashboard'
     : (currentView === 'store_records' && !canAccessStore) ? 'dashboard'
+    : (currentView === 'icc_oversight' && !canAccessIcc) ? 'dashboard'
     : currentView;
 
   const views = {
@@ -335,6 +343,8 @@ const AppContent = () => {
     ),
     // Store Records
     store_records: <StoreRecordsPage onViewChange={navigate} />,
+    // ICC Oversight Console
+    icc_oversight: <IccOversightPage onViewChange={navigate} />,
     // HR Portal
     hr_dashboard:   <HRDashboard onViewChange={navigate} />,
     hr_employees:   <EmployeeDirectory onViewChange={navigate} />,
