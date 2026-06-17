@@ -213,6 +213,22 @@ function subPrivilegeCoversCash(user, effectiveAmount) {
 // ── ICC helpers ───────────────────────────────────────────────────────────────
 const isIccDept = (name) => /\bicc\b|internal.*control|control.*compliance/i.test(name || '');
 
+// ICC is a global observer — it must be notified of every request and every
+// movement/routing event system-wide, not just ones it's directly involved in.
+// Cached briefly since the ICC department record rarely changes.
+let _iccDeptIdCache = null;
+let _iccDeptIdCacheAt = 0;
+async function getIccDeptId() {
+  if (_iccDeptIdCache != null && Date.now() - _iccDeptIdCacheAt < 5 * 60_000) return _iccDeptIdCache;
+  try {
+    const depts = await prisma.department.findMany({ where: { isSubAccount: false }, select: { id: true, name: true } });
+    const icc = depts.find(d => isIccDept(d.name));
+    _iccDeptIdCache = icc?.id ?? null;
+    _iccDeptIdCacheAt = Date.now();
+  } catch (_) { _iccDeptIdCache = null; }
+  return _iccDeptIdCache;
+}
+
 // ── Reference Code Generator ──────────────────────────────────────────────────
 const deriveCode = (name) => {
   const words = (name || '').trim().split(/[\s&\/,\-]+/).filter(w => w.length > 1);
@@ -843,6 +859,9 @@ async function canReadRequisition(requisition, user) {
 async function broadcastPushToInvolved(reqId, payload) {
   try {
     const deptIds = await getInvolvedDeptIds(reqId);
+    // ICC is a global observer — always notified, even when not otherwise involved
+    const iccDeptId = await getIccDeptId();
+    if (iccDeptId != null) deptIds.add(iccDeptId);
     const ids = [...deptIds];
     if (ids.length === 0) return;
 
@@ -3485,6 +3504,14 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
             const targetDeptForEmail = _targetDepartmentId
               ? await prisma.department.findUnique({ where: { id: _targetDepartmentId } })
               : null;
+
+            // Real-time SSE + in-app/push notification — ICC (global observer) always included
+            broadcastUpdate(_created.id, { action: 'created', fromDept: originDept?.name || 'Department', toDept: targetDeptForEmail?.name });
+            broadcastPushToInvolved(_created.id, {
+              title: _isMemoPayload ? 'New Memo Submitted' : 'New Requisition Submitted',
+              body: `${originDept?.name || 'A department'} submitted "${_created.title}"${targetDeptForEmail ? ` → ${targetDeptForEmail.name}` : ''}`,
+              url: `/?req=${_created.id}`
+            });
             await notifyDepartmentHead({
               departmentId: _originDeptId,
               requisition: { ..._created, department: originDept || null },
