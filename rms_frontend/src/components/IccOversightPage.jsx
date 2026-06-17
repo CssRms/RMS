@@ -177,7 +177,13 @@ export default function IccOversightPage() {
     setLoading(true);
     try {
       const data = await reqAPI.getRequisitions({});
-      const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      const raw = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      // Flatten nested objects so JSX never tries to render an object directly
+      const list = raw.map(r => ({
+        ...r,
+        department: r.department?.name || (typeof r.department === 'string' ? r.department : null) || r.departmentName || '—',
+        targetDepartmentName: r.targetDepartment?.name || (typeof r.targetDepartment === 'string' ? r.targetDepartment : null) || r.targetDepartmentName || null,
+      }));
       setRecords(list);
     } catch (e) {
       toast.error('Could not load records.');
