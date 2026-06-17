@@ -1012,6 +1012,11 @@ const checkDeptReadiness = async (deptId) => {
   // Super Admin and Chairman/CEO depts are always ready
   if (dept.name === 'Super Admin' || /ceo|chairman/i.test(dept.name)) return { ready: true };
 
+  // Respect the require_governance_setup system setting — if disabled, skip profile checks
+  const govSetting = await prisma.systemSetting.findUnique({ where: { key: 'require_governance_setup' } });
+  const governanceRequired = (govSetting?.value ?? 'true') !== 'false';
+  if (!governanceRequired) return { ready: true };
+
   // Only block if the department has never filled in ANY profile info at all
   if (!dept.headName) {
     return {
