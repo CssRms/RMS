@@ -14,10 +14,28 @@ const statusColor = (s) => {
   if (!s) return 'bg-muted text-muted-foreground';
   const l = s.toLowerCase();
   if (l === 'approved' || l === 'treated' || l === 'published') return 'bg-emerald-100 text-emerald-700';
-  if (l === 'rejected') return 'bg-red-100 text-red-700';
+  if (l === 'rejected' || l === 'frozen') return 'bg-red-100 text-red-700';
   if (l === 'pending') return 'bg-amber-100 text-amber-700';
+  if (l === 'partial payment' || l === 'partial') return 'bg-orange-100 text-orange-700';
+  if (l === 'vetting') return 'bg-purple-100 text-purple-700';
   if (l === 'draft') return 'bg-muted text-muted-foreground';
   return 'bg-sky-100 text-sky-700';
+};
+
+// Material requests only: the Requisition's `status` column never changes once a
+// request enters the vetting/treatment flow (it stays "pending") — the real state
+// lives in finalApprovalStatus / iccFrozen instead. Cash/fund requests are untouched —
+// their status display already works correctly and must not be altered.
+const effectiveStatusLabel = (detail) => {
+  if (!/^material/i.test(detail?.type || '')) return detail?.status || '—';
+  if (detail.iccFrozen) return 'Frozen';
+  const fas = detail.finalApprovalStatus;
+  if (fas === 'treated')   return 'Treated';
+  if (fas === 'partial')   return 'Partial Payment';
+  if (fas === 'published') return 'Published';
+  if (fas === 'vetting')   return 'Vetting';
+  if (fas === 'approved')  return 'Approved';
+  return detail.status || '—';
 };
 
 const typeIcon = (type) => {
@@ -284,10 +302,16 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-lg font-black text-foreground">{fmt(hasAuditOverride && detail.auditAmount != null ? detail.auditAmount : detail.amount)}</p>
-              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${statusColor(detail.status)}`}>{detail.status || '—'}</span>
-            </div>
+            {(() => {
+              const effAmt = hasAuditOverride && detail.auditAmount != null ? detail.auditAmount : detail.amount;
+              const label = effectiveStatusLabel(detail);
+              return (
+                <div className="text-right">
+                  {Number(effAmt) > 0 && <p className="text-lg font-black text-foreground">{fmt(effAmt)}</p>}
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${statusColor(label)}`}>{label}</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Two-column body — left: content, right: status/chains, matching the main detail page pattern */}
@@ -508,8 +532,10 @@ const RequestListRow = ({ req, onOpen }) => (
       </div>
     </div>
     <div className="flex items-center gap-2 shrink-0">
-      {req.amount != null && <span className="text-xs font-bold text-foreground">{fmt(req.amount)}</span>}
-      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${statusColor(req.status)}`}>{req.status || '—'}</span>
+      {Number(req.amount) > 0 && <span className="text-xs font-bold text-foreground">{fmt(req.amount)}</span>}
+      {(() => { const label = effectiveStatusLabel(req); return (
+        <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${statusColor(label)}`}>{label}</span>
+      ); })()}
     </div>
   </button>
 );
