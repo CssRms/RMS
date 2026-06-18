@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { reqAPI } from '../lib/api';
 import { iccFreeze, iccUnfreeze, iccComment } from '../lib/store';
+import { ProcessingChain } from './RequisitionsPage';
 import { toast } from 'react-hot-toast';
 import {
   ScanEye, RefreshCcw, Lock, Unlock, MessageSquare, ChevronLeft,
   Loader2, Search, CheckCircle2, XCircle, FileText, Package,
-  Banknote, ArrowRight, Shield, Eye, GitBranch, Clock, Gavel, Paperclip
+  Banknote, ArrowRight, Shield, Eye, Clock, Gavel, Paperclip,
+  AlertTriangle, Award, ShieldCheck
 } from 'lucide-react';
 
 const statusColor = (s) => {
@@ -27,87 +29,6 @@ const typeIcon = (type) => {
 
 const fmt  = (n) => n != null ? `₦${Number(n).toLocaleString()}` : '—';
 const fmtDate = (d) => d ? new Date(d).toLocaleString('en-NG', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-
-// ── Trail timeline ────────────────────────────────────────────────────────────
-const TrailDot = ({ color = 'bg-muted-foreground', children }) => (
-  <div className="flex gap-3 items-start">
-    <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${color}`} />
-    <div className="flex-1 min-w-0">{children}</div>
-  </div>
-);
-
-const buildTrail = (detail) => {
-  if (!detail) return [];
-  const events = [];
-
-  events.push({
-    at: detail.createdAt,
-    dot: 'bg-primary',
-    label: 'Submitted',
-    sub: `By ${detail.department?.name || detail.departmentName || '—'}`,
-    extra: detail.targetDepartment?.name ? `→ Sent directly to ${detail.targetDepartment.name}` : null,
-  });
-
-  (detail.forwardEvents || []).forEach(fe => {
-    events.push({
-      at: fe.createdAt,
-      dot: 'bg-indigo-400',
-      label: `Forwarded`,
-      sub: `${fe.fromDepartment?.name || '—'} → ${fe.toDepartment?.name || '—'}`,
-      extra: fe.note || null,
-    });
-  });
-
-  (detail.approvals || []).forEach(ap => {
-    const approved = ap.action?.toLowerCase() === 'approve' || ap.action?.toLowerCase() === 'approved';
-    const rejected = ap.action?.toLowerCase() === 'reject'  || ap.action?.toLowerCase() === 'rejected';
-    events.push({
-      at: ap.createdAt,
-      dot: approved ? 'bg-emerald-500' : rejected ? 'bg-red-500' : 'bg-amber-400',
-      label: `${ap.stage?.name || 'Stage'} — ${(ap.action || '').toUpperCase()}`,
-      sub: `By ${ap.user?.name || '—'}`,
-      extra: ap.note || null,
-    });
-  });
-
-  (detail.vettingEvents || []).forEach(ve => {
-    const isIccEvent = /^icc_/i.test(ve.action || '');
-    const passed = /pass|approv/i.test(ve.action || '');
-    const failed = /fail|reject/i.test(ve.action || '');
-    events.push({
-      at: ve.createdAt,
-      dot: isIccEvent ? 'bg-indigo-500' : passed ? 'bg-emerald-500' : failed ? 'bg-red-500' : 'bg-purple-400',
-      label: isIccEvent
-        ? `ICC — ${(ve.action || '').replace(/^icc_/i, '').toUpperCase()}`
-        : `Vetting — ${(ve.action || ve.status || '').toUpperCase()}`,
-      sub: ve.deptName || ve.performedBy || '—',
-      extra: ve.comment || ve.note || null,
-    });
-  });
-
-  if (detail.finalApprovalStatus && detail.finalApprovalStatus !== 'none') {
-    const treated = detail.finalApprovalStatus === 'treated';
-    events.push({
-      at: detail.finalApprovedAt || detail.treatedAt,
-      dot: treated ? 'bg-emerald-600' : 'bg-red-600',
-      label: treated ? 'Final Approval — TREATED' : `Final: ${detail.finalApprovalStatus.toUpperCase()}`,
-      sub: detail.finalApprovedNote || '',
-      extra: null,
-    });
-  }
-
-  if (detail.iccFrozen) {
-    events.push({
-      at: detail.iccFreezeAt,
-      dot: 'bg-red-600',
-      label: '🔒 Frozen by ICC',
-      sub: `By ${detail.iccFreezeBy || 'ICC'}`,
-      extra: detail.iccFreezeNote || null,
-    });
-  }
-
-  return events.sort((a, b) => (a.at || '') < (b.at || '') ? 1 : -1);
-};
 
 // ── Itemized table renderer (shared by creator's table and audit-override table) ──
 const ItemsTable = ({ items, total, comment, variant = 'default' }) => {
@@ -149,6 +70,105 @@ const ItemsTable = ({ items, total, comment, variant = 'default' }) => {
       </table>
     </div>
   );
+};
+
+// ── Current Status panel — same colored-box pattern used across the app ──────
+const CurrentStatusPanel = ({ detail }) => {
+  if (detail.iccFrozen) {
+    return (
+      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-red-700">
+        <Lock size={16} />
+        <span className="text-xs font-bold">Frozen by ICC</span>
+      </div>
+    );
+  }
+  const fas = detail.finalApprovalStatus;
+  if (fas === 'vetting') {
+    return (
+      <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center gap-2 text-purple-700">
+        <Award size={16} />
+        <span className="text-xs font-bold">Under Vetting</span>
+      </div>
+    );
+  }
+  if (fas === 'partial') {
+    const paid = Number(detail.amountDisbursed || 0);
+    const hasReqAmt = Number(detail.amount || 0) > 0;
+    const effAmt = (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount || 0);
+    return (
+      <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 space-y-1.5">
+        <div className="flex items-center gap-2 text-orange-700">
+          <AlertTriangle size={16} />
+          <span className="text-xs font-bold">Partial Payment — Balance Pending</span>
+        </div>
+        {hasReqAmt ? (
+          <div className="text-[10px] text-orange-700/80 font-semibold pl-6">
+            Paid: ₦{paid.toLocaleString()} of ₦{effAmt.toLocaleString()} {detail.hasAuditOverride ? 'verified' : 'requested'}
+            {' — '}Balance: ₦{(effAmt - paid).toLocaleString()}
+          </div>
+        ) : paid > 0 && (
+          <div className="text-[10px] text-orange-700/80 font-semibold pl-6">Total paid so far — ₦{paid.toLocaleString()}</div>
+        )}
+      </div>
+    );
+  }
+  if (fas === 'treated') {
+    return (
+      <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center gap-2 text-teal-700">
+        <CheckCircle2 size={16} />
+        <span className="text-xs font-bold">Fully Treated</span>
+      </div>
+    );
+  }
+  if (fas === 'published') {
+    return (
+      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-700">
+        <ShieldCheck size={16} />
+        <span className="text-xs font-bold">Published</span>
+      </div>
+    );
+  }
+  if (fas === 'approved') {
+    return (
+      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2 text-emerald-700">
+        <ShieldCheck size={16} />
+        <span className="text-xs font-bold">Finally Approved – Pending Vetting</span>
+      </div>
+    );
+  }
+  if (detail.status === 'rejected') {
+    return (
+      <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center gap-2 text-destructive">
+        <AlertTriangle size={16} />
+        <span className="text-xs font-bold">Rejected</span>
+      </div>
+    );
+  }
+  if (detail.status === 'pending') {
+    return (
+      <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center gap-2 text-blue-700">
+        <Clock size={16} />
+        <span className="text-xs font-bold">{detail.targetDepartment?.name || 'Department'} Review</span>
+      </div>
+    );
+  }
+  return (
+    <div className="p-3 rounded-xl bg-muted/40 border border-border/40 flex items-center gap-2 text-muted-foreground">
+      <Clock size={16} />
+      <span className="text-xs font-bold">{detail.status || 'Unknown'}</span>
+    </div>
+  );
+};
+
+// ── Vetting Chain entry — pill-badge style matching the main detail page ─────
+const vettingBadge = (action) => {
+  const a = (action || '').toLowerCase();
+  if (a === 'treated')           return { text: 'Fully Treated',  color: 'bg-teal-100 text-teal-700',     icon: CheckCircle2, dot: 'bg-teal-500' };
+  if (a === 'partial' || /partial/.test(a)) return { text: 'Partial Payment', color: 'bg-orange-100 text-orange-700', icon: AlertTriangle, dot: 'bg-orange-500' };
+  if (a === 'return')            return { text: 'Returned',       color: 'bg-amber-100 text-amber-700',   icon: XCircle,      dot: 'bg-amber-500' };
+  if (a === 'forward')           return { text: 'Forwarded',      color: 'bg-blue-100 text-blue-700',     icon: CheckCircle2, dot: 'bg-blue-500' };
+  if (a === 'sent_to_vetting')   return { text: 'Vetting Started', color: 'bg-indigo-100 text-indigo-700', icon: CheckCircle2, dot: 'bg-indigo-500' };
+  return { text: (action || '?').toUpperCase(), color: 'bg-purple-100 text-purple-700', icon: Clock, dot: 'bg-purple-500' };
 };
 
 // ── Full detail view (replaces the list when a request is opened) ────────────
@@ -211,8 +231,6 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
     finally { setFreezing(false); }
   };
 
-  const trail = buildTrail(detail);
-
   // Parse itemized content + audit override
   const parsedContent = (() => {
     if (!detail?.content) return null;
@@ -222,6 +240,10 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
   const auditParsed = hasAuditOverride
     ? (() => { try { return JSON.parse(detail.auditContent); } catch { return null; } })()
     : null;
+
+  const vettingOnly = (detail?.vettingEvents || []).filter(ve => !/^icc_/i.test(ve.action || ''));
+  const iccOnly      = (detail?.vettingEvents || []).filter(ve => /^icc_/i.test(ve.action || ''));
+  const forwardEvents = [...(detail?.forwardEvents || [])].reverse();
 
   return (
     <div className="space-y-5">
@@ -262,191 +284,190 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
             </div>
           </div>
 
-          <div className="p-5 space-y-6">
-            {/* Description / brief */}
-            {detail.description && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em] flex items-center gap-1.5"><FileText size={11} /> Requisition Brief</p>
-                <p className="text-sm font-medium text-foreground leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40">{detail.description}</p>
-              </div>
-            )}
-
-            {/* Itemized table(s) */}
-            {parsedContent?.itemized && Array.isArray(parsedContent.items) && parsedContent.items.length > 0 && (
-              <div className="space-y-4">
+          {/* Two-column body — left: content, right: status/chains, matching the main detail page pattern */}
+          <div className="grid lg:grid-cols-3 gap-6 p-5">
+            {/* Left column — content */}
+            <div className="lg:col-span-2 space-y-6">
+              {detail.description && (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <Paperclip size={12} className="text-primary" />
-                    <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em]">{hasAuditOverride ? "Creator's Estimate (Original)" : 'Item Details'}</p>
-                    {hasAuditOverride && <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-muted border border-border text-muted-foreground uppercase">For Reference</span>}
-                  </div>
-                  <ItemsTable items={parsedContent.items} total={parsedContent.total} comment={parsedContent.comment} variant={hasAuditOverride ? 'muted' : 'default'} />
+                  <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em] flex items-center gap-1.5"><FileText size={11} /> Requisition Brief</p>
+                  <p className="text-sm font-medium text-foreground leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40">{detail.description}</p>
                 </div>
+              )}
 
-                {hasAuditOverride && auditParsed?.items?.length > 0 && (
+              {parsedContent?.itemized && Array.isArray(parsedContent.items) && parsedContent.items.length > 0 && (
+                <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5">
-                      <Gavel size={12} className="text-purple-600" />
-                      <p className="text-[10px] font-black text-purple-800 uppercase tracking-[0.15em]">Audit Verified Amount</p>
-                      <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Effective for Approval & Payment</span>
+                      <Paperclip size={12} className="text-primary" />
+                      <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em]">{hasAuditOverride ? "Creator's Estimate (Original)" : 'Item Details'}</p>
+                      {hasAuditOverride && <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-muted border border-border text-muted-foreground uppercase">For Reference</span>}
                     </div>
-                    {detail.auditDeptName && <p className="text-[10px] text-purple-600/80">Verified by: <span className="font-bold">{detail.auditDeptName}</span></p>}
-                    <ItemsTable items={auditParsed.items} total={auditParsed.total} comment={auditParsed.comment} variant="audit" />
+                    <ItemsTable items={parsedContent.items} total={parsedContent.total} comment={parsedContent.comment} variant={hasAuditOverride ? 'muted' : 'default'} />
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* Non-itemized material description */}
-            {parsedContent && !parsedContent.itemized && parsedContent.description && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em]">Material Description</p>
-                <p className="text-sm text-foreground leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40 whitespace-pre-wrap">{parsedContent.description}</p>
-              </div>
-            )}
+                  {hasAuditOverride && auditParsed?.items?.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <Gavel size={12} className="text-purple-600" />
+                        <p className="text-[10px] font-black text-purple-800 uppercase tracking-[0.15em]">Audit Verified Amount</p>
+                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Effective for Approval &amp; Payment</span>
+                      </div>
+                      {detail.auditDeptName && <p className="text-[10px] text-purple-600/80">Verified by: <span className="font-bold">{detail.auditDeptName}</span></p>}
+                      <ItemsTable items={auditParsed.items} total={auditParsed.total} comment={auditParsed.comment} variant="audit" />
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* Processing Trail */}
-            <div className="space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><GitBranch size={11} /> Processing Trail</p>
-              {trail.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">No trail events yet.</p>
-              ) : (
-                <div className="space-y-3 pl-1">
-                  {trail.map((ev, i) => (
-                    <TrailDot key={i} color={ev.dot}>
-                      <p className="text-xs font-bold text-foreground leading-tight">{ev.label}</p>
-                      {ev.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{ev.sub}</p>}
-                      {ev.extra && <p className="text-[10px] text-primary/70 mt-0.5 italic">"{ev.extra}"</p>}
-                      {ev.at && <p className="text-[9px] text-muted-foreground/50 mt-0.5">{fmtDate(ev.at)}</p>}
-                    </TrailDot>
-                  ))}
+              {parsedContent && !parsedContent.itemized && parsedContent.description && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em]">Material Description</p>
+                  <p className="text-sm text-foreground leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40 whitespace-pre-wrap">{parsedContent.description}</p>
+                </div>
+              )}
+
+              {/* Approval Chain — Cash workflow approvals, when present */}
+              {(detail.approvals || []).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em] flex items-center gap-1.5"><Shield size={11} /> Approval Trail</p>
+                  <div className="space-y-2">
+                    {detail.approvals.map((ap, i) => {
+                      const approved = /approv/i.test(ap.action);
+                      const rejected = /reject/i.test(ap.action);
+                      return (
+                        <div key={i} className={`flex items-start gap-3 p-2.5 rounded-xl border text-xs ${approved ? 'border-emerald-200 bg-emerald-50/50' : rejected ? 'border-red-200 bg-red-50/50' : 'border-border/50 bg-muted/20'}`}>
+                          <div className={`mt-0.5 shrink-0 ${approved ? 'text-emerald-500' : rejected ? 'text-red-500' : 'text-amber-500'}`}>
+                            {approved ? <CheckCircle2 size={14} /> : rejected ? <XCircle size={14} /> : <Clock size={14} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-foreground">{ap.stage?.name || 'Stage'}</p>
+                            <p className="text-muted-foreground text-[10px]">{ap.user?.name || '—'} · {fmtDate(ap.createdAt)}</p>
+                            {ap.note && <p className="text-[10px] italic text-foreground/60 mt-0.5">"{ap.note}"</p>}
+                          </div>
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${approved ? 'bg-emerald-100 text-emerald-700' : rejected ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{ap.action}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Current State */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-muted/10 border border-border/40">
-              {[
-                { label: 'Status',          value: detail.status },
-                { label: 'Current Stage',   value: detail.currentStage?.name || (detail.currentStageId ? `Stage #${detail.currentStageId}` : 'N/A') },
-                { label: 'Final Approval',  value: detail.finalApprovalStatus || 'Pending' },
-                { label: 'Vetting Status',  value: detail.currentVettingDeptId ? 'In Vetting' : (detail.treatedByDeptId ? 'Completed' : '—') },
-                { label: 'Origin Dept',     value: detail.department?.name || reqSummary.department },
-                { label: 'Target Dept',     value: detail.targetDepartment?.name || reqSummary.targetDepartmentName || '—' },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">{label}</p>
-                  <p className="text-xs font-semibold text-foreground mt-0.5">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Approval Chain */}
-            {(detail.approvals || []).length > 0 && (
+            {/* Right column — Current Status, Vetting Chain, ICC Observation Log, Processing Chain */}
+            <div className="lg:col-span-1 space-y-5">
               <div className="space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><Shield size={11} /> Approval Chain</p>
-                <div className="space-y-2">
-                  {detail.approvals.map((ap, i) => {
-                    const approved = /approv/i.test(ap.action);
-                    const rejected = /reject/i.test(ap.action);
-                    return (
-                      <div key={i} className={`flex items-start gap-3 p-2.5 rounded-xl border text-xs ${approved ? 'border-emerald-200 bg-emerald-50/50' : rejected ? 'border-red-200 bg-red-50/50' : 'border-border/50 bg-muted/20'}`}>
-                        <div className={`mt-0.5 shrink-0 ${approved ? 'text-emerald-500' : rejected ? 'text-red-500' : 'text-amber-500'}`}>
-                          {approved ? <CheckCircle2 size={14} /> : rejected ? <XCircle size={14} /> : <Clock size={14} />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-foreground">{ap.stage?.name || 'Stage'}</p>
-                          <p className="text-muted-foreground text-[10px]">{ap.user?.name || '—'} · {fmtDate(ap.createdAt)}</p>
-                          {ap.note && <p className="text-[10px] italic text-foreground/60 mt-0.5">"{ap.note}"</p>}
-                        </div>
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${approved ? 'bg-emerald-100 text-emerald-700' : rejected ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{ap.action}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Current Status</p>
+                <CurrentStatusPanel detail={detail} />
               </div>
-            )}
 
-            {/* Vetting Chain — Account's pre-approval review/treatment only, never ICC oversight actions */}
-            {(detail.vettingEvents || []).filter(ve => !/^icc_/i.test(ve.action || '')).length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><Eye size={11} /> Vetting Chain</p>
+              {vettingOnly.length > 0 && (
                 <div className="space-y-2">
-                  {detail.vettingEvents.filter(ve => !/^icc_/i.test(ve.action || '')).map((ve, i) => {
-                    const passed = /pass|approv/i.test(ve.action || ve.status || '');
-                    const failed = /fail|reject/i.test(ve.action || ve.status || '');
-                    return (
-                      <div key={i} className={`flex items-start gap-3 p-2.5 rounded-xl border text-xs ${passed ? 'border-emerald-200 bg-emerald-50/50' : failed ? 'border-red-200 bg-red-50/50' : 'border-purple-200 bg-purple-50/50'}`}>
-                        <div className={`mt-0.5 shrink-0 ${passed ? 'text-emerald-500' : failed ? 'text-red-500' : 'text-purple-500'}`}>
-                          {passed ? <CheckCircle2 size={14} /> : failed ? <XCircle size={14} /> : <Clock size={14} />}
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Vetting Chain</p>
+                    <div className="w-5 h-5 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-600 text-[9px] font-bold">{vettingOnly.length}</div>
+                  </div>
+                  <div className="space-y-2">
+                    {[...vettingOnly].reverse().map((ve, i) => {
+                      const badge = vettingBadge(ve.action);
+                      return (
+                        <div key={i} className="flex gap-2.5 p-3 rounded-xl border border-border/30 bg-white shadow-sm">
+                          <div className={`w-6 h-6 rounded-full ${badge.dot} flex items-center justify-center shrink-0 mt-0.5 shadow-sm`}>
+                            <badge.icon size={11} className="text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              <span className="text-[11px] font-black text-foreground">{ve.deptName || '—'}</span>
+                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.text}</span>
+                            </div>
+                            {ve.comment && <p className="text-[10px] text-muted-foreground leading-relaxed">"{ve.comment}"</p>}
+                            <p className="text-[8px] text-muted-foreground/50 mt-1 font-mono">{fmtDate(ve.createdAt)}</p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-foreground">{ve.deptName || ve.performedBy || '—'}</p>
-                          <p className="text-muted-foreground text-[10px]">{fmtDate(ve.createdAt)}</p>
-                          {(ve.comment || ve.note) && <p className="text-[10px] italic text-foreground/60 mt-0.5">"{ve.comment || ve.note}"</p>}
-                        </div>
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${passed ? 'bg-emerald-100 text-emerald-700' : failed ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'}`}>{ve.action || ve.status || '?'}</span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ICC Observation Log — freeze/comment/unfreeze history, kept separate from Vetting Chain */}
-            {(detail.vettingEvents || []).filter(ve => /^icc_/i.test(ve.action || '')).length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><Lock size={11} /> ICC Observation Log</p>
+              {iccOnly.length > 0 && (
                 <div className="space-y-2">
-                  {detail.vettingEvents.filter(ve => /^icc_/i.test(ve.action || '')).map((ve, i) => (
-                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-xl border border-indigo-200 bg-indigo-50/50 text-xs">
-                      <div className="mt-0.5 shrink-0 text-indigo-500"><Clock size={14} /></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-foreground">{ve.deptName || 'ICC'}</p>
-                        <p className="text-muted-foreground text-[10px]">{fmtDate(ve.createdAt)}</p>
-                        {(ve.comment || ve.note) && <p className="text-[10px] italic text-foreground/60 mt-0.5">"{ve.comment || ve.note}"</p>}
-                      </div>
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 bg-indigo-100 text-indigo-700">{(ve.action || '').replace(/^icc_/i, '')}</span>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">ICC Observation Log</p>
+                    <div className="w-5 h-5 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-600 text-[9px] font-bold">{iccOnly.length}</div>
+                  </div>
+                  <div className="space-y-2">
+                    {[...iccOnly].reverse().map((ve, i) => {
+                      const isFreeze = ve.action === 'icc_freeze';
+                      const isUnfreeze = ve.action === 'icc_unfreeze';
+                      const badgeText = isFreeze ? '🔒 ICC Freeze' : isUnfreeze ? '🔓 ICC Unfrozen' : 'ICC Comment';
+                      const badgeColor = isFreeze ? 'bg-red-100 text-red-700' : isUnfreeze ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700';
+                      const iconColor = isFreeze ? 'bg-red-500' : isUnfreeze ? 'bg-emerald-500' : 'bg-indigo-500';
+                      return (
+                        <div key={i} className="flex gap-2.5 p-3 rounded-xl border border-indigo-200/60 bg-indigo-50/40 shadow-sm">
+                          <div className={`w-6 h-6 rounded-full ${iconColor} flex items-center justify-center shrink-0 mt-0.5 shadow-sm`}>
+                            <Eye size={11} className="text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              <span className="text-[11px] font-black text-foreground">{ve.deptName || 'ICC'}</span>
+                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${badgeColor}`}>{badgeText}</span>
+                            </div>
+                            {ve.comment && <p className="text-[10px] text-muted-foreground leading-relaxed">"{ve.comment}"</p>}
+                            <p className="text-[8px] text-muted-foreground/50 mt-1 font-mono">{fmtDate(ve.createdAt)}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {forwardEvents.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">Processing Chain</p>
+                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[9px] font-bold">{forwardEvents.length}</div>
+                  </div>
+                  <ProcessingChain events={forwardEvents} />
+                </div>
+              )}
+
+              {/* ICC Actions */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em] flex items-center gap-1.5"><Lock size={11} /> ICC Actions</p>
+
+                <div className={`p-3 rounded-xl border space-y-2 ${frozen ? 'border-red-200 bg-red-50' : 'border-border/50 bg-muted/10'}`}>
+                  <p className="text-[10px] font-bold text-foreground/60">{frozen ? `Frozen — ${detail.iccFreezeNote || 'No reason given'}` : 'Freeze this request'}</p>
+                  {frozen ? (
+                    <button onClick={handleUnfreeze} disabled={freezing}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all disabled:opacity-50">
+                      {freezing ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />} Lift Freeze
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input value={freezeNote} onChange={e => setFreezeNote(e.target.value)}
+                        placeholder="Reason for freeze…"
+                        className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-red-200" />
+                      <button onClick={handleFreeze} disabled={freezing || !freezeNote.trim()}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50">
+                        {freezing ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Freeze
+                      </button>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            )}
 
-            {/* ICC Actions */}
-            <div className="space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><Lock size={11} /> ICC Actions</p>
-
-              <div className={`p-3 rounded-xl border space-y-2 ${frozen ? 'border-red-200 bg-red-50' : 'border-border/50 bg-muted/10'}`}>
-                <p className="text-[10px] font-bold text-foreground/60">{frozen ? `Frozen — ${detail.iccFreezeNote || 'No reason given'}` : 'Freeze this request'}</p>
-                {frozen ? (
-                  <button onClick={handleUnfreeze} disabled={freezing}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all disabled:opacity-50">
-                    {freezing ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />} Lift Freeze
-                  </button>
-                ) : (
+                <div className="p-3 rounded-xl border border-border/50 bg-muted/10 space-y-2">
+                  <p className="text-[10px] font-bold text-foreground/60">Post ICC observation</p>
                   <div className="flex gap-2">
-                    <input value={freezeNote} onChange={e => setFreezeNote(e.target.value)}
-                      placeholder="Reason for freeze…"
-                      className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-red-200" />
-                    <button onClick={handleFreeze} disabled={freezing || !freezeNote.trim()}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50">
-                      {freezing ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Freeze
+                    <input value={comment} onChange={e => setComment(e.target.value)}
+                      placeholder="Leave an observation note…"
+                      className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20" />
+                    <button onClick={handleComment} disabled={posting || !comment.trim()}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all disabled:opacity-50">
+                      {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Post
                     </button>
                   </div>
-                )}
-              </div>
-
-              <div className="p-3 rounded-xl border border-border/50 bg-muted/10 space-y-2">
-                <p className="text-[10px] font-bold text-foreground/60">Post ICC observation</p>
-                <div className="flex gap-2">
-                  <input value={comment} onChange={e => setComment(e.target.value)}
-                    placeholder="Leave an observation note…"
-                    className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20" />
-                  <button onClick={handleComment} disabled={posting || !comment.trim()}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all disabled:opacity-50">
-                    {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Post
-                  </button>
                 </div>
               </div>
             </div>

@@ -77,7 +77,7 @@ function buildTimeline(approvals = [], currentStage = null, reqStatus = '') {
 }
 
 // ── Processing Chain Timeline (for inter-department forward/return) ──────
-const ProcessingChain = ({ events = [] }) => {
+export const ProcessingChain = ({ events = [] }) => {
   if (!events.length) return null;
 
   const actionConfig = {
