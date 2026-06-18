@@ -2325,8 +2325,14 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
               {isPartialMode && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 font-semibold">
                   <AlertTriangle size={12} className="shrink-0 text-orange-500" />
-                  Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid of ₦{reqAmount.toLocaleString()} requested.
-                  Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
+                  {hasAmount ? (
+                    <>
+                      Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid of ₦{reqAmount.toLocaleString()} requested.
+                      Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
+                    </>
+                  ) : (
+                    <>Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid.</>
+                  )}
                 </div>
               )}
 
