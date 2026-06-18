@@ -4875,7 +4875,9 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         where: { id: reqId },
         data: {
           finalApprovalStatus: isPartial ? 'partial' : 'treated',
-          amountDisbursed: reqAmount > 0 ? newTotalDisbursed : (disbursedThisAction != null ? disbursedThisAction : null),
+          // Cumulative total across all treatment actions so far — applies whether reqAmount
+          // is known (fund/cash) or not (material with manually-entered figures).
+          amountDisbursed: newTotalDisbursed > 0 ? newTotalDisbursed : null,
           treatmentType: resolvedTreatmentType,
           treatmentReason: resolvedTreatmentReason,
           treatedByDeptId: isFullyClosed ? (userDeptId || null) : undefined,
@@ -4890,7 +4892,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         const disbursedLine = disbursedThisAction != null
           ? (reqAmount > 0
               ? `Amount Disbursed: ₦${newTotalDisbursed.toLocaleString()} of ₦${reqAmount.toLocaleString()} requested`
-              : `Amount Recorded: ₦${disbursedThisAction.toLocaleString()}`)
+              : `Amount Recorded: ₦${disbursedThisAction.toLocaleString()} this action — ₦${newTotalDisbursed.toLocaleString()} total paid so far`)
           : null;
         const notifSubject = isPartial
           ? `⏳ Partial Payment Made — Req #${id}`

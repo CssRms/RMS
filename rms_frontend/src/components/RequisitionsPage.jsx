@@ -4205,8 +4205,10 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             badgeColor = 'bg-teal-100 text-teal-700';
                             iconColor  = 'bg-teal-500';
                           }
-                          const amtLine = disbAmt != null && reqAmt != null
-                            ? `Disbursed: ₦${disbAmt.toLocaleString()} of ₦${reqAmt.toLocaleString()} requested.`
+                          const amtLine = disbAmt != null
+                            ? (reqAmt != null
+                                ? `Disbursed: ₦${disbAmt.toLocaleString()} of ₦${reqAmt.toLocaleString()} requested.`
+                                : `Amount Recorded: ₦${disbAmt.toLocaleString()}.`)
                             : null;
                           const reasonLine = ev.treatmentReason ? `Reason: "${ev.treatmentReason}"` : null;
                           description = [
