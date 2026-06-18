@@ -161,14 +161,20 @@ const CurrentStatusPanel = ({ detail }) => {
 };
 
 // ── Vetting Chain entry — pill-badge style matching the main detail page ─────
-const vettingBadge = (action) => {
-  const a = (action || '').toLowerCase();
-  if (a === 'treated')           return { text: 'Fully Treated',  color: 'bg-teal-100 text-teal-700',     icon: CheckCircle2, dot: 'bg-teal-500' };
-  if (a === 'partial' || /partial/.test(a)) return { text: 'Partial Payment', color: 'bg-orange-100 text-orange-700', icon: AlertTriangle, dot: 'bg-orange-500' };
+// Takes the full VettingEvent — "treated" alone doesn't distinguish full vs partial;
+// that's carried in treatmentType, which was previously ignored, mislabeling every
+// partial payment as "Fully Treated".
+const vettingBadge = (ve) => {
+  const a = (ve.action || '').toLowerCase();
+  if (a === 'treated') {
+    if (ve.treatmentType === 'partial')  return { text: 'Partial Payment',     color: 'bg-orange-100 text-orange-700', icon: AlertTriangle, dot: 'bg-orange-500' };
+    if (ve.treatmentType === 'adjusted') return { text: 'Treated (Adjusted)',  color: 'bg-teal-100 text-teal-700',     icon: CheckCircle2,  dot: 'bg-teal-500' };
+    return { text: 'Fully Treated', color: 'bg-teal-100 text-teal-700', icon: CheckCircle2, dot: 'bg-teal-500' };
+  }
   if (a === 'return')            return { text: 'Returned',       color: 'bg-amber-100 text-amber-700',   icon: XCircle,      dot: 'bg-amber-500' };
   if (a === 'forward')           return { text: 'Forwarded',      color: 'bg-blue-100 text-blue-700',     icon: CheckCircle2, dot: 'bg-blue-500' };
   if (a === 'sent_to_vetting')   return { text: 'Vetting Started', color: 'bg-indigo-100 text-indigo-700', icon: CheckCircle2, dot: 'bg-indigo-500' };
-  return { text: (action || '?').toUpperCase(), color: 'bg-purple-100 text-purple-700', icon: Clock, dot: 'bg-purple-500' };
+  return { text: (ve.action || '?').toUpperCase(), color: 'bg-purple-100 text-purple-700', icon: Clock, dot: 'bg-purple-500' };
 };
 
 // ── Full detail view (replaces the list when a request is opened) ────────────
@@ -352,6 +358,46 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                   </div>
                 </div>
               )}
+
+              {/* ICC Actions */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em] flex items-center gap-1.5"><Lock size={11} /> ICC Actions</p>
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className={`p-3 rounded-xl border space-y-2 ${frozen ? 'border-red-200 bg-red-50' : 'border-border/50 bg-muted/10'}`}>
+                    <p className="text-[10px] font-bold text-foreground/60">{frozen ? `Frozen — ${detail.iccFreezeNote || 'No reason given'}` : 'Freeze this request'}</p>
+                    {frozen ? (
+                      <button onClick={handleUnfreeze} disabled={freezing}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all disabled:opacity-50">
+                        {freezing ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />} Lift Freeze
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input value={freezeNote} onChange={e => setFreezeNote(e.target.value)}
+                          placeholder="Reason for freeze…"
+                          className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-red-200" />
+                        <button onClick={handleFreeze} disabled={freezing || !freezeNote.trim()}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50">
+                          {freezing ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Freeze
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-border/50 bg-muted/10 space-y-2">
+                    <p className="text-[10px] font-bold text-foreground/60">Post ICC observation</p>
+                    <div className="flex gap-2">
+                      <input value={comment} onChange={e => setComment(e.target.value)}
+                        placeholder="Leave an observation note…"
+                        className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20" />
+                      <button onClick={handleComment} disabled={posting || !comment.trim()}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all disabled:opacity-50">
+                        {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Post
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Right column — Current Status, Vetting Chain, ICC Observation Log, Processing Chain */}
@@ -369,7 +415,7 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                   </div>
                   <div className="space-y-2">
                     {[...vettingOnly].reverse().map((ve, i) => {
-                      const badge = vettingBadge(ve.action);
+                      const badge = vettingBadge(ve);
                       return (
                         <div key={i} className="flex gap-2.5 p-3 rounded-xl border border-border/30 bg-white shadow-sm">
                           <div className={`w-6 h-6 rounded-full ${badge.dot} flex items-center justify-center shrink-0 mt-0.5 shadow-sm`}>
@@ -380,6 +426,9 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                               <span className="text-[11px] font-black text-foreground">{ve.deptName || '—'}</span>
                               <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${badge.color}`}>{badge.text}</span>
                             </div>
+                            {ve.amountDisbursed != null && (
+                              <p className="text-[10px] font-bold text-foreground/80">Amount this stage: ₦{Number(ve.amountDisbursed).toLocaleString()}</p>
+                            )}
                             {ve.comment && <p className="text-[10px] text-muted-foreground leading-relaxed">"{ve.comment}"</p>}
                             <p className="text-[8px] text-muted-foreground/50 mt-1 font-mono">{fmtDate(ve.createdAt)}</p>
                           </div>
@@ -432,44 +481,6 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                   <ProcessingChain events={forwardEvents} />
                 </div>
               )}
-
-              {/* ICC Actions */}
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em] flex items-center gap-1.5"><Lock size={11} /> ICC Actions</p>
-
-                <div className={`p-3 rounded-xl border space-y-2 ${frozen ? 'border-red-200 bg-red-50' : 'border-border/50 bg-muted/10'}`}>
-                  <p className="text-[10px] font-bold text-foreground/60">{frozen ? `Frozen — ${detail.iccFreezeNote || 'No reason given'}` : 'Freeze this request'}</p>
-                  {frozen ? (
-                    <button onClick={handleUnfreeze} disabled={freezing}
-                      className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all disabled:opacity-50">
-                      {freezing ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />} Lift Freeze
-                    </button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input value={freezeNote} onChange={e => setFreezeNote(e.target.value)}
-                        placeholder="Reason for freeze…"
-                        className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-red-200" />
-                      <button onClick={handleFreeze} disabled={freezing || !freezeNote.trim()}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all disabled:opacity-50">
-                        {freezing ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Freeze
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-3 rounded-xl border border-border/50 bg-muted/10 space-y-2">
-                  <p className="text-[10px] font-bold text-foreground/60">Post ICC observation</p>
-                  <div className="flex gap-2">
-                    <input value={comment} onChange={e => setComment(e.target.value)}
-                      placeholder="Leave an observation note…"
-                      className="flex-1 text-xs bg-white border border-border/50 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20" />
-                    <button onClick={handleComment} disabled={posting || !comment.trim()}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all disabled:opacity-50">
-                      {posting ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Post
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
