@@ -2172,6 +2172,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
     : parseFloat(detail?.amount || req.amount || 0);
   const alreadyDisbursed = parseFloat(detail?.amountDisbursed || 0);
   const balanceDue       = reqAmount - alreadyDisbursed;
+  // Material requests only: most recent individual payment amount (for "X paid. Total so far — Y" display)
+  const _lastTreatedEvent = (detail?.vettingEvents || []).filter(e => e.action === 'treated').slice(-1)[0];
+  const lastPaymentAmt    = _lastTreatedEvent?.amountDisbursed != null ? parseFloat(_lastTreatedEvent.amountDisbursed) : null;
   const isPartialMode    = finalApprovalStatus === 'partial';
   const hasAmount        = reqAmount > 0;
   const parsedInput      = parseFloat(amountInput);
@@ -2331,7 +2334,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
                       Balance due: <span className="font-black">₦{balanceDue.toLocaleString()}</span>
                     </>
                   ) : (
-                    <>Partial payment on record — ₦{alreadyDisbursed.toLocaleString()} paid.</>
+                    <>Partial payment on record — ₦{(lastPaymentAmt ?? alreadyDisbursed).toLocaleString()} paid. Total paid so far — <span className="font-black">₦{alreadyDisbursed.toLocaleString()}</span></>
                   )}
                 </div>
               )}
@@ -3934,7 +3937,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                            <span>Continue Payment</span>
                          </button>
                        </div>
-                       {detail.amount > 0 && (() => {
+                       {detail.amount > 0 ? (() => {
                          const effAmt = (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount);
                          const paid = Number(detail.amountDisbursed || 0);
                          return (
@@ -3943,7 +3946,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                              {' — '}Balance: ₦{(effAmt - paid).toLocaleString()}
                            </div>
                          );
-                       })()}
+                       })() : Number(detail.amountDisbursed || 0) > 0 && (
+                         <div className="text-[10px] text-orange-700/80 font-semibold pl-6">
+                           Total paid so far — ₦{Number(detail.amountDisbursed).toLocaleString()}
+                         </div>
+                       )}
                      </div>
                    ) : detail?.finalApprovalStatus === 'treated' ? (
                      <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 space-y-1.5">
