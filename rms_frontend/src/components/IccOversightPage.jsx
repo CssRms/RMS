@@ -71,12 +71,15 @@ const buildTrail = (detail) => {
   });
 
   (detail.vettingEvents || []).forEach(ve => {
+    const isIccEvent = /^icc_/i.test(ve.action || '');
     const passed = /pass|approv/i.test(ve.action || '');
     const failed = /fail|reject/i.test(ve.action || '');
     events.push({
       at: ve.createdAt,
-      dot: passed ? 'bg-emerald-500' : failed ? 'bg-red-500' : 'bg-purple-400',
-      label: `Vetting — ${(ve.action || ve.status || '').toUpperCase()}`,
+      dot: isIccEvent ? 'bg-indigo-500' : passed ? 'bg-emerald-500' : failed ? 'bg-red-500' : 'bg-purple-400',
+      label: isIccEvent
+        ? `ICC — ${(ve.action || '').replace(/^icc_/i, '').toUpperCase()}`
+        : `Vetting — ${(ve.action || ve.status || '').toUpperCase()}`,
       sub: ve.deptName || ve.performedBy || '—',
       extra: ve.comment || ve.note || null,
     });
@@ -103,7 +106,7 @@ const buildTrail = (detail) => {
     });
   }
 
-  return events.sort((a, b) => (a.at || '') < (b.at || '') ? -1 : 1);
+  return events.sort((a, b) => (a.at || '') < (b.at || '') ? 1 : -1);
 };
 
 // ── Itemized table renderer (shared by creator's table and audit-override table) ──
@@ -364,12 +367,12 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
               </div>
             )}
 
-            {/* Vetting Chain */}
-            {(detail.vettingEvents || []).length > 0 && (
+            {/* Vetting Chain — Account's pre-approval review/treatment only, never ICC oversight actions */}
+            {(detail.vettingEvents || []).filter(ve => !/^icc_/i.test(ve.action || '')).length > 0 && (
               <div className="space-y-2">
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><Eye size={11} /> Vetting Chain</p>
                 <div className="space-y-2">
-                  {detail.vettingEvents.map((ve, i) => {
+                  {detail.vettingEvents.filter(ve => !/^icc_/i.test(ve.action || '')).map((ve, i) => {
                     const passed = /pass|approv/i.test(ve.action || ve.status || '');
                     const failed = /fail|reject/i.test(ve.action || ve.status || '');
                     return (
@@ -386,6 +389,26 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* ICC Observation Log — freeze/comment/unfreeze history, kept separate from Vetting Chain */}
+            {(detail.vettingEvents || []).filter(ve => /^icc_/i.test(ve.action || '')).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1.5"><Lock size={11} /> ICC Observation Log</p>
+                <div className="space-y-2">
+                  {detail.vettingEvents.filter(ve => /^icc_/i.test(ve.action || '')).map((ve, i) => (
+                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-xl border border-indigo-200 bg-indigo-50/50 text-xs">
+                      <div className="mt-0.5 shrink-0 text-indigo-500"><Clock size={14} /></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-foreground">{ve.deptName || 'ICC'}</p>
+                        <p className="text-muted-foreground text-[10px]">{fmtDate(ve.createdAt)}</p>
+                        {(ve.comment || ve.note) && <p className="text-[10px] italic text-foreground/60 mt-0.5">"{ve.comment || ve.note}"</p>}
+                      </div>
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 bg-indigo-100 text-indigo-700">{(ve.action || '').replace(/^icc_/i, '')}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

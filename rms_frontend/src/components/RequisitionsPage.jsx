@@ -2175,7 +2175,9 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const isPartialMode    = finalApprovalStatus === 'partial';
   const hasAmount        = reqAmount > 0;
   const parsedInput      = parseFloat(amountInput);
-  const inputIsValid     = !hasAmount || (!isNaN(parsedInput) && parsedInput > 0 && parsedInput <= balanceDue);
+  // Material requests: no upper-bound price check — Account can enter any value and
+  // decides full/partial themselves; this isn't a fund disbursement against a fixed amount.
+  const inputIsValid     = !hasAmount || (!isNaN(parsedInput) && parsedInput > 0 && (_isMaterialReq || parsedInput <= balanceDue));
   const isUnderpaying    = hasAmount && inputIsValid && parsedInput < balanceDue;
   const needsTreatChoice = isUnderpaying && !treatChoice;
   const needsTreatReason = isUnderpaying && treatChoice === 'adjusted' && !treatReason;
@@ -2323,7 +2325,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-muted-foreground">₦</span>
                     <input
-                      type="number" min="1" max={balanceDue} step="0.01"
+                      type="number" min="1" max={_isMaterialReq ? undefined : balanceDue} step="0.01"
                       value={amountInput}
                       onChange={e => setAmountInput(e.target.value)}
                       placeholder={balanceDue.toLocaleString()}
@@ -3471,6 +3473,7 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
 
               {!isTaggedObserver && !approveChecked && !isReturnedToCreator && isIncoming && req.status === 'pending' && !loading && !isFrozen && !isOnKiv &&
                !/\baudit\b/i.test(user?.name || '') &&
+               !/\baccount\b/i.test(user?.name || '') &&
                (!['treated', 'published', 'approved', 'vetting', 'partial'].includes(detail?.finalApprovalStatus) || isVettingReturned) && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
                    <RespondPanel
@@ -4059,9 +4062,11 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Vetting Chain History — most recent, shown above processing chain */}
-              {detail?.vettingEvents?.length > 0 && (() => {
-                const evts = detail.vettingEvents; // ascending from server
+              {/* Vetting Chain History — Account's pre-approval review/treatment only.
+                  ICC oversight events (icc_*) are rendered separately below — they are
+                  not part of the vetting chain even though they're stored in the same table. */}
+              {detail?.vettingEvents?.filter(e => !/^icc_/i.test(e.action || '')).length > 0 && (() => {
+                const evts = detail.vettingEvents.filter(e => !/^icc_/i.test(e.action || '')); // ascending from server
                 const displayed = [...evts].reverse(); // newest first
 
                 // Resolve the dept that sent to vetting (for legacy events where actorName is a user name)
@@ -4223,6 +4228,48 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                               <p className="text-[8px] text-muted-foreground/50 mt-1 font-mono">
                                 {ev.createdAt ? new Date(ev.createdAt).toLocaleString() : ''}
                               </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ICC Observation Log — freeze/comment/unfreeze history, separate from the Vetting Chain */}
+              {detail?.vettingEvents?.filter(e => /^icc_/i.test(e.action || '')).length > 0 && (() => {
+                const iccEvts = [...detail.vettingEvents.filter(e => /^icc_/i.test(e.action || ''))].reverse();
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.1em]">ICC Observation Log</p>
+                      <div className="w-5 h-5 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-600 text-[9px] font-bold">{iccEvts.length}</div>
+                    </div>
+                    <div className="space-y-2">
+                      {iccEvts.map((ev, i) => {
+                        const isFreeze = ev.action === 'icc_freeze';
+                        const isUnfreeze = ev.action === 'icc_unfreeze';
+                        const badgeText = isFreeze ? '🔒 ICC Freeze' : isUnfreeze ? '🔓 ICC Unfrozen' : 'ICC Comment';
+                        const badgeColor = isFreeze ? 'bg-red-100 text-red-700' : isUnfreeze ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700';
+                        const iconColor = isFreeze ? 'bg-red-500' : isUnfreeze ? 'bg-emerald-500' : 'bg-indigo-500';
+                        const description = isFreeze
+                          ? (ev.comment ? `Request frozen by ICC. Reason: "${ev.comment}"` : 'ICC froze this request — all actions blocked.')
+                          : isUnfreeze
+                            ? 'ICC lifted the freeze — processing resumed.'
+                            : (ev.comment ? `ICC Observation: "${ev.comment}"` : 'ICC posted a comment.');
+                        return (
+                          <div key={ev.id || i} className="flex gap-2.5 p-3 rounded-xl border border-indigo-200/60 bg-indigo-50/40 shadow-sm">
+                            <div className={`w-6 h-6 rounded-full ${iconColor} flex items-center justify-center shrink-0 mt-0.5 shadow-sm`}>
+                              <Eye size={11} className="text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                <span className="text-[11px] font-black text-foreground">{ev.deptName || 'ICC'}</span>
+                                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${badgeColor}`}>{badgeText}</span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground leading-relaxed">{description}</p>
+                              <p className="text-[8px] text-muted-foreground/50 mt-1 font-mono">{ev.createdAt ? new Date(ev.createdAt).toLocaleString() : ''}</p>
                             </div>
                           </div>
                         );
