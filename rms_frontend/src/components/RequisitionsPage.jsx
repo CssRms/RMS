@@ -2182,6 +2182,13 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const needsTreatChoice = isUnderpaying && !treatChoice;
   const needsTreatReason = isUnderpaying && treatChoice === 'adjusted' && !treatReason;
 
+  // Material requests with no system-known amount — Account may optionally enter a figure
+  // and decides full/partial themselves, since there's no fixed requested amount to compare against.
+  const showManualMaterialAmount = _isMaterialReq && !hasAmount;
+  const manualParsedInput   = parseFloat(amountInput);
+  const manualAmountEntered = amountInput.trim() !== '' && !isNaN(manualParsedInput) && manualParsedInput > 0;
+  const manualChoiceReady   = !manualAmountEntered || treatChoice === 'full' || treatChoice === 'partial';
+
   // Auto-resolve next/return dept from departments list (no dropdown needed)
   const auditDept   = departments.find(d => /\baudit\b/i.test(d.name));
   const accountDept = departments.find(d => /\baccount\b/i.test(d.name));
@@ -2220,7 +2227,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const returnDestLabel = finalApproverDeptName;
 
   // For Account: treatment gated by treatInitiated only; type is auto-resolved by backend from amount
-  const accountTreatCanAct = isAccount && treatInitiated && (!hasAmount || inputIsValid);
+  const accountTreatCanAct = isAccount && treatInitiated && (!hasAmount || inputIsValid) && (!showManualMaterialAmount || manualChoiceReady);
   const canAct = isAccount
     ? accountTreatCanAct
     : (comment.trim().length > 0
@@ -2238,10 +2245,16 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
         result = await vettingActionRequisition(req.id, { action: 'forward', comment: comment || undefined, nextDeptId, file: file || undefined, vetted: vetChecked });
         if (result !== null) toast.success(vetChecked ? 'Vetted & forwarded.' : 'Forwarded.');
       } else if (action === 'treated') {
-        const disbursed = hasAmount && !isNaN(parsedInput) ? parsedInput : undefined;
-        // For Account: do NOT send treatmentType — backend auto-determines from amount vs balance
-        // For Chairman: use existing treatChoice logic
-        const type = isAccount ? undefined : (!isUnderpaying ? 'full' : treatChoice);
+        const manualMaterial = showManualMaterialAmount && manualAmountEntered;
+        const disbursed = manualMaterial
+          ? manualParsedInput
+          : (hasAmount && !isNaN(parsedInput) ? parsedInput : undefined);
+        // For Account: do NOT send treatmentType — backend auto-determines from amount vs balance.
+        // Material request with manually entered amount: Account's own full/partial choice is sent directly.
+        // For Chairman: use existing treatChoice logic.
+        const type = manualMaterial
+          ? treatChoice
+          : (isAccount ? undefined : (!isUnderpaying ? 'full' : treatChoice));
         const reason = (!isAccount && treatChoice === 'adjusted')
           ? (treatReason === 'other' ? treatReasonCustom : treatReason) || undefined
           : undefined;
@@ -2256,9 +2269,10 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
         });
         if (result !== null) {
           // Determine what actually happened for the toast
-          const wasFullyPaid = !hasAmount || (disbursed != null && disbursed >= balanceDue);
+          const wasFullyPaid = manualMaterial ? type === 'full' : (!hasAmount || (disbursed != null && disbursed >= balanceDue));
           if (type === 'adjusted') toast.success(`Requisition treated with adjusted amount ₦${disbursed?.toLocaleString()}.`);
           else if (wasFullyPaid) toast.success('Requisition fully treated!');
+          else if (manualMaterial) toast.success(`Partial payment of ₦${disbursed?.toLocaleString()} recorded. Request stays open.`);
           else toast.success(`Partial payment of ₦${disbursed?.toLocaleString()} recorded. Balance pending.`);
         }
       } else if (action === 'return') {
@@ -2290,7 +2304,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
             <input
               type="checkbox"
               checked={treatInitiated}
-              onChange={e => { setTreatInitiated(e.target.checked); setAmountInput(''); if (onTreatInitiated) onTreatInitiated(e.target.checked); }}
+              onChange={e => { setTreatInitiated(e.target.checked); setAmountInput(''); setTreatChoice(''); if (onTreatInitiated) onTreatInitiated(e.target.checked); }}
               className="w-4 h-4 rounded accent-emerald-600 cursor-pointer shrink-0"
             />
             <div>
@@ -2338,6 +2352,42 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
                 </div>
               )}
 
+              {/* Material request, no system-known amount — optional manual amount + Account's own full/partial choice */}
+              {showManualMaterialAmount && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">
+                    Amount Spent (optional)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-muted-foreground">₦</span>
+                    <input
+                      type="number" min="0.01" step="0.01"
+                      value={amountInput}
+                      onChange={e => { setAmountInput(e.target.value); setTreatChoice(''); }}
+                      placeholder="Leave blank if not applicable"
+                      className="w-full bg-white border border-emerald-200 rounded-xl pl-7 pr-3 py-2.5 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    />
+                  </div>
+                  {manualAmountEntered && (
+                    <div className="flex gap-2 pt-1">
+                      {[
+                        { value: 'full',    label: 'Full Payment' },
+                        { value: 'partial', label: 'Partial Payment' },
+                      ].map(opt => (
+                        <label key={opt.value}
+                          className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer text-[11px] font-bold transition-all ${treatChoice === opt.value ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-emerald-200 bg-white text-muted-foreground hover:border-emerald-300'}`}>
+                          <input type="radio" name="materialPaymentChoice" value={opt.value}
+                            checked={treatChoice === opt.value}
+                            onChange={() => setTreatChoice(opt.value)}
+                            className="accent-emerald-600" />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Optional note */}
               <textarea
                 value={comment}
@@ -2377,12 +2427,16 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
               <button
                 onClick={() => act('treated')}
                 disabled={acting || !accountTreatCanAct}
-                className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm ${hasAmount && parsedInput > 0 && parsedInput < balanceDue ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm ${(hasAmount && parsedInput > 0 && parsedInput < balanceDue) || (showManualMaterialAmount && manualAmountEntered && treatChoice === 'partial') ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
                 {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 {hasAmount && parsedInput > 0 && parsedInput < balanceDue
                   ? `Record Partial Payment — ₦${parsedInput.toLocaleString()}`
                   : hasAmount && parsedInput > 0
                   ? `Confirm Full Payment — ₦${parsedInput.toLocaleString()}`
+                  : showManualMaterialAmount && manualAmountEntered && treatChoice === 'partial'
+                  ? `Record Partial Payment — ₦${manualParsedInput.toLocaleString()}`
+                  : showManualMaterialAmount && manualAmountEntered && treatChoice === 'full'
+                  ? `Confirm Full Payment — ₦${manualParsedInput.toLocaleString()}`
                   : isPartialMode
                   ? 'Complete Treatment'
                   : 'Confirm Treatment'}

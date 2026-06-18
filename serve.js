@@ -4785,6 +4785,13 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       if (!resolvedTreatmentType) {
         resolvedTreatmentType = disbursedThisAction >= (reqAmount - existingDisbursed) ? 'full' : 'partial';
       }
+    } else if (action === 'treated' && reqAmount === 0) {
+      // Material request with no system-known amount — Account manually entered a figure
+      // and chose full/partial themselves; no ceiling to validate against.
+      const rawInput = parsed.data.amountDisbursed;
+      if (rawInput != null && !isNaN(rawInput) && rawInput > 0) {
+        disbursedThisAction = rawInput;
+      }
     }
 
     await prisma.vettingEvent.create({
@@ -4868,7 +4875,7 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
         where: { id: reqId },
         data: {
           finalApprovalStatus: isPartial ? 'partial' : 'treated',
-          amountDisbursed: reqAmount > 0 ? newTotalDisbursed : null,
+          amountDisbursed: reqAmount > 0 ? newTotalDisbursed : (disbursedThisAction != null ? disbursedThisAction : null),
           treatmentType: resolvedTreatmentType,
           treatmentReason: resolvedTreatmentReason,
           treatedByDeptId: isFullyClosed ? (userDeptId || null) : undefined,
@@ -4880,8 +4887,10 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 
       // Notify the originating department — fire-and-forget
       if (requisition.departmentId) {
-        const disbursedLine = reqAmount > 0 && disbursedThisAction != null
-          ? `Amount Disbursed: ₦${newTotalDisbursed.toLocaleString()} of ₦${reqAmount.toLocaleString()} requested`
+        const disbursedLine = disbursedThisAction != null
+          ? (reqAmount > 0
+              ? `Amount Disbursed: ₦${newTotalDisbursed.toLocaleString()} of ₦${reqAmount.toLocaleString()} requested`
+              : `Amount Recorded: ₦${disbursedThisAction.toLocaleString()}`)
           : null;
         const notifSubject = isPartial
           ? `⏳ Partial Payment Made — Req #${id}`
