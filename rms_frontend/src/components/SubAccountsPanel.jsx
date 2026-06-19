@@ -5,7 +5,7 @@ import {
   ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
   FileText, User, Mail, Hash, Clock, Route, Globe, Lock
 } from 'lucide-react';
-import { subAccountAPI, deptAPI } from '../lib/api';
+import { subAccountAPI, deptAPI, settingsAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 
 // ── tiny helpers ──────────────────────────────────────────────────────────────
@@ -620,7 +620,7 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
 };
 
 // ── Single sub-account card ──────────────────────────────────────────────────
-const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, showParent = false, isAdmin = false }) => {
+const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, showParent = false, isAdmin = false, canManage = true, canSetPrivileges = true }) => {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
@@ -778,18 +778,22 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
 
         {/* Actions */}
         <div className="flex items-center gap-1 shrink-0">
-          <button onClick={() => setEditing(true)} title="Rename" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all">
-            <Pencil size={13} />
-          </button>
-          <button onClick={resetCode} disabled={resetting} title="Reset access code" className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all disabled:opacity-40">
-            {resetting ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
-          </button>
-          <button onClick={toggle} disabled={toggling} title={sub.isDisabled ? 'Enable' : 'Disable'} className="p-1.5 rounded-lg transition-all disabled:opacity-40 text-muted-foreground hover:text-foreground">
-            {toggling ? <Loader2 size={13} className="animate-spin" /> : sub.isDisabled ? <ToggleLeft size={16} /> : <ToggleRight size={16} className="text-green-600" />}
-          </button>
-          <button onClick={() => setConfirmDelete(true)} title="Delete sub-account" className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-all">
-            <Trash2 size={13} />
-          </button>
+          {canManage && (
+            <>
+              <button onClick={() => setEditing(true)} title="Rename" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all">
+                <Pencil size={13} />
+              </button>
+              <button onClick={resetCode} disabled={resetting} title="Reset access code" className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all disabled:opacity-40">
+                {resetting ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
+              </button>
+              <button onClick={toggle} disabled={toggling} title={sub.isDisabled ? 'Enable' : 'Disable'} className="p-1.5 rounded-lg transition-all disabled:opacity-40 text-muted-foreground hover:text-foreground">
+                {toggling ? <Loader2 size={13} className="animate-spin" /> : sub.isDisabled ? <ToggleLeft size={16} /> : <ToggleRight size={16} className="text-green-600" />}
+              </button>
+              <button onClick={() => setConfirmDelete(true)} title="Delete sub-account" className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-all">
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
           <button onClick={async () => {
             const next = !expanded;
             setExpanded(next);
@@ -895,9 +899,20 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
           </div>
 
           {/* ── Privilege editor ── */}
-          <div className="px-4 pb-4 border-t border-border/20 pt-3">
-            <PrivilegeEditor sub={sub} onUpdatePrivilege={onUpdatePrivilege} />
-          </div>
+          {canSetPrivileges ? (
+            <div className="px-4 pb-4 border-t border-border/20 pt-3">
+              <PrivilegeEditor sub={sub} onUpdatePrivilege={onUpdatePrivilege} />
+            </div>
+          ) : (
+            <div className="px-4 pb-4 border-t border-border/20 pt-3">
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700">
+                <Lock size={13} className="shrink-0 mt-0.5" />
+                <p className="text-[10px] leading-relaxed font-medium">
+                  Privilege Settings are managed by Super Admin only.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -960,6 +975,24 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
   // The parentId to use for all API calls
   const parentId = isAdmin ? (selectedDeptId ? parseInt(selectedDeptId) : null) : null;
+
+  // Super-Admin-controlled permission toggles — admin is never restricted by these,
+  // only department heads. Default to true (enabled) until the real value loads.
+  const [canManage, setCanManage] = useState(true);
+  const [canSetPrivileges, setCanSetPrivileges] = useState(true);
+
+  useEffect(() => {
+    if (isAdmin) return; // admin is never gated by these settings
+    Promise.allSettled([
+      settingsAPI.get('heads_can_manage_subaccounts'),
+      settingsAPI.get('heads_can_set_subaccount_privileges'),
+    ]).then(([manageRes, privRes]) => {
+      if (manageRes.status === 'fulfilled' && manageRes.value?.value !== undefined)
+        setCanManage(manageRes.value.value !== 'false');
+      if (privRes.status === 'fulfilled' && privRes.value?.value !== undefined)
+        setCanSetPrivileges(privRes.value.value !== 'false');
+    }).catch(() => {});
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -1083,15 +1116,26 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
               : 'Create child units that log in with their own password and submit requests under your department.'}
           </p>
         </div>
-        <button
-          onClick={() => setShowCreate(v => !v)}
-          disabled={isAdmin && !selectedDeptId}
-          title={isAdmin && !selectedDeptId ? 'Select a department first' : undefined}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Plus size={13} /> New Unit
-        </button>
+        {(isAdmin || canManage) && (
+          <button
+            onClick={() => setShowCreate(v => !v)}
+            disabled={isAdmin && !selectedDeptId}
+            title={isAdmin && !selectedDeptId ? 'Select a department first' : undefined}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Plus size={13} /> New Unit
+          </button>
+        )}
       </div>
+
+      {!isAdmin && !canManage && (
+        <div className="flex items-start gap-2.5 p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-700">
+          <Lock size={14} className="shrink-0 mt-0.5" />
+          <p className="text-[11px] leading-relaxed font-medium">
+            Super Admin has disabled department heads from managing sub-accounts. You can still view your units below, but creating, renaming, resetting codes, enabling/disabling, or deleting them is no longer available — contact Super Admin.
+          </p>
+        </div>
+      )}
 
       {/* Admin dept selector */}
       {isAdmin && (
@@ -1317,6 +1361,8 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
               onUpdatePrivilege={updates => setSubs(prev => prev.map(s => s.id === sub.id ? { ...s, ...updates } : s))}
               showParent={isAdmin && !selectedDeptId}
               isAdmin={isAdmin}
+              canManage={isAdmin || canManage}
+              canSetPrivileges={isAdmin || canSetPrivileges}
             />
           ))}
         </div>

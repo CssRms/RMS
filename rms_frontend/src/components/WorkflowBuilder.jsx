@@ -152,6 +152,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [hrPortalEnabled, setHrPortalEnabled]       = useState(true);
   const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(true);
   const [loginStyle, setLoginStyle]                 = useState('standard');
+  const [headsCanManageSubaccounts, setHeadsCanManageSubaccounts] = useState(true);
+  const [headsCanSetSubPrivileges, setHeadsCanSetSubPrivileges]   = useState(true);
   const [savingFeatures, setSavingFeatures]         = useState(false);
 
   // ── All departments (for chairman/print toggles) ───────────────────────────
@@ -281,11 +283,13 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
   const loadFeatureFlags = async () => {
     try {
-      const [studioRes, hrRes, loginRes, storeRes] = await Promise.allSettled([
+      const [studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
         settingsAPI.get('login_style'),
         settingsAPI.get('store_records_enabled'),
+        settingsAPI.get('heads_can_manage_subaccounts'),
+        settingsAPI.get('heads_can_set_subaccount_privileges'),
       ]);
       if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
         setStudioEnabled(studioRes.value.value !== 'false');
@@ -295,6 +299,10 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setLoginStyle(loginRes.value.value);
       if (storeRes.status === 'fulfilled' && storeRes.value?.value !== undefined)
         setStoreRecordsEnabled(storeRes.value.value !== 'false');
+      if (headsManageRes.status === 'fulfilled' && headsManageRes.value?.value !== undefined)
+        setHeadsCanManageSubaccounts(headsManageRes.value.value !== 'false');
+      if (headsPrivRes.status === 'fulfilled' && headsPrivRes.value?.value !== undefined)
+        setHeadsCanSetSubPrivileges(headsPrivRes.value.value !== 'false');
     } catch {}
   };
 
@@ -306,6 +314,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('hr_portal_enabled', String(hrPortalEnabled)),
         settingsAPI.set('store_records_enabled', String(storeRecordsEnabled)),
         settingsAPI.set('login_style', loginStyle),
+        settingsAPI.set('heads_can_manage_subaccounts', String(headsCanManageSubaccounts)),
+        settingsAPI.set('heads_can_set_subaccount_privileges', String(headsCanSetSubPrivileges)),
       ]);
       toast.success('Feature settings saved.');
     } catch {
@@ -809,6 +819,40 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   </button>
                 </div>
 
+                {/* Heads Can Manage Sub-Accounts toggle */}
+                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-black text-foreground">Heads Can Create/Manage Sub-Accounts</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Lets department heads create new units and act on existing ones (rename, reset code, enable/disable, delete).
+                      When disabled, heads can still see their sub-account list but lose all action buttons — only Super Admin can manage units.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setHeadsCanManageSubaccounts(v => !v)}
+                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${headsCanManageSubaccounts ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${headsCanManageSubaccounts ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                {/* Heads Can Set Sub-Account Privileges toggle */}
+                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-black text-foreground">Heads Can Set Sub-Account Privileges</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Lets department heads configure Cash/Memo/Material privileges, creation/approval limits, and direct routing for their sub-accounts.
+                      When disabled, the Privilege Settings section is hidden from heads — only Super Admin can configure it.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setHeadsCanSetSubPrivileges(v => !v)}
+                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${headsCanSetSubPrivileges ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${headsCanSetSubPrivileges ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
                 {/* Login Screen Style */}
                 <div className="p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
                   <div className="flex items-center gap-3">
@@ -866,6 +910,18 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   <div className="w-2 h-2 rounded-full bg-blue-500" />
                   <p className="text-xs text-muted-foreground font-medium">
                     Login screen is set to <strong className="text-blue-600 capitalize">{loginStyle}</strong>
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${headsCanManageSubaccounts ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Heads managing sub-accounts is <strong className={headsCanManageSubaccounts ? 'text-emerald-600' : 'text-red-500'}>{headsCanManageSubaccounts ? 'enabled' : 'disabled'}</strong>
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${headsCanSetSubPrivileges ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Heads setting sub-account privileges is <strong className={headsCanSetSubPrivileges ? 'text-emerald-600' : 'text-red-500'}>{headsCanSetSubPrivileges ? 'enabled' : 'disabled'}</strong>
                   </p>
                 </div>
               </div>

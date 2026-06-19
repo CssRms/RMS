@@ -2751,6 +2751,31 @@ const requireSubAccountManager = (req, res, next) => {
   return res.status(403).json({ error: 'Only department heads or super admins can manage sub-accounts.' });
 };
 
+// Super Admin can globally disable department heads from creating/managing sub-accounts
+// (create, rename, reset code, enable/disable, delete, assign users). Heads can still
+// always VIEW their sub-account list — this only blocks mutating actions. Admin is never blocked.
+const checkHeadCanManageSubaccounts = async (req, res, next) => {
+  if (normalizeRole(req.user?.role) === 'global_admin') return next();
+  try {
+    const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'heads_can_manage_subaccounts' LIMIT 1`;
+    const enabled = (rows?.[0]?.value ?? 'true') !== 'false';
+    if (!enabled) return res.status(403).json({ error: 'Super Admin has disabled department heads from managing sub-accounts. Contact Super Admin.' });
+  } catch (_) {}
+  next();
+};
+
+// Super Admin can globally disable department heads from configuring sub-account
+// privilege settings (cash/memo/material toggles, limits, direct routing). Admin is never blocked.
+const checkHeadCanSetSubPrivileges = async (req, res, next) => {
+  if (normalizeRole(req.user?.role) === 'global_admin') return next();
+  try {
+    const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'heads_can_set_subaccount_privileges' LIMIT 1`;
+    const enabled = (rows?.[0]?.value ?? 'true') !== 'false';
+    if (!enabled) return res.status(403).json({ error: 'Super Admin has disabled department heads from setting sub-account privileges. Contact Super Admin.' });
+  } catch (_) {}
+  next();
+};
+
 // Resolve parentId: dept heads use their own deptId; admins pass parentId in query/body
 const resolveParentId = (req) => {
   const role = normalizeRole(req.user?.role);
@@ -2813,7 +2838,7 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
 });
 
 // Create a sub-account
-app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const parsed = z.object({
       name:      z.string().min(2),
@@ -2942,7 +2967,7 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, async
 });
 
 // Update sub-account details
-app.patch('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.patch('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
@@ -2974,7 +2999,7 @@ app.patch('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, 
 });
 
 // Enable / disable sub-account
-app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
@@ -2988,7 +3013,7 @@ app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireSubAccountMa
 
 // Soft-delete sub-account — marks isDeleted=true + isDisabled=true, preserves all data
 // Dept heads can only delete their own sub-accounts; admins can delete any
-app.delete('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.delete('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
@@ -3008,7 +3033,7 @@ app.delete('/api/sub-accounts/:id', authenticateToken, requireSubAccountManager,
 });
 
 // Reactivate a previously deleted sub-account — generates a fresh access code, preserves all history
-app.post('/api/sub-accounts/:id/reactivate', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.post('/api/sub-accounts/:id/reactivate', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
@@ -3057,7 +3082,7 @@ app.post('/api/sub-accounts/:id/reactivate', authenticateToken, requireSubAccoun
 });
 
 // Reset sub-account access code — returns plain code once; emails parent dept head
-app.post('/api/sub-accounts/:id/reset-code', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.post('/api/sub-accounts/:id/reset-code', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({
@@ -3133,7 +3158,7 @@ app.get('/api/sub-accounts/:id/users', authenticateToken, requireSubAccountManag
 });
 
 // Assign a user to this sub-account
-app.post('/api/sub-accounts/:id/users', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.post('/api/sub-accounts/:id/users', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
@@ -3150,7 +3175,7 @@ app.post('/api/sub-accounts/:id/users', authenticateToken, requireSubAccountMana
 });
 
 // Remove a user from this sub-account
-app.delete('/api/sub-accounts/:id/users/:userId', authenticateToken, requireSubAccountManager, async (req, res) => {
+app.delete('/api/sub-accounts/:id/users/:userId', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true } });
@@ -3232,7 +3257,7 @@ app.get('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) =
   } catch (err) { sendError(res, 500, err.message); }
 });
 
-app.put('/api/sub-accounts/:id/privilege', authenticateToken, async (req, res) => {
+app.put('/api/sub-accounts/:id/privilege', authenticateToken, checkHeadCanSetSubPrivileges, async (req, res) => {
   try {
     const subId = parseInt(req.params.id);
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
