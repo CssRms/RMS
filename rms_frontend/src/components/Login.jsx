@@ -630,14 +630,14 @@ const Login = () => {
         <div className="relative z-10 border border-white/18 bg-white/6 backdrop-blur-md rounded-[36px] px-9 py-9 flex flex-col items-center text-center my-auto">
 
           {/* Logo row */}
-          <div className="flex items-center gap-4 w-full justify-center mb-5">
+          <div className="flex flex-col items-center gap-3 w-full mb-5">
             <div className="w-[66px] h-[66px] rounded-2xl overflow-hidden ring-2 ring-white/15 shadow-xl shrink-0 bg-white/10 flex items-center justify-center">
               <img src="/CSS_Group.png" alt="CSS Group" className="w-full h-full object-contain p-1"/>
             </div>
-            <div className="text-left leading-tight">
+            <div className="text-center leading-tight">
               <p className="text-[9.5px] font-black uppercase tracking-[0.32em] text-white/38">CSS Group of</p>
               <p className="text-[17px] font-black uppercase tracking-[0.16em] text-white">Companies</p>
-              <div className="mt-1 w-8 h-[2px] bg-white/20 rounded-full"/>
+              <div className="mt-1 w-8 h-[2px] bg-white/20 rounded-full mx-auto"/>
             </div>
           </div>
 
@@ -654,7 +654,7 @@ const Login = () => {
             Requisition
           </h1>
           <h2 className="text-[34px] italic font-extrabold text-white/65 leading-none mb-4">
-            Management
+            Management System
           </h2>
 
           {/* Divider with RMS label */}
