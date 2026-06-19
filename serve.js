@@ -2572,6 +2572,44 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
         details: `Admin updated info for ${updated.name}`
       }
     });
+
+    // Notify both sides of the change — fire-and-forget, never blocks the response
+    setImmediate(async () => {
+      const detailLines = [
+        `Department: ${updated.name}`,
+        `Head Name: ${updated.headName || 'Not set'}`,
+        `Position/Title: ${updated.headTitle || 'Not set'}`,
+        `Email: ${updated.headEmail || 'Not set'}`,
+        `Phone: ${updated.phone || 'Not set'}`,
+        `Address: ${updated.address || 'Not set'}`,
+      ];
+
+      // 1. Notify the target department — in-app notification + email to their head
+      notifyDepartmentHead({
+        departmentId: updated.id,
+        subject: `Your Department Profile Was Updated by Super Admin`,
+        lines: [
+          `Super Admin has updated your department's official profile.`,
+          ...detailLines,
+        ],
+      }).catch(() => {});
+
+      // 2. Confirm to Super Admin — direct email, since they have no department inbox
+      if (SUPER_ADMIN_EMAIL) {
+        try {
+          const subject = `Confirmed: ${updated.name} Department Profile Saved`;
+          const { text, html } = buildEmailContent({
+            title: subject,
+            lines: [
+              `You successfully updated the department profile for ${updated.name}.`,
+              ...detailLines,
+            ],
+          });
+          await sendEmail({ to: SUPER_ADMIN_EMAIL, subject, text, html });
+        } catch (e) { logger.warn('[MAIL] Super Admin confirmation failed:', e.message); }
+      }
+    });
+
     res.json(updated);
   } catch (error) { sendError(res, 500, error.message); }
 });

@@ -139,7 +139,12 @@
 }
 
 .animate-slide-up {
-  animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* No `forwards` fill-mode: once finished, the element must NOT retain a transform.
+     Any lingering transform on an ancestor turns it into a new containing block for
+     `position: fixed` descendants, which silently breaks every fixed-position modal
+     rendered inside page content (e.g. Edit Department) — they anchor to this tall
+     scrollable wrapper instead of the actual browser viewport. */
+  animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ── Document Studio Editor Perfection ── */
