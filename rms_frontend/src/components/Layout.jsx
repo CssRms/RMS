@@ -986,15 +986,17 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
   const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(null);
+  const [iccOversightEnabled, setIccOversightEnabled] = useState(true);
   const [chatDeepLink, setChatDeepLink] = useState(null);
 
   useEffect(() => {
     const loadFeatureFlags = async () => {
       try {
-        const [hrRes, studioRes, storeRes] = await Promise.allSettled([
+        const [hrRes, studioRes, storeRes, iccOversightRes] = await Promise.allSettled([
           settingsAPI.get('hr_portal_enabled'),
           settingsAPI.get('document_studio_enabled'),
           settingsAPI.get('store_records_enabled'),
+          settingsAPI.get('icc_oversight_enabled'),
         ]);
         if (hrRes.status === 'fulfilled' && hrRes.value?.value !== undefined)
           setHrPortalEnabled(hrRes.value.value !== 'false');
@@ -1004,6 +1006,8 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
           setStoreRecordsEnabled(storeRes.value.value !== 'false');
         else
           setStoreRecordsEnabled(true); // default enabled if setting not yet saved
+        if (iccOversightRes.status === 'fulfilled' && iccOversightRes.value?.value !== undefined)
+          setIccOversightEnabled(iccOversightRes.value.value !== 'false');
       } catch {}
     };
     loadFeatureFlags();
@@ -1112,7 +1116,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               {showStoreRecords && (
                 <SidebarItem icon={Package} label="Store Records" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} isCollapsed={isCollapsed} />
               )}
-              {isIccDept && (
+              {isIccDept && iccOversightEnabled && (
                 <SidebarItem icon={ScanEye} label="Oversight" active={currentView === 'icc_oversight'} onClick={() => onViewChange('icc_oversight')} isCollapsed={isCollapsed} />
               )}
             </div>
@@ -1193,7 +1197,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               {showStoreRecords && (
                 <SidebarItem icon={Package} label="Store" active={currentView === 'store_records'} onClick={() => onViewChange('store_records')} mobile />
               )}
-              {isIccDept && (
+              {isIccDept && iccOversightEnabled && (
                 <SidebarItem icon={ScanEye} label="Oversight" active={currentView === 'icc_oversight'} onClick={() => onViewChange('icc_oversight')} mobile />
               )}
               <SidebarItem icon={deptStatus.isReady ? Building2 : ShieldAlert} label="Profile" active={currentView === 'dept_profile'} onClick={() => onViewChange('dept_profile')} mobile />

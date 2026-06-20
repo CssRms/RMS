@@ -154,6 +154,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [loginStyle, setLoginStyle]                 = useState('standard');
   const [headsCanManageSubaccounts, setHeadsCanManageSubaccounts] = useState(true);
   const [headsCanSetSubPrivileges, setHeadsCanSetSubPrivileges]   = useState(true);
+  const [iccOversightEnabled, setIccOversightEnabled]             = useState(true);
   const [savingFeatures, setSavingFeatures]         = useState(false);
 
   // ── All departments (for chairman/print toggles) ───────────────────────────
@@ -283,13 +284,14 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
   const loadFeatureFlags = async () => {
     try {
-      const [studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes] = await Promise.allSettled([
+      const [studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
         settingsAPI.get('login_style'),
         settingsAPI.get('store_records_enabled'),
         settingsAPI.get('heads_can_manage_subaccounts'),
         settingsAPI.get('heads_can_set_subaccount_privileges'),
+        settingsAPI.get('icc_oversight_enabled'),
       ]);
       if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
         setStudioEnabled(studioRes.value.value !== 'false');
@@ -303,6 +305,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setHeadsCanManageSubaccounts(headsManageRes.value.value !== 'false');
       if (headsPrivRes.status === 'fulfilled' && headsPrivRes.value?.value !== undefined)
         setHeadsCanSetSubPrivileges(headsPrivRes.value.value !== 'false');
+      if (iccOversightRes.status === 'fulfilled' && iccOversightRes.value?.value !== undefined)
+        setIccOversightEnabled(iccOversightRes.value.value !== 'false');
     } catch {}
   };
 
@@ -316,6 +320,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('login_style', loginStyle),
         settingsAPI.set('heads_can_manage_subaccounts', String(headsCanManageSubaccounts)),
         settingsAPI.set('heads_can_set_subaccount_privileges', String(headsCanSetSubPrivileges)),
+        settingsAPI.set('icc_oversight_enabled', String(iccOversightEnabled)),
       ]);
       toast.success('Feature settings saved.');
     } catch {
@@ -819,6 +824,23 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   </button>
                 </div>
 
+                {/* ICC Oversight toggle */}
+                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-black text-foreground">ICC Oversight Console</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Shows the "Oversight" button in ICC's sidebar, giving them the global observer console (view all requests, freeze/unfreeze, comment).
+                      When disabled, the button is hidden from ICC's sidebar.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIccOversightEnabled(v => !v)}
+                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${iccOversightEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${iccOversightEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
                 {/* Heads Can Manage Sub-Accounts toggle */}
                 <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
                   <div className="space-y-0.5">
@@ -910,6 +932,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   <div className="w-2 h-2 rounded-full bg-blue-500" />
                   <p className="text-xs text-muted-foreground font-medium">
                     Login screen is set to <strong className="text-blue-600 capitalize">{loginStyle}</strong>
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${iccOversightEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                  <p className="text-xs text-muted-foreground font-medium">
+                    ICC Oversight Console is currently <strong className={iccOversightEnabled ? 'text-emerald-600' : 'text-red-500'}>{iccOversightEnabled ? 'enabled' : 'disabled'}</strong>
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
