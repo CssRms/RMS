@@ -847,14 +847,16 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </span>
             </div>
 
-            <button
-              onClick={saveFeatureFlags}
-              disabled={savingFeatures}
-              className="w-full lg:w-auto lg:ml-auto lg:block flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 px-8 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
-            >
-              {savingFeatures ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-              {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
-            </button>
+            <div className="flex lg:justify-end">
+              <button
+                onClick={saveFeatureFlags}
+                disabled={savingFeatures}
+                className="w-full lg:w-auto flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 px-8 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
+              >
+                {savingFeatures ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
+              </button>
+            </div>
           </div>
         ) : activeTab === 'refcode' ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
