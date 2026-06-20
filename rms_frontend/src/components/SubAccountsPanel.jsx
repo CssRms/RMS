@@ -898,19 +898,10 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
             )}
           </div>
 
-          {/* ── Privilege editor ── */}
-          {canSetPrivileges ? (
+          {/* ── Privilege editor — entirely hidden when Super Admin has disabled head access, no notice shown ── */}
+          {canSetPrivileges && (
             <div className="px-4 pb-4 border-t border-border/20 pt-3">
               <PrivilegeEditor sub={sub} onUpdatePrivilege={onUpdatePrivilege} />
-            </div>
-          ) : (
-            <div className="px-4 pb-4 border-t border-border/20 pt-3">
-              <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700">
-                <Lock size={13} className="shrink-0 mt-0.5" />
-                <p className="text-[10px] leading-relaxed font-medium">
-                  Privilege Settings are managed by Super Admin only.
-                </p>
-              </div>
             </div>
           )}
         </div>
@@ -1127,15 +1118,6 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
           </button>
         )}
       </div>
-
-      {!isAdmin && !canManage && (
-        <div className="flex items-start gap-2.5 p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-700">
-          <Lock size={14} className="shrink-0 mt-0.5" />
-          <p className="text-[11px] leading-relaxed font-medium">
-            Super Admin has disabled department heads from managing sub-accounts. You can still view your units below, but creating, renaming, resetting codes, enabling/disabling, or deleting them is no longer available — contact Super Admin.
-          </p>
-        </div>
-      )}
 
       {/* Admin dept selector */}
       {isAdmin && (
