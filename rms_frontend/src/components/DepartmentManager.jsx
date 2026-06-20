@@ -189,6 +189,10 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('Department name is required.'); return; }
+    if (!form.headSurname.trim()) { toast.error('Surname is required.'); return; }
+    if (!form.headFirstName.trim()) { toast.error('First name is required.'); return; }
+    if (!form.headEmail.trim()) { toast.error('Official email is required.'); return; }
+    if (!form.phone.trim()) { toast.error('Contact phone is required — used to SMS the access code.'); return; }
     const combinedName = [form.headSurname, form.headFirstName, form.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
     setSaving(true);
     try {
@@ -263,19 +267,21 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
           <div className="space-y-4">
             <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em]">Head Official</p>
             {[
-              { key: 'headSurname',   label: 'Surname',          icon: User,       placeholder: 'e.g. Musa' },
-              { key: 'headFirstName', label: 'First Name',        icon: User,       placeholder: 'e.g. Chindo' },
+              { key: 'headSurname',   label: 'Surname',          icon: User,       placeholder: 'e.g. Musa', required: true },
+              { key: 'headFirstName', label: 'First Name',        icon: User,       placeholder: 'e.g. Chindo', required: true },
               { key: 'headOtherName', label: 'Other Name',        icon: User,       placeholder: 'e.g. James (optional)' },
               { key: 'headTitle',     label: 'Designation / Title', icon: BadgeCheck, placeholder: 'General Manager' },
-              { key: 'headEmail',     label: 'Official Email',    icon: Mail,       placeholder: 'head@cssgroup.internal', type: 'email' },
-              { key: 'phone',         label: 'Contact Phone',     icon: Phone,      placeholder: '+234 800 000 0000' },
-              { key: 'address',       label: 'Office Address',    icon: MapPin,     placeholder: 'Floor 3, CSS Tower...' },
-            ].map(({ key, label, icon: Icon, placeholder, type }) => (
+              { key: 'headEmail',     label: 'Official Email',    icon: Mail,       placeholder: 'head@cssgroup.internal', type: 'email', required: true },
+              { key: 'phone',         label: 'Contact Phone',     icon: Phone,      placeholder: '+234 800 000 0000', required: true },
+              { key: 'address',       label: 'Office Address',    icon: MapPin,     placeholder: 'Floor 3, CSS Tower... (optional)' },
+            ].map(({ key, label, icon: Icon, placeholder, type, required }) => (
               <div key={key} className="relative">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">{label}</label>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
+                  {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+                </label>
                 <div className="flex items-center border border-border/50 rounded-xl focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 bg-white">
                   <Icon size={14} className="text-muted-foreground ml-3 shrink-0" />
-                  <input value={form[key]} onChange={set(key)} type={type || 'text'} placeholder={placeholder}
+                  <input value={form[key]} onChange={set(key)} type={type || 'text'} placeholder={placeholder} required={required}
                     className="flex-1 px-3 py-3 text-sm font-medium bg-transparent outline-none" />
                 </div>
               </div>
@@ -513,7 +519,9 @@ const DepartmentManager = ({ onViewChange }) => {
                   <th className="py-4 px-4 border-y">Category</th>
                   <th className="py-4 px-4 border-y">Login Code</th>
                   <th className="py-4 px-4 border-y">Signature</th>
-                  <th className="py-4 px-4 border-y">Head Official</th>
+                  <th className="py-4 px-4 border-y">First Name</th>
+                  <th className="py-4 px-4 border-y">Surname</th>
+                  <th className="py-4 px-4 border-y">Other Name</th>
                   <th className="py-4 px-4 border-y">Official Email</th>
                   <th className="py-4 px-4 border-y">Contact Phone</th>
                   <th className="py-4 px-4 border-y">Office Address</th>
@@ -579,7 +587,19 @@ const DepartmentManager = ({ onViewChange }) => {
                             );
                           })()}
                         </td>
-                        <td className="py-4 px-4 text-xs text-muted-foreground font-medium">{dept.headName || '—'}</td>
+                        {(() => {
+                          const parts = (dept.headName || '').trim().split(/\s+/).filter(Boolean);
+                          const surname   = parts[0] || '—';
+                          const firstName = parts[1] || '—';
+                          const otherName = parts.slice(2).join(' ') || '—';
+                          return (
+                            <>
+                              <td className="py-4 px-4 text-xs text-muted-foreground font-medium">{firstName}</td>
+                              <td className="py-4 px-4 text-xs text-muted-foreground font-medium">{surname}</td>
+                              <td className="py-4 px-4 text-xs text-muted-foreground/70 font-medium">{otherName}</td>
+                            </>
+                          );
+                        })()}
                         <td className="py-4 px-4 text-xs text-primary font-medium">{dept.headEmail || '—'}</td>
                         <td className="py-4 px-4 text-xs text-muted-foreground font-medium">{dept.phone || '—'}</td>
                         <td className="py-4 px-4 text-xs text-muted-foreground/60 font-medium truncate max-w-[150px]" title={dept.address}>{dept.address || '—'}</td>

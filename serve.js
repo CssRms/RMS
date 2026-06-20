@@ -1994,6 +1994,46 @@ const buildEmailContent = ({ title, lines = [], actionUrl, actionLabel }) => {
   return { text, html };
 };
 
+// ── Termii SMS ──────────────────────────────────────────────────────────────
+// Nigerian numbers must be sent to Termii in "234XXXXXXXXXX" form — no leading
+// 0 or +. Strips formatting (spaces/dashes/parens) from whatever was typed in.
+function normalizeNgPhone(raw) {
+  if (!raw) return null;
+  let p = String(raw).replace(/[^\d+]/g, '');
+  p = p.replace(/^\+/, '');
+  if (p.startsWith('0')) p = '234' + p.slice(1);
+  else if (!p.startsWith('234')) p = '234' + p;
+  return p;
+}
+
+async function sendSms({ to, message }) {
+  const apiKey   = process.env.TERMII_SECRET_KEY;
+  const senderId = process.env.TERMII_SENDER_ID || 'TVET';
+  const channel  = process.env.TERMII_SMS_CHANNEL || 'generic';
+  if (!apiKey || !to) {
+    logger.warn(`[SMS] Skipped — ${!apiKey ? 'TERMII_SECRET_KEY missing' : 'no phone number'}.`);
+    return { skipped: true };
+  }
+  const phone = normalizeNgPhone(to);
+  try {
+    const resp = await fetch('https://api.ng.termii.com/api/sms/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: phone, from: senderId, sms: message, type: 'plain', channel, api_key: apiKey }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      logger.warn('[SMS] Termii send failed:', JSON.stringify(data));
+      return { error: data };
+    }
+    logger.info(`[SMS] Sent to ${phone}`);
+    return data;
+  } catch (e) {
+    logger.warn('[SMS] Termii request error:', e.message);
+    return { error: e.message };
+  }
+}
+
 async function notifyDepartmentHead({ departmentId, requisition, subject, lines }) {
   try {
     // Always fetch by departmentId when provided — do NOT use requisition.department
@@ -2553,6 +2593,17 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
     const { id } = req.params;
     const { name, type, headName, headTitle, headEmail, phone, address } = req.body;
     if (!name?.trim()) return sendError(res, 400, 'Department name is required.');
+    if (!headName?.trim()) return sendError(res, 400, 'Head official name is required.');
+    if (!headEmail?.trim()) return sendError(res, 400, 'Head official email is required.');
+    if (!phone?.trim()) return sendError(res, 400, 'Contact phone is required — used to SMS the access code.');
+
+    // Snapshot BEFORE the update — codeChangedByDept tells us whether this head has
+    // ever activated their account (set their own password) yet.
+    const before = await prisma.department.findUnique({
+      where: { id: parseInt(id) },
+      select: { codeChangedByDept: true, accessCodeLabel: true, accessCode: true }
+    });
+
     const updated = await prisma.department.update({
       where: { id: parseInt(id) },
       data: {
@@ -2575,26 +2626,63 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
 
     // Notify both sides of the change — fire-and-forget, never blocks the response
     setImmediate(async () => {
-      const detailLines = [
-        `Department: ${updated.name}`,
-        `Head Name: ${updated.headName || 'Not set'}`,
-        `Position/Title: ${updated.headTitle || 'Not set'}`,
-        `Email: ${updated.headEmail || 'Not set'}`,
-        `Phone: ${updated.phone || 'Not set'}`,
-        `Address: ${updated.address || 'Not set'}`,
-      ];
+      // Not yet activated = head has never set their own password — the original
+      // admin-set access code is still valid, so this really is a "welcome" moment.
+      const isFreshAssignment = !before?.codeChangedByDept;
+      const accessCode = before?.accessCodeLabel || before?.accessCode || null;
 
-      // 1. Notify the target department — in-app notification + email to their head
-      notifyDepartmentHead({
-        departmentId: updated.id,
-        subject: `Your Department Profile Was Updated by Super Admin`,
-        lines: [
-          `Super Admin has updated your department's official profile.`,
-          ...detailLines,
-        ],
+      await prisma.notification.create({
+        data: {
+          departmentId: updated.id,
+          content: isFreshAssignment
+            ? `Your department account is ready — check your email for your access code.`
+            : `Your department profile was updated.`,
+        }
       }).catch(() => {});
 
-      // 2. Confirm to Super Admin — direct email, since they have no department inbox
+      if (isFreshAssignment && accessCode) {
+        const subject = 'Account Activated — Welcome to RMS Portal';
+        const { text, html } = buildEmailContent({
+          title: subject,
+          lines: [
+            `Your department account has been activated on the RMS Portal by the RMS Administrator.`,
+            ``,
+            `Name: ${updated.headName}`,
+            `Position/Title: ${updated.headTitle || 'Not set'}`,
+            `Department: ${updated.name}`,
+            `Email: ${updated.headEmail}`,
+            `Phone: ${updated.phone}`,
+            `Access Code: ${accessCode}`,
+            ``,
+            `Use this access code to log in for the first time. You will be asked to create your own password — once set, the access code no longer works and only your password will grant access to your dashboard.`,
+          ],
+          actionLabel: 'Open RMS Portal',
+        });
+        sendEmail({ to: updated.headEmail, subject, text, html }).catch(() => {});
+        sendSms({
+          to: updated.phone,
+          message: `CSS RMS: Your account for ${updated.name} is now active. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
+        }).catch(() => {});
+      } else {
+        const subject = 'Your Department Profile Was Updated';
+        const { text, html } = buildEmailContent({
+          title: subject,
+          lines: [
+            `The RMS Administrator has updated your department's official profile.`,
+            ``,
+            `Name: ${updated.headName || 'Not set'}`,
+            `Position/Title: ${updated.headTitle || 'Not set'}`,
+            `Department: ${updated.name}`,
+            `Email: ${updated.headEmail || 'Not set'}`,
+            `Phone: ${updated.phone || 'Not set'}`,
+            `Address: ${updated.address || 'Not set'}`,
+          ],
+          actionLabel: 'Open RMS Portal',
+        });
+        sendEmail({ to: updated.headEmail, subject, text, html }).catch(() => {});
+      }
+
+      // Confirm to Super Admin — direct email, since they have no department inbox
       if (SUPER_ADMIN_EMAIL) {
         try {
           const subject = `Confirmed: ${updated.name} Department Profile Saved`;
@@ -2602,7 +2690,15 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
             title: subject,
             lines: [
               `You successfully updated the department profile for ${updated.name}.`,
-              ...detailLines,
+              `Department: ${updated.name}`,
+              `Head Name: ${updated.headName || 'Not set'}`,
+              `Position/Title: ${updated.headTitle || 'Not set'}`,
+              `Email: ${updated.headEmail || 'Not set'}`,
+              `Phone: ${updated.phone || 'Not set'}`,
+              `Address: ${updated.address || 'Not set'}`,
+              isFreshAssignment
+                ? `An "Account Activated" email and SMS with the access code were sent to the head.`
+                : `A profile-update notice was emailed to the head (no access code — account already active).`,
             ],
           });
           await sendEmail({ to: SUPER_ADMIN_EMAIL, subject, text, html });
