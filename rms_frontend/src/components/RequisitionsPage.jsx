@@ -4468,7 +4468,9 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const [syncStale, setSyncStale]       = useState(false);
   const [flashedIds, setFlashedIds]     = useState(new Set());
   const [filterView, setFilterView]     = useState(user?.role === 'global_admin' ? 'all' : 'active');
-  const [canPrint, setCanPrint]         = useState(true);
+  // Starts `null` (unknown) so the Print button stays hidden until the real access list
+  // loads — defaulting to `true` would flash the button then hide it when restricted.
+  const [canPrint, setCanPrint]         = useState(null);
   const selectedReqRef = React.useRef(null);
 
   // Normalize a requisition so department/creator are always strings, not nested objects.

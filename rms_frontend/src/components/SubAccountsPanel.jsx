@@ -968,9 +968,11 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const parentId = isAdmin ? (selectedDeptId ? parseInt(selectedDeptId) : null) : null;
 
   // Super-Admin-controlled permission toggles — admin is never restricted by these,
-  // only department heads. Default to true (enabled) until the real value loads.
-  const [canManage, setCanManage] = useState(true);
-  const [canSetPrivileges, setCanSetPrivileges] = useState(true);
+  // only department heads. Start as `null` (unknown) so the New Unit button / privilege
+  // editor stay hidden until the real value loads — defaulting to `true` here caused a
+  // visible flash (button shows, then disappears) whenever the setting was disabled.
+  const [canManage, setCanManage] = useState(null);
+  const [canSetPrivileges, setCanSetPrivileges] = useState(null);
 
   useEffect(() => {
     if (isAdmin) return; // admin is never gated by these settings
@@ -982,7 +984,10 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
         setCanManage(manageRes.value.value !== 'false');
       if (privRes.status === 'fulfilled' && privRes.value?.value !== undefined)
         setCanSetPrivileges(privRes.value.value !== 'false');
-    }).catch(() => {});
+      // Fail open on rejection — don't leave the UI permanently hidden over a network blip
+      if (manageRes.status !== 'fulfilled') setCanManage(true);
+      if (privRes.status !== 'fulfilled') setCanSetPrivileges(true);
+    }).catch(() => { setCanManage(true); setCanSetPrivileges(true); });
   }, [isAdmin]);
 
   useEffect(() => {

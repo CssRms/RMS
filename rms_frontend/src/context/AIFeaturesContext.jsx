@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { settingsAPI } from '../lib/api';
 
-const AIFeaturesContext = createContext({ aiEnabled: true, refreshAI: () => {} });
+const AIFeaturesContext = createContext({ aiEnabled: false, refreshAI: () => {} });
 
 export const useAIFeatures = () => useContext(AIFeaturesContext);
 
 export const AIFeaturesProvider = ({ children }) => {
-  // Default true — fail-open so AI works even before first save
-  const [aiEnabled, setAiEnabled] = useState(true);
+  // Starts `null` (unknown) so AI buttons stay hidden until the real setting loads —
+  // defaulting to `true` flashes every AI button visible then hides it when disabled.
+  const [aiEnabled, setAiEnabled] = useState(null);
 
   const fetchSetting = useCallback(async () => {
     // Skip if not authenticated — avoids 401 → refresh → reload loop on login screen
@@ -17,7 +18,8 @@ export const AIFeaturesProvider = ({ children }) => {
       // Treat null/missing as enabled; only explicitly 'false' disables
       setAiEnabled(res?.value !== 'false');
     } catch {
-      // Network error — keep current state
+      // Network error — fail open rather than leaving buttons hidden indefinitely
+      setAiEnabled(prev => prev === null ? true : prev);
     }
   }, []);
 

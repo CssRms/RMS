@@ -986,7 +986,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
   const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(null);
-  const [iccOversightEnabled, setIccOversightEnabled] = useState(true);
+  // Starts `null` (unknown) so the Oversight button stays hidden until the real setting
+  // loads — defaulting to `true` would flash the button then hide it if disabled.
+  const [iccOversightEnabled, setIccOversightEnabled] = useState(null);
   const [chatDeepLink, setChatDeepLink] = useState(null);
 
   useEffect(() => {
@@ -1000,15 +1002,26 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         ]);
         if (hrRes.status === 'fulfilled' && hrRes.value?.value !== undefined)
           setHrPortalEnabled(hrRes.value.value !== 'false');
+        else
+          setHrPortalEnabled(true); // fail open — don't leave the button permanently hidden over a network blip
         if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
           setStudioEnabled(studioRes.value.value !== 'false');
+        else
+          setStudioEnabled(true);
         if (storeRes.status === 'fulfilled' && storeRes.value?.value !== undefined)
           setStoreRecordsEnabled(storeRes.value.value !== 'false');
         else
           setStoreRecordsEnabled(true); // default enabled if setting not yet saved
         if (iccOversightRes.status === 'fulfilled' && iccOversightRes.value?.value !== undefined)
           setIccOversightEnabled(iccOversightRes.value.value !== 'false');
-      } catch {}
+        else
+          setIccOversightEnabled(true);
+      } catch {
+        setHrPortalEnabled(true);
+        setStudioEnabled(true);
+        setStoreRecordsEnabled(true);
+        setIccOversightEnabled(true);
+      }
     };
     loadFeatureFlags();
   }, []);
