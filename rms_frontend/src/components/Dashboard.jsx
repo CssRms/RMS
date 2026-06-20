@@ -5,8 +5,8 @@ import { reqAPI, settingsAPI, adminAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare } from 'lucide-react';
 
-const StatCard = ({ label, value, icon: Icon, color, onClick }) => (
-  <div onClick={onClick} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group transition-all bg-white/70 shadow-sm ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
+const StatCard = ({ label, value, icon: Icon, color, onClick, title }) => (
+  <div onClick={onClick} title={title} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group transition-all bg-white/70 shadow-sm ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
     <div className={`absolute top-0 right-0 w-24 h-24 bg-${color}-500/5 blur-[60px] rounded-full translate-x-8 -translate-y-8`}></div>
     <div className="flex flex-col gap-2.5 sm:gap-4 relative z-10">
       <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-${color}-500/10 border border-${color}-500/20 text-${color}-600 flex items-center justify-center group-hover:bg-${color}-500 group-hover:text-white transition-all duration-500 shadow-inner`}>
@@ -310,6 +310,7 @@ const Dashboard = ({ onViewChange }) => {
               }
               icon={MessageSquare}
               color="teal"
+              title={smsBalance?.error || undefined}
             />
           )}
           {user?.role === 'department' && (

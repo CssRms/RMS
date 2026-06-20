@@ -4083,9 +4083,12 @@ app.get('/api/admin/sms-balance', authenticateToken, async (req, res) => {
     if (!apiKey) return res.json({ configured: false });
     const resp = await fetch(`https://api.ng.termii.com/api/get-balance?api_key=${encodeURIComponent(apiKey)}`);
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) return res.json({ configured: true, error: data?.message || 'Could not fetch balance.' });
+    logger.info(`[SMS] Balance check — status ${resp.status}, body: ${JSON.stringify(data)}`);
+    if (!resp.ok) return res.json({ configured: true, error: data?.message || `Termii returned status ${resp.status}.`, raw: data });
+    if (data.balance === undefined) return res.json({ configured: true, error: data?.message || 'Unexpected response from Termii.', raw: data });
     res.json({ configured: true, balance: data.balance, currency: data.currency || 'NGN', user: data.user || null });
   } catch (error) {
+    logger.warn('[SMS] Balance check request failed:', error.message);
     res.json({ configured: true, error: error.message });
   }
 });
