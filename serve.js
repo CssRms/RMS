@@ -6585,10 +6585,14 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       // Right side: Date + Amount
       page.drawText(`Date: ${createdDate}`, { x: A4_W - margin - 200, y, size: 10, font: boldFont });
       if (isFinancial) {
+        // ICC's post-approval override (via the ICC Vets Protocol) takes priority over Audit's
+        // earlier pre-approval override — mirrors getEffectiveReqAmount used elsewhere.
+        const _iccAmt   = (requisition.hasIccOverride && requisition.iccOverrideAmount != null) ? Number(requisition.iccOverrideAmount) : null;
         const _auditAmt = (requisition.hasAuditOverride && requisition.auditAmount != null) ? Number(requisition.auditAmount) : null;
-        const _displayAmt = _auditAmt ?? Number(requisition.amount || 0);
+        const _overrideAmt = _iccAmt ?? _auditAmt;
+        const _displayAmt = _overrideAmt ?? Number(requisition.amount || 0);
         page.drawText(`Amount: NGN ${_displayAmt.toLocaleString()}`, { x: A4_W - margin - 200, y: y - 18, size: 11, font: boldFont, color: rgb(0.1, 0.22, 0.43) });
-        if (_auditAmt != null) {
+        if (_overrideAmt != null) {
           page.drawText(`Originally: NGN ${Number(requisition.amount || 0).toLocaleString()}`, { x: A4_W - margin - 200, y: y - 32, size: 8, font: italicFont, color: rgb(0.5, 0.5, 0.5) });
         }
       }
@@ -6608,11 +6612,15 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     const _hasAuditOverride = !isMemo && !!requisition.hasAuditOverride && !!requisition.auditContent;
     let _auditOverrideParsed = null;
     if (_hasAuditOverride) { try { _auditOverrideParsed = JSON.parse(requisition.auditContent); } catch {} }
+    const _hasIccOverride = !isMemo && !!requisition.hasIccOverride && !!requisition.iccOverrideContent;
+    let _iccOverrideParsed = null;
+    if (_hasIccOverride) { try { _iccOverrideParsed = JSON.parse(requisition.iccOverrideContent); } catch {} }
+    const _hasAnyOverride = _hasAuditOverride || _hasIccOverride;
 
     ensureSpace(60);
-    const _contentLabel = isMemo ? 'BODY:' : (_hasAuditOverride ? "CREATOR'S ESTIMATE (ORIGINAL):" : 'DESCRIPTION / CONTENT:');
+    const _contentLabel = isMemo ? 'BODY:' : (_hasAnyOverride ? "CREATOR'S ESTIMATE (ORIGINAL):" : 'DESCRIPTION / CONTENT:');
     page.drawText(_contentLabel, { x: margin, y, size: 10, font: boldFont, color: rgb(0.2, 0.2, 0.2) });
-    if (_hasAuditOverride) {
+    if (_hasAnyOverride) {
       page.drawText('FOR REFERENCE', { x: margin + boldFont.widthOfTextAtSize(_contentLabel, 10) + 8, y: y + 1, size: 8, font: italicFont, color: rgb(0.5, 0.3, 0.7) });
     }
     y -= 18;
@@ -6750,8 +6758,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       y -= 10;
       ensureSpace(30);
       page.drawText('AUDIT VERIFIED AMOUNT', { x: margin, y, size: 10, font: boldFont, color: auditHdrColor });
-      page.drawText('EFFECTIVE FOR APPROVAL & PAYMENT', {
-        x: margin + boldFont.widthOfTextAtSize('AUDIT VERIFIED AMOUNT', 10) + 8, y: y + 1, size: 8, font: italicFont, color: auditHdrColor
+      const _auditBadgeText = _hasIccOverride ? 'SUPERSEDED BY ICC' : 'EFFECTIVE FOR APPROVAL & PAYMENT';
+      page.drawText(_auditBadgeText, {
+        x: margin + boldFont.widthOfTextAtSize('AUDIT VERIFIED AMOUNT', 10) + 8, y: y + 1, size: 8, font: italicFont, color: _hasIccOverride ? rgb(0.5, 0.5, 0.5) : auditHdrColor
       });
       y -= 14;
       page.drawText('Verified by: Audit', { x: margin, y, size: 9, font: italicFont, color: rgb(0.45, 0.15, 0.65) });
@@ -6822,6 +6831,91 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       page.drawText(atotalNairaStr, { x: atotNX + atotNW - boldFont.widthOfTextAtSize(atotalNairaStr, 10) - 4, y: arowY + 5, size: 10, font: boldFont, color: auditHdrColor });
       page.drawText(atotalKobo > 0 ? String(atotalKobo).padStart(2, '0') : '00', { x: atotKX + 5, y: arowY + 5, size: 10, font: boldFont, color: auditHdrColor });
       y = arowY - 15;
+    }
+
+    // ══════════════════════════════════════════════════════
+    // ICC VERIFIED ITEMS TABLE (ICC Vets Protocol) — always the effective amount when present
+    // ══════════════════════════════════════════════════════
+    if (_hasIccOverride && _iccOverrideParsed?.items?.length > 0) {
+      const iccItems = _iccOverrideParsed.items;
+      const iccComment = _iccOverrideParsed.comment ? sanitizeText(_iccOverrideParsed.comment) : null;
+      const iccHdrColor = rgb(0.45, 0.25, 0.75);
+
+      y -= 10;
+      ensureSpace(30);
+      page.drawText('ICC VERIFIED AMOUNT', { x: margin, y, size: 10, font: boldFont, color: iccHdrColor });
+      page.drawText('EFFECTIVE FOR APPROVAL & PAYMENT', {
+        x: margin + boldFont.widthOfTextAtSize('ICC VERIFIED AMOUNT', 10) + 8, y: y + 1, size: 8, font: italicFont, color: iccHdrColor
+      });
+      y -= 14;
+      page.drawText(`Verified by: ${sanitizeText(requisition.iccOverrideDeptName || 'ICC')}`, { x: margin, y, size: 9, font: italicFont, color: rgb(0.35, 0.2, 0.6) });
+      y -= 14;
+
+      if (iccComment) { drawWrappedText(iccComment, { indent: 5, textFont: italicFont, fontSize: 9 }); y -= 5; }
+
+      const isnW = 28, idescW = 230, iqtyW = 55, iupW = 85, itotNW = 67, itotKW = 30;
+      const isnX = margin, idescX = isnX + isnW, iqtyX = idescX + idescW;
+      const iupX = iqtyX + iqtyW, itotNX = iupX + iupW, itotKX = itotNX + itotNW;
+      const itableRight = itotKX + itotKW;
+      const irowH = 18, iheaderH = 20;
+      const itableH = iheaderH + irowH * (iccItems.length + 1);
+
+      ensureSpace(itableH + 20);
+      const itableTop = y;
+
+      page.drawRectangle({ x: isnX, y: itableTop - iheaderH, width: itableRight - isnX, height: iheaderH, color: rgb(0.93, 0.90, 0.98), opacity: 1 });
+      const iborderC = iccHdrColor;
+      page.drawLine({ start: { x: isnX, y: itableTop }, end: { x: itableRight, y: itableTop }, thickness: 0.8, color: iborderC });
+      page.drawLine({ start: { x: isnX, y: itableTop - itableH }, end: { x: itableRight, y: itableTop - itableH }, thickness: 0.8, color: iborderC });
+      page.drawLine({ start: { x: isnX, y: itableTop }, end: { x: isnX, y: itableTop - itableH }, thickness: 0.8, color: iborderC });
+      page.drawLine({ start: { x: itableRight, y: itableTop }, end: { x: itableRight, y: itableTop - itableH }, thickness: 0.8, color: iborderC });
+      page.drawLine({ start: { x: isnX, y: itableTop - iheaderH }, end: { x: itableRight, y: itableTop - iheaderH }, thickness: 0.8, color: iborderC });
+      for (const colX of [idescX, iqtyX, iupX, itotNX, itotKX]) {
+        page.drawLine({ start: { x: colX, y: itableTop }, end: { x: colX, y: itableTop - itableH }, thickness: 0.5, color: rgb(0.55, 0.4, 0.7) });
+      }
+
+      const ihdrY = itableTop - iheaderH + 6;
+      page.drawText('S/N',              { x: isnX + 5,   y: ihdrY, size: 9, font: boldFont, color: iccHdrColor });
+      page.drawText('Item Description', { x: idescX + 5, y: ihdrY, size: 9, font: boldFont, color: iccHdrColor });
+      page.drawText('Quantity',         { x: iqtyX + 4,  y: ihdrY, size: 9, font: boldFont, color: iccHdrColor });
+      page.drawText('Unit Price',       { x: iupX + 5,   y: ihdrY, size: 9, font: boldFont, color: iccHdrColor });
+      page.drawText('N', { x: itotNX + itotNW / 2 - boldFont.widthOfTextAtSize('N', 9) / 2, y: ihdrY, size: 9, font: boldFont, color: iccHdrColor });
+      page.drawText('K', { x: itotKX + itotKW / 2 - boldFont.widthOfTextAtSize('K', 9) / 2, y: ihdrY, size: 9, font: boldFont, color: iccHdrColor });
+
+      const imaxDescChars = Math.floor(idescW / (font.widthOfTextAtSize('M', 9) * 0.58));
+      let irowY = itableTop - iheaderH;
+      for (let i = 0; i < iccItems.length; i++) {
+        const item = iccItems[i];
+        const unitPrice = item.amount || 0;
+        const lineTotal = item.lineTotal != null ? item.lineTotal : (item.qty || 1) * unitPrice;
+        const totNaira = Math.floor(lineTotal);
+        const totKobo = Math.round((lineTotal - totNaira) * 100);
+        irowY -= irowH;
+        page.drawLine({ start: { x: isnX, y: irowY }, end: { x: itableRight, y: irowY }, thickness: 0.3, color: rgb(0.6, 0.5, 0.75) });
+        const icellY = irowY + 5;
+        page.drawText(String(i + 1), { x: isnX + 10, y: icellY, size: 9, font });
+        const desc = sanitizeText(item.description || '');
+        page.drawText(desc.length > imaxDescChars ? desc.substring(0, imaxDescChars - 2) + '..' : desc, { x: idescX + 5, y: icellY, size: 9, font });
+        const qtyStr = String(item.qty ?? 1);
+        page.drawText(qtyStr, { x: iqtyX + iqtyW / 2 - font.widthOfTextAtSize(qtyStr, 9) / 2, y: icellY, size: 9, font });
+        const upStr = Number(Math.floor(unitPrice)).toLocaleString();
+        page.drawText(upStr, { x: iupX + iupW - font.widthOfTextAtSize(upStr, 9) - 4, y: icellY, size: 9, font });
+        const totNStr = Number(totNaira).toLocaleString();
+        page.drawText(totNStr, { x: itotNX + itotNW - font.widthOfTextAtSize(totNStr, 9) - 4, y: icellY, size: 9, font });
+        page.drawText(totKobo > 0 ? String(totKobo).padStart(2, '0') : '00', { x: itotKX + 5, y: icellY, size: 9, font });
+      }
+
+      irowY -= irowH;
+      page.drawLine({ start: { x: isnX, y: irowY + irowH }, end: { x: itableRight, y: irowY + irowH }, thickness: 0.8, color: iborderC });
+      const igrandTotal = iccItems.reduce((sum, it) => sum + (it.lineTotal != null ? it.lineTotal : (it.qty || 1) * (it.amount || 0)), 0);
+      const itotalNaira = Math.floor(igrandTotal);
+      const itotalKobo = Math.round((igrandTotal - itotalNaira) * 100);
+      const itotalLabel = 'GRAND TOTAL';
+      page.drawText(itotalLabel, { x: itotNX - boldFont.widthOfTextAtSize(itotalLabel, 10) - 8, y: irowY + 5, size: 10, font: boldFont, color: iccHdrColor });
+      const itotalNairaStr = Number(itotalNaira).toLocaleString();
+      page.drawText(itotalNairaStr, { x: itotNX + itotNW - boldFont.widthOfTextAtSize(itotalNairaStr, 10) - 4, y: irowY + 5, size: 10, font: boldFont, color: iccHdrColor });
+      page.drawText(itotalKobo > 0 ? String(itotalKobo).padStart(2, '0') : '00', { x: itotKX + 5, y: irowY + 5, size: 10, font: boldFont, color: iccHdrColor });
+      y = irowY - 15;
     }
 
     // ══════════════════════════════════════════════════════
@@ -6952,16 +7046,20 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
       const vMinRowH    = 95;
 
       const vActionLabel = (action) => {
-        if (action === 'sent_to_vetting') return 'SENT TO VETTING';
-        if (action === 'forward')         return 'FORWARDED';
-        if (action === 'return')          return 'RETURNED';
-        if (action === 'treated')         return 'TREATED';
+        if (action === 'sent_to_vetting')  return 'SENT TO VETTING';
+        if (action === 'forward')          return 'FORWARDED';
+        if (action === 'return')           return 'RETURNED';
+        if (action === 'treated')          return 'TREATED';
+        if (action === 'icc_vet_forward')  return 'FORWARDED TO ICC';
+        if (action === 'icc_vet_return')   return 'ICC VETTING COMPLETE';
         return action.toUpperCase();
       };
       const vActionColor = (action) => {
-        if (action === 'treated')         return rgb(0.1, 0.5, 0.2);
-        if (action === 'return')          return rgb(0.8, 0.4, 0);
-        if (action === 'sent_to_vetting') return rgb(0.35, 0.1, 0.55);
+        if (action === 'treated')          return rgb(0.1, 0.5, 0.2);
+        if (action === 'return')           return rgb(0.8, 0.4, 0);
+        if (action === 'sent_to_vetting')  return rgb(0.35, 0.1, 0.55);
+        if (action === 'icc_vet_forward')  return rgb(0.45, 0.25, 0.75);
+        if (action === 'icc_vet_return')   return rgb(0.1, 0.5, 0.2);
         return rgb(0.1, 0.35, 0.7);
       };
 

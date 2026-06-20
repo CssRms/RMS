@@ -10,7 +10,6 @@ import {
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
 import { deptAPI, reqAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
-import Modal from './Modal';
 import ConfirmModal from './ConfirmModal';
 
 // ── Auto-generated Department Seal SVG ────────────────────────────────────────
@@ -656,90 +655,102 @@ const DepartmentManager = ({ onViewChange }) => {
         />
       )}
 
-      {/* Add Modal */}
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Department" size="xl"
-        footer={(
-          <>
-            <button onClick={() => setIsAddModalOpen(false)} className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">Cancel</button>
-            <button onClick={handleAddSubmit} disabled={isProcessing || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim()}
-              className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-              {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Department Name</label>
-            <input type="text" value={newDeptData.name} onChange={e => setNewDeptData(d => ({ ...d, name: e.target.value }))}
-              placeholder="e.g. Finance & Accounts"
-              className="w-full bg-muted/30 border border-border/50 rounded-xl p-4 focus:ring-2 focus:ring-primary/20 outline-none" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Password</label>
-            <div className="relative">
-              <input type={showAccessCode ? 'text' : 'password'} value={newDeptData.accessCode}
-                onChange={e => setNewDeptData(d => ({ ...d, accessCode: e.target.value }))}
-                placeholder="e.g. HATCH-2026"
-                className="w-full bg-muted/30 border border-border/50 rounded-xl p-4 pr-12 focus:ring-2 focus:ring-primary/20 outline-none font-mono" />
-              <button type="button" onClick={() => setShowAccessCode(v => !v)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary">
-                {showAccessCode ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {['Operational', 'Strategic'].map(type => (
-              <button key={type} type="button" onClick={() => setNewDeptData(d => ({ ...d, type }))}
-                className={`p-4 rounded-xl border transition-all text-xs font-bold uppercase ${newDeptData.type === type ? 'bg-primary/10 border-primary/50 text-primary' : 'bg-white border-border/50 text-muted-foreground hover:border-border'}`}>
-                {type}
-              </button>
-            ))}
-          </div>
+      {/* Add Modal — compact centered overlay, same style as Edit Department (keeps sidebar visible) */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setIsAddModalOpen(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
 
-          {/* Head Official Details */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center gap-2">
-              <div className="h-px flex-1 bg-border/40" />
-              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] shrink-0">Head Official</p>
-              <div className="h-px flex-1 bg-border/40" />
+            {/* Header */}
+            <div className="sticky top-0 bg-white rounded-t-3xl px-6 pt-6 pb-4 border-b border-border/30 z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                    <Building2 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-foreground">Add New Department</h3>
+                    <p className="text-[10px] text-muted-foreground font-mono mt-0.5">System Context Active</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-muted rounded-xl text-muted-foreground transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
             </div>
-            {[
-              { key: 'headSurname',   label: 'Surname',          placeholder: 'e.g. Adeyemi',               icon: User },
-              { key: 'headFirstName', label: 'First Name',        placeholder: 'e.g. John',                  icon: User },
-              { key: 'headOtherName', label: 'Other Name',        placeholder: 'e.g. Chukwuemeka (optional)', icon: User },
-              { key: 'headTitle',     label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck },
-              { key: 'headEmail',     label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email' },
-            ].map(({ key, label, placeholder, icon: Icon, type }) => (
-              <div key={key} className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{label}</label>
-                <div className="flex items-center border border-border/50 rounded-xl focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 bg-white">
-                  <Icon size={14} className="text-muted-foreground ml-3 shrink-0" />
-                  <input
-                    value={newDeptData[key]}
-                    onChange={e => setNewDeptData(d => ({ ...d, [key]: e.target.value }))}
-                    type={type || 'text'}
-                    placeholder={placeholder}
-                    className="flex-1 px-3 py-3 text-sm font-medium bg-transparent outline-none"
-                  />
+
+            <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Department Name</label>
+                <input type="text" value={newDeptData.name} onChange={e => setNewDeptData(d => ({ ...d, name: e.target.value }))}
+                  placeholder="e.g. Finance & Accounts"
+                  className="w-full bg-muted/30 border border-border/50 rounded-xl p-4 focus:ring-2 focus:ring-primary/20 outline-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Password</label>
+                <div className="relative">
+                  <input type={showAccessCode ? 'text' : 'password'} value={newDeptData.accessCode}
+                    onChange={e => setNewDeptData(d => ({ ...d, accessCode: e.target.value }))}
+                    placeholder="e.g. HATCH-2026"
+                    className="w-full bg-muted/30 border border-border/50 rounded-xl p-4 pr-12 focus:ring-2 focus:ring-primary/20 outline-none font-mono" />
+                  <button type="button" onClick={() => setShowAccessCode(v => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary">
+                    {showAccessCode ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="grid grid-cols-2 gap-3">
+                {['Operational', 'Strategic'].map(type => (
+                  <button key={type} type="button" onClick={() => setNewDeptData(d => ({ ...d, type }))}
+                    className={`p-4 rounded-xl border transition-all text-xs font-bold uppercase ${newDeptData.type === type ? 'bg-primary/10 border-primary/50 text-primary' : 'bg-white border-border/50 text-muted-foreground hover:border-border'}`}>
+                    {type}
+                  </button>
+                ))}
+              </div>
 
-          {/* Inline action buttons — always visible directly below the fields */}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => setIsAddModalOpen(false)}
-              className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">
-              Cancel
-            </button>
-            <button type="button" onClick={handleAddSubmit} disabled={isProcessing || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim()}
-              className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-              {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
-            </button>
+              {/* Head Official Details */}
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-2">
+                  <div className="h-px flex-1 bg-border/40" />
+                  <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] shrink-0">Head Official</p>
+                  <div className="h-px flex-1 bg-border/40" />
+                </div>
+                {[
+                  { key: 'headSurname',   label: 'Surname',          placeholder: 'e.g. Adeyemi',               icon: User },
+                  { key: 'headFirstName', label: 'First Name',        placeholder: 'e.g. John',                  icon: User },
+                  { key: 'headOtherName', label: 'Other Name',        placeholder: 'e.g. Chukwuemeka (optional)', icon: User },
+                  { key: 'headTitle',     label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck },
+                  { key: 'headEmail',     label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email' },
+                ].map(({ key, label, placeholder, icon: Icon, type }) => (
+                  <div key={key} className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{label}</label>
+                    <div className="flex items-center border border-border/50 rounded-xl focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 bg-white">
+                      <Icon size={14} className="text-muted-foreground ml-3 shrink-0" />
+                      <input
+                        value={newDeptData[key]}
+                        onChange={e => setNewDeptData(d => ({ ...d, [key]: e.target.value }))}
+                        type={type || 'text'}
+                        placeholder={placeholder}
+                        className="flex-1 px-3 py-3 text-sm font-medium bg-transparent outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setIsAddModalOpen(false)}
+                  className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">
+                  Cancel
+                </button>
+                <button type="submit" disabled={isProcessing || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim()}
+                  className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                  {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </Modal>
+      )}
 
       <ConfirmModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={confirmDelete}
         isProcessing={isProcessing} title="Delete Department"
