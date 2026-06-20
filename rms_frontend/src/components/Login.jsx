@@ -475,6 +475,56 @@ const AnimBg = ({ mobile = false }) => (
 );
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Typewriter headline — types line1 then line2, pauses, deletes both, repeats ──
+const TypewriterHeadline = ({ line1, line2 }) => {
+  const [text1, setText1] = useState('');
+  const [text2, setText2] = useState('');
+  const [phase, setPhase] = useState('typing1');
+
+  useEffect(() => {
+    const TYPE_SPEED = 85;
+    const DELETE_SPEED = 45;
+    const PAUSE_FULL = 2200;
+    const PAUSE_EMPTY = 500;
+    let timer;
+
+    if (phase === 'typing1') {
+      timer = text1.length < line1.length
+        ? setTimeout(() => setText1(line1.slice(0, text1.length + 1)), TYPE_SPEED)
+        : setTimeout(() => setPhase('typing2'), 200);
+    } else if (phase === 'typing2') {
+      timer = text2.length < line2.length
+        ? setTimeout(() => setText2(line2.slice(0, text2.length + 1)), TYPE_SPEED)
+        : setTimeout(() => setPhase('deleting2'), PAUSE_FULL);
+    } else if (phase === 'deleting2') {
+      timer = text2.length > 0
+        ? setTimeout(() => setText2(text2.slice(0, -1)), DELETE_SPEED)
+        : setTimeout(() => setPhase('deleting1'), 150);
+    } else if (phase === 'deleting1') {
+      timer = text1.length > 0
+        ? setTimeout(() => setText1(text1.slice(0, -1)), DELETE_SPEED)
+        : setTimeout(() => setPhase('typing1'), PAUSE_EMPTY);
+    }
+    return () => clearTimeout(timer);
+  }, [phase, text1, text2, line1, line2]);
+
+  const cursorOnLine1 = phase === 'typing1' || phase === 'deleting1';
+  const cursorOnLine2 = phase === 'typing2' || phase === 'deleting2';
+
+  return (
+    <>
+      <h1 className="text-[56px] font-black tracking-[-0.02em] leading-[0.9] text-white mb-1 min-h-[56px]">
+        {text1}
+        {cursorOnLine1 && <span className="inline-block w-[4px] h-[44px] bg-white/80 ml-1 align-middle animate-pulse" />}
+      </h1>
+      <h2 className="text-[34px] italic font-extrabold text-white/65 leading-none mb-4 min-h-[34px]">
+        {text2}
+        {cursorOnLine2 && <span className="inline-block w-[3px] h-[28px] bg-white/60 ml-1 align-middle animate-pulse" />}
+      </h2>
+    </>
+  );
+};
+
 const Login = () => {
   const [selectedDept, setSelectedDept] = useState('');
   const [accessCode, setAccessCode] = useState('');
@@ -649,13 +699,8 @@ const Login = () => {
             Enterprise Portal
           </span>
 
-          {/* Headline */}
-          <h1 className="text-[56px] font-black tracking-[-0.02em] leading-[0.9] text-white mb-1">
-            Requisition
-          </h1>
-          <h2 className="text-[34px] italic font-extrabold text-white/65 leading-none mb-4">
-            Management System
-          </h2>
+          {/* Headline — animated typewriter effect */}
+          <TypewriterHeadline line1="Requisition" line2="Management System" />
 
           {/* Divider with RMS label */}
           <div className="flex items-center gap-3 w-full mb-4">
