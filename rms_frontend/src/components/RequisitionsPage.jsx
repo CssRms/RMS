@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
@@ -2081,6 +2081,73 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
   );
 };
 
+// ── ICC Vets Protocol — Account's gate panel ────────────────────────────────
+// Shown to Account instead of the normal treatment form when a Cash/Material
+// request hasn't yet been vetted+returned by ICC. Account's only options here
+// are to forward it to ICC, or return it up the chain as usual.
+const IccVetForwardGate = ({ req, detail, departments, returnDestLabel, onDone }) => {
+  const [comment, setComment] = useState('');
+  const [forwarding, setForwarding] = useState(false);
+  const [returning, setReturning]   = useState(false);
+
+  const handleForward = async () => {
+    setForwarding(true);
+    try {
+      await iccVetForward(req.id, comment.trim() || undefined);
+      toast.success('Forwarded to ICC for vetting.');
+      setComment('');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not forward to ICC.');
+    } finally { setForwarding(false); }
+  };
+
+  const handleReturn = async () => {
+    if (!comment.trim()) { toast.error('A reason is required to return this request.'); return; }
+    setReturning(true);
+    try {
+      await vettingActionRequisition(req.id, { action: 'return', comment: comment.trim() });
+      toast.success(`Returned to ${returnDestLabel}.`);
+      setComment('');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not return request.');
+    } finally { setReturning(false); }
+  };
+
+  return (
+    <div className="space-y-3 border border-indigo-200 rounded-2xl p-4 bg-indigo-50/50 shadow-sm relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
+      <div className="flex items-center gap-2 pl-1">
+        <Shield size={14} className="text-indigo-700" />
+        <p className="text-[10px] font-black text-indigo-800 uppercase tracking-widest">ICC Vets Protocol</p>
+        <span className="ml-auto px-2 py-0.5 rounded-full bg-indigo-100 border border-indigo-300 text-[9px] font-black text-indigo-700 uppercase">Awaiting ICC Clearance</span>
+      </div>
+      <p className="text-[11px] text-indigo-700/80 leading-relaxed pl-1">
+        This request must be vetted by ICC before Account can treat it. Forward it to ICC now, or return it to {returnDestLabel} if something needs correcting first.
+      </p>
+      <textarea
+        value={comment}
+        onChange={e => setComment(e.target.value)}
+        placeholder="Optional note for ICC (required if returning)…"
+        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2.5 text-xs text-foreground placeholder-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none min-h-[56px]"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={handleForward} disabled={forwarding || returning}
+          className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+          {forwarding ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+          Forward to ICC
+        </button>
+        <button onClick={handleReturn} disabled={forwarding || returning}
+          className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+          {returning ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+          Return to {returnDestLabel}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ── Vetting Panel (ICC / Audit / Account — role-specific auto-routing) ─────────
 const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated }) => {
   const [comment, setComment]       = useState('');
@@ -2162,6 +2229,24 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   // Allow Material/Audit-reviewed requests at Account through even when finalApprovalStatus is 'none'
   if (!_accountHoldsMaterial && !_accountHoldsAuditReviewed && (!finalApprovalStatus || finalApprovalStatus === 'none')) return null;
   if (finalApprovalStatus === 'treated') return null;
+
+  // ── ICC Vets Protocol gate ──────────────────────────────────────────────────
+  // Account cannot treat a Cash/Material request until ICC has vetted and returned
+  // it. Their only action here is to forward to ICC (or return up the chain as usual).
+  const _isMemoReqForGate = /^memo/i.test(req?.type || '');
+  if (isAccount && !_isMemoReqForGate && !detail?.iccVettingCleared) {
+    return (
+      <IccVetForwardGate
+        req={req}
+        detail={detail}
+        departments={departments}
+        returnDestLabel={finalApprovedByDeptId
+          ? (departments.find(d => d.id === finalApprovedByDeptId)?.name || 'Approving Authority')
+          : 'Approving Authority'}
+        onDone={onDone}
+      />
+    );
+  }
 
   // Account and Chairman always treat — they also have Forward + Return options
   const canTreat = isAccount || isChairman;
@@ -2711,6 +2796,178 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   );
 };
 
+// ── ICC Vets Protocol — ICC's vetting panel ─────────────────────────────────
+// Shown to ICC while they hold a Cash/Material request forwarded by Account.
+// For Cash requests ICC may build a verified items table (same mechanic as
+// Audit's pre-approval override, just positioned later — and ICC's table takes
+// priority over Audit's per getEffectiveReqAmount). Material requests just get
+// a plain vet + return — no table alteration.
+const IccVetsPanel = ({ req, detail, departments, onDone }) => {
+  const _fmt = n => `₦${Number(n || 0).toLocaleString()}`;
+  const isMaterialReq = /^material/i.test(req?.type || '');
+
+  const existingOverride = detail?.hasIccOverride
+    ? (() => { try { return JSON.parse(detail.iccOverrideContent); } catch { return null; } })()
+    : null;
+  // Audit's table (if set) is the most recent figures before ICC's turn — pre-fill from
+  // that rather than the creator's stale original, when ICC hasn't set their own table yet.
+  const auditOverrideForPrefill = (!existingOverride && detail?.hasAuditOverride)
+    ? (() => { try { return JSON.parse(detail.auditContent); } catch { return null; } })()
+    : null;
+
+  const blankRow = () => ({ description: '', qty: 1, amount: '' });
+  const initRows = () => {
+    if (existingOverride?.items?.length)
+      return existingOverride.items.map(i => ({ description: i.description, qty: i.qty, amount: String(i.amount) }));
+    if (auditOverrideForPrefill?.items?.length)
+      return auditOverrideForPrefill.items.map(i => ({ description: i.description, qty: i.qty, amount: String(i.amount) }));
+    try {
+      const parsed = JSON.parse(req.content || '{}');
+      if (parsed.itemized && Array.isArray(parsed.items) && parsed.items.length > 0)
+        return parsed.items.map(i => ({ description: i.description || '', qty: i.qty || 1, amount: String(i.amount || '') }));
+    } catch { /* fall through */ }
+    return [blankRow()];
+  };
+
+  const [rows, setRows]                 = useState(initRows);
+  const [showTable, setShowTable]       = useState(!isMaterialReq && !!detail?.hasIccOverride);
+  const [tableComment, setTableComment] = useState(existingOverride?.comment || auditOverrideForPrefill?.comment || '');
+  const [note, setNote]                 = useState('');
+  const [acting, setActing]             = useState(false);
+
+  const calcLineTotal = (row) => (parseFloat(row.qty) || 0) * (parseFloat(row.amount) || 0);
+  const grandTotal = rows.reduce((s, r) => s + calcLineTotal(r), 0);
+  const updateRow = (idx, field, val) => setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+  const addRow    = () => setRows(prev => [...prev, blankRow()]);
+  const removeRow = (idx) => setRows(prev => prev.filter((_, i) => i !== idx));
+
+  const isItemized = (() => { try { return JSON.parse(req.content || '{}')?.itemized; } catch { return false; } })();
+
+  const handleReturn = async () => {
+    setActing(true);
+    try {
+      let overrideItems;
+      if (!isMaterialReq && showTable) {
+        const validRows = rows.filter(r => r.description.trim() && parseFloat(r.amount) > 0);
+        if (validRows.length) {
+          overrideItems = validRows.map(r => ({ description: r.description.trim(), qty: parseFloat(r.qty) || 1, amount: parseFloat(r.amount) }));
+        }
+      }
+      await iccVetReturn(req.id, {
+        comment: note.trim() || undefined,
+        overrideItems,
+        overrideComment: overrideItems ? (tableComment.trim() || undefined) : undefined,
+      });
+      toast.success('Vetting complete — returned to Account for treatment.');
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Could not return to Account.');
+    } finally { setActing(false); }
+  };
+
+  return (
+    <div className="space-y-3 border border-violet-200 rounded-2xl p-4 bg-violet-50/50 shadow-sm relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full bg-violet-500" />
+      <div className="flex items-center gap-2 pl-1 flex-wrap">
+        <Gavel size={14} className="text-violet-700" />
+        <p className="text-[10px] font-black text-violet-800 uppercase tracking-widest">ICC Vets Protocol</p>
+        <span className="ml-auto px-2 py-0.5 rounded-full bg-violet-100 border border-violet-300 text-[9px] font-black text-violet-700 uppercase">Awaiting Your Vetting</span>
+      </div>
+      <p className="text-[11px] text-violet-700/80 leading-relaxed pl-1">
+        Account has forwarded this request to ICC for vetting before treatment.
+        {isMaterialReq ? ' Review and return it to Account when ready.' : ' You may optionally set a verified price table — it will take priority for payment.'}
+      </p>
+
+      {!isMaterialReq && isItemized && (
+        <>
+          {!showTable ? (
+            <button onClick={() => setShowTable(true)} className="text-[10px] font-bold text-violet-700 hover:text-violet-900 hover:bg-violet-50 border border-violet-200 px-2.5 py-1 rounded-lg transition-all">
+              {detail?.hasIccOverride ? 'Edit Verified Table' : 'Set Verified Price Table'}
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="overflow-x-auto rounded-xl border border-violet-200 shadow-sm">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-violet-100/60 border-b border-violet-200">
+                      <th className="text-left px-2 py-2 text-[10px] font-black text-violet-700 uppercase tracking-wider w-8">#</th>
+                      <th className="text-left px-2 py-2 text-[10px] font-black text-violet-700 uppercase tracking-wider">Item Description</th>
+                      <th className="text-center px-2 py-2 text-[10px] font-black text-violet-700 uppercase tracking-wider w-16">Qty</th>
+                      <th className="text-right px-2 py-2 text-[10px] font-black text-violet-700 uppercase tracking-wider w-28">Unit Price (₦)</th>
+                      <th className="text-right px-2 py-2 text-[10px] font-black text-violet-700 uppercase tracking-wider w-24">Total</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-violet-100">
+                    {rows.map((row, idx) => (
+                      <tr key={idx} className="bg-white">
+                        <td className="px-2 py-2 text-xs text-muted-foreground font-mono">{idx + 1}</td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" value={row.description} onChange={e => updateRow(idx, 'description', e.target.value)}
+                            placeholder="Item description"
+                            className="w-full text-xs border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" min="1" value={row.qty} onChange={e => updateRow(idx, 'qty', e.target.value)}
+                            className="w-full text-xs text-center border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" min="0" step="0.01" value={row.amount} onChange={e => updateRow(idx, 'amount', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full text-xs text-right border border-border/50 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400" />
+                        </td>
+                        <td className="px-2 py-2 text-xs text-right font-mono font-bold text-foreground">{_fmt(calcLineTotal(row))}</td>
+                        <td className="px-2 py-2 text-center">
+                          {rows.length > 1 && (
+                            <button onClick={() => removeRow(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={13} /></button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-violet-50/80 border-t-2 border-violet-200">
+                      <td colSpan={4} className="px-2 py-2 text-xs font-black text-right uppercase tracking-widest text-violet-700">ICC Verified Grand Total</td>
+                      <td className="px-2 py-2 text-sm font-black text-right font-mono text-violet-800">{_fmt(grandTotal)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <button onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-bold text-violet-700 hover:text-violet-900 transition-colors pl-1">
+                <Plus size={13} /> Add Row
+              </button>
+              <textarea value={tableComment} onChange={e => setTableComment(e.target.value)} rows={2}
+                placeholder="Comment on the verified table (optional)…"
+                className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none" />
+              {!detail?.hasIccOverride && (
+                <button onClick={() => setShowTable(false)} className="text-[10px] font-bold text-muted-foreground hover:text-foreground">Cancel table</button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="space-y-1 pt-1 border-t border-violet-100">
+        <label className="text-[10px] font-black text-violet-700 uppercase tracking-widest">Vetting Note</label>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          rows={2}
+          placeholder="Optional note for Account…"
+          className="w-full text-xs border border-violet-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none"
+        />
+      </div>
+
+      <button onClick={handleReturn} disabled={acting}
+        className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
+        {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+        Complete Vetting — Return to Account
+      </button>
+    </div>
+  );
+};
+
 // ── Sub-account visibility selector — per-unit dropdown with checkboxes ───────
 const SubVisibilitySelector = ({ req, onAction }) => {
   const [open, setOpen]         = useState(false);
@@ -3085,6 +3342,10 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const _auditParsed = _hasAuditOverride
     ? (() => { try { return JSON.parse(detail.auditContent); } catch { return null; } })()
     : null;
+  const _hasIccOverride = !!detail?.hasIccOverride;
+  const _iccParsed = _hasIccOverride
+    ? (() => { try { return JSON.parse(detail.iccOverrideContent); } catch { return null; } })()
+    : null;
 
   const _renderItemsTable = (items, total, comment, opts = {}) => {
     const { headerBg = 'bg-muted/60', headerText = 'text-muted-foreground', footerBg = 'bg-primary/5', footerBorder = 'border-primary/20', footerText = 'text-primary', borderColor = 'border-border/50' } = opts;
@@ -3133,9 +3394,9 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             <div className="flex items-center space-x-2">
               <Paperclip size={15} className="text-primary" />
               <p className="text-xs font-black text-foreground uppercase tracking-[0.1em]">
-                {_hasAuditOverride ? 'Creator\'s Estimate (Original)' : 'Item Details'}
+                {(_hasAuditOverride || _hasIccOverride) ? 'Creator\'s Estimate (Original)' : 'Item Details'}
               </p>
-              {_hasAuditOverride && (
+              {(_hasAuditOverride || _hasIccOverride) && (
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-muted border border-border text-muted-foreground uppercase">For Reference</span>
               )}
             </div>
@@ -3143,19 +3404,21 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
               _parsedContent.items,
               _parsedContent.total,
               _parsedContent.comment,
-              _hasAuditOverride
+              (_hasAuditOverride || _hasIccOverride)
                 ? { headerBg: 'bg-muted/40', headerText: 'text-muted-foreground', footerBg: 'bg-muted/30', footerBorder: 'border-border/40', footerText: 'text-muted-foreground', borderColor: 'border-border/40' }
                 : {}
             )}
           </div>
 
-          {/* Audit verified table — shown when override exists */}
+          {/* Audit verified table — shown when override exists. Superseded by ICC's table if ICC also set one. */}
           {_hasAuditOverride && _auditParsed?.items?.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
                 <Gavel size={15} className="text-purple-600" />
                 <p className="text-xs font-black text-purple-800 uppercase tracking-[0.1em]">Audit Verified Amount</p>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Effective for Approval & Payment</span>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase ${_hasIccOverride ? 'bg-muted border-border text-muted-foreground' : 'bg-purple-100 border-purple-300 text-purple-700'}`}>
+                  {_hasIccOverride ? 'Superseded by ICC' : 'Effective for Approval & Payment'}
+                </span>
               </div>
               {detail.auditDeptName && (
                 <p className="text-[11px] text-purple-600/80 pl-1">Verified by: <span className="font-bold">{detail.auditDeptName}</span></p>
@@ -3164,7 +3427,29 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 _auditParsed.items,
                 _auditParsed.total,
                 _auditParsed.comment,
-                { headerBg: 'bg-purple-100/60', headerText: 'text-purple-700', footerBg: 'bg-purple-50/80', footerBorder: 'border-purple-200', footerText: 'text-purple-800', borderColor: 'border-purple-200' }
+                _hasIccOverride
+                  ? { headerBg: 'bg-muted/40', headerText: 'text-muted-foreground', footerBg: 'bg-muted/30', footerBorder: 'border-border/40', footerText: 'text-muted-foreground', borderColor: 'border-border/40' }
+                  : { headerBg: 'bg-purple-100/60', headerText: 'text-purple-700', footerBg: 'bg-purple-50/80', footerBorder: 'border-purple-200', footerText: 'text-purple-800', borderColor: 'border-purple-200' }
+              )}
+            </div>
+          )}
+
+          {/* ICC verified table — shown when ICC has set one via the ICC Vets Protocol; always the effective amount */}
+          {_hasIccOverride && _iccParsed?.items?.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Gavel size={15} className="text-violet-600" />
+                <p className="text-xs font-black text-violet-800 uppercase tracking-[0.1em]">ICC Verified Amount</p>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-violet-100 border border-violet-300 text-violet-700 uppercase">Effective for Approval & Payment</span>
+              </div>
+              {detail.iccOverrideDeptName && (
+                <p className="text-[11px] text-violet-600/80 pl-1">Verified by: <span className="font-bold">{detail.iccOverrideDeptName}</span></p>
+              )}
+              {_renderItemsTable(
+                _iccParsed.items,
+                _iccParsed.total,
+                _iccParsed.comment,
+                { headerBg: 'bg-violet-100/60', headerText: 'text-violet-700', footerBg: 'bg-violet-50/80', footerBorder: 'border-violet-200', footerText: 'text-violet-800', borderColor: 'border-violet-200' }
               )}
             </div>
           )}
@@ -3347,21 +3632,30 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
             </div>
           </div>
           
-          {isFinancial && (
-             <div className={`sm:text-right border p-4 rounded-xl shadow-sm min-w-[200px] ${_hasAuditOverride ? 'bg-purple-50 border-purple-200' : 'bg-white border-border/40'}`}>
-                <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${_hasAuditOverride ? 'text-purple-700' : 'text-muted-foreground'}`}>
-                  {_hasAuditOverride ? 'Audit Verified Amount' : 'Total Amount'}
+          {isFinancial && (() => {
+            // ICC's override (if set) is the effective amount; otherwise Audit's; otherwise the original.
+            const hasOverride = _hasIccOverride || _hasAuditOverride;
+            const effAmt = _hasIccOverride ? detail?.iccOverrideAmount : (_hasAuditOverride ? detail?.auditAmount : req.amount);
+            const label = _hasIccOverride ? 'ICC Verified Amount' : (_hasAuditOverride ? 'Audit Verified Amount' : 'Total Amount');
+            const palette = _hasIccOverride
+              ? { box: 'bg-violet-50 border-violet-200', text: 'text-violet-700', amt: 'text-violet-900' }
+              : hasOverride
+                ? { box: 'bg-purple-50 border-purple-200', text: 'text-purple-700', amt: 'text-purple-900' }
+                : { box: 'bg-white border-border/40', text: 'text-muted-foreground', amt: 'text-foreground' };
+            return (
+              <div className={`sm:text-right border p-4 rounded-xl shadow-sm min-w-[200px] ${palette.box}`}>
+                <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${palette.text}`}>{label}</p>
+                <p className={`text-2xl font-mono font-black ${palette.amt}`}>
+                  ₦{Number(hasOverride ? (effAmt ?? req.amount) : req.amount || 0).toLocaleString()}
                 </p>
-                <p className={`text-2xl font-mono font-black ${_hasAuditOverride ? 'text-purple-900' : 'text-foreground'}`}>
-                  ₦{Number(_hasAuditOverride ? (detail?.auditAmount ?? req.amount) : req.amount || 0).toLocaleString()}
-                </p>
-                {_hasAuditOverride && (
+                {hasOverride && (
                   <p className="text-[9px] text-muted-foreground mt-0.5 line-through">
                     Originally: ₦{Number(req.amount || 0).toLocaleString()}
                   </p>
                 )}
-             </div>
-          )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Audit Pre-Review Banner — shown at top when approval authority is gated on audit */}
@@ -3597,6 +3891,23 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                     user={user}
                     departments={departments}
                     onTreatInitiated={setAccountPaymentMode}
+                    onDone={() => {
+                      getRequisitionDetail(req.id).then(d => setDetail(d));
+                      onAction();
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* ICC Vets Protocol — ICC's vetting panel, shown only while ICC currently holds the request */}
+              {!isTaggedObserver && user?.role === 'department' && detail && !loading && !isFrozen && !isOnKiv &&
+               /\bicc\b|internal.*control|control.*compliance/i.test(user?.name || '') &&
+               detail?.currentVettingDeptId && parseInt(detail.currentVettingDeptId) === parseInt(user?.deptId) && (
+                <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
+                  <IccVetsPanel
+                    req={req}
+                    detail={detail}
+                    departments={departments}
                     onDone={() => {
                       getRequisitionDetail(req.id).then(d => setDetail(d));
                       onAction();
@@ -4129,11 +4440,12 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
-              {/* Vetting Chain History — Account's pre-approval review/treatment only.
-                  ICC oversight events (icc_*) are rendered separately below — they are
-                  not part of the vetting chain even though they're stored in the same table. */}
-              {detail?.vettingEvents?.filter(e => !/^icc_/i.test(e.action || '')).length > 0 && (() => {
-                const evts = detail.vettingEvents.filter(e => !/^icc_/i.test(e.action || '')); // ascending from server
+              {/* Vetting Chain History — Account's review/treatment + ICC Vets Protocol steps.
+                  ICC OVERSIGHT events (freeze/unfreeze/comment) are rendered separately below —
+                  those are global-observer actions, not part of the actual vetting chain, even
+                  though both are stored in the same VettingEvent table. */}
+              {detail?.vettingEvents?.filter(e => !/^icc_(freeze|unfreeze|comment)$/i.test(e.action || '')).length > 0 && (() => {
+                const evts = detail.vettingEvents.filter(e => !/^icc_(freeze|unfreeze|comment)$/i.test(e.action || '')); // ascending from server
                 const displayed = [...evts].reverse(); // newest first
 
                 // Resolve the dept that sent to vetting (for legacy events where actorName is a user name)
@@ -4224,6 +4536,20 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                             reasonLine,
                             ev.comment ? `Note: "${ev.comment}"` : null,
                           ].filter(Boolean).join(' ');
+                        } else if (ev.action === 'icc_vet_forward') {
+                          fromLabel = ev.deptName || 'Account';
+                          toLabel = 'ICC';
+                          badgeText = 'Forwarded to ICC';
+                          badgeColor = 'bg-indigo-100 text-indigo-700';
+                          iconColor = 'bg-indigo-500';
+                          description = `${fromLabel} forwarded this requisition to ICC for the ICC Vets Protocol review.${ev.comment ? ` Note: "${ev.comment}"` : ''}`;
+                        } else if (ev.action === 'icc_vet_return') {
+                          fromLabel = ev.deptName || 'ICC';
+                          toLabel = 'Account';
+                          badgeText = 'ICC Vetting Complete';
+                          badgeColor = 'bg-emerald-100 text-emerald-700';
+                          iconColor = 'bg-emerald-500';
+                          description = `${fromLabel} completed vetting and returned this requisition to Account for treatment.${ev.comment ? ` Note: "${ev.comment}"` : ''}`;
                         } else if (ev.action === 'icc_comment') {
                           fromLabel = ev.deptName || 'ICC';
                           toLabel = null;
@@ -4306,9 +4632,9 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 );
               })()}
 
-              {/* ICC Observation Log — freeze/comment/unfreeze history, separate from the Vetting Chain */}
-              {detail?.vettingEvents?.filter(e => /^icc_/i.test(e.action || '')).length > 0 && (() => {
-                const iccEvts = [...detail.vettingEvents.filter(e => /^icc_/i.test(e.action || ''))].reverse();
+              {/* ICC Observation Log — freeze/comment/unfreeze history (global observer actions), separate from the Vetting Chain */}
+              {detail?.vettingEvents?.filter(e => /^icc_(freeze|unfreeze|comment)$/i.test(e.action || '')).length > 0 && (() => {
+                const iccEvts = [...detail.vettingEvents.filter(e => /^icc_(freeze|unfreeze|comment)$/i.test(e.action || ''))].reverse();
                 return (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">

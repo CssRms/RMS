@@ -52,6 +52,8 @@ const fmtDate = (d) => d ? new Date(d).toLocaleString('en-NG', { day: '2-digit',
 const ItemsTable = ({ items, total, comment, variant = 'default' }) => {
   const palette = variant === 'audit'
     ? { headerBg: 'bg-purple-100/60', headerText: 'text-purple-700', footerBg: 'bg-purple-50/80', footerBorder: 'border-purple-200', footerText: 'text-purple-800', borderColor: 'border-purple-200' }
+    : variant === 'icc'
+      ? { headerBg: 'bg-violet-100/60', headerText: 'text-violet-700', footerBg: 'bg-violet-50/80', footerBorder: 'border-violet-200', footerText: 'text-violet-800', borderColor: 'border-violet-200' }
     : variant === 'muted'
       ? { headerBg: 'bg-muted/40', headerText: 'text-muted-foreground', footerBg: 'bg-muted/30', footerBorder: 'border-border/40', footerText: 'text-muted-foreground', borderColor: 'border-border/40' }
       : { headerBg: 'bg-muted/60', headerText: 'text-muted-foreground', footerBg: 'bg-primary/5', footerBorder: 'border-primary/20', footerText: 'text-primary', borderColor: 'border-border/50' };
@@ -112,7 +114,8 @@ const CurrentStatusPanel = ({ detail }) => {
   if (fas === 'partial') {
     const paid = Number(detail.amountDisbursed || 0);
     const hasReqAmt = Number(detail.amount || 0) > 0;
-    const effAmt = (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount || 0);
+    const effAmt = (detail.hasIccOverride && detail.iccOverrideAmount != null) ? Number(detail.iccOverrideAmount)
+      : (detail.hasAuditOverride && detail.auditAmount != null) ? Number(detail.auditAmount) : Number(detail.amount || 0);
     return (
       <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 space-y-1.5">
         <div className="flex items-center gap-2 text-orange-700">
@@ -121,7 +124,7 @@ const CurrentStatusPanel = ({ detail }) => {
         </div>
         {hasReqAmt ? (
           <div className="text-[10px] text-orange-700/80 font-semibold pl-6">
-            Paid: ₦{paid.toLocaleString()} of ₦{effAmt.toLocaleString()} {detail.hasAuditOverride ? 'verified' : 'requested'}
+            Paid: ₦{paid.toLocaleString()} of ₦{effAmt.toLocaleString()} {(detail.hasIccOverride || detail.hasAuditOverride) ? 'verified' : 'requested'}
             {' — '}Balance: ₦{(effAmt - paid).toLocaleString()}
           </div>
         ) : paid > 0 && (
@@ -192,6 +195,8 @@ const vettingBadge = (ve) => {
   if (a === 'return')            return { text: 'Returned',       color: 'bg-amber-100 text-amber-700',   icon: XCircle,      dot: 'bg-amber-500' };
   if (a === 'forward')           return { text: 'Forwarded',      color: 'bg-blue-100 text-blue-700',     icon: CheckCircle2, dot: 'bg-blue-500' };
   if (a === 'sent_to_vetting')   return { text: 'Vetting Started', color: 'bg-indigo-100 text-indigo-700', icon: CheckCircle2, dot: 'bg-indigo-500' };
+  if (a === 'icc_vet_forward')   return { text: 'Forwarded to ICC', color: 'bg-indigo-100 text-indigo-700', icon: CheckCircle2, dot: 'bg-indigo-500' };
+  if (a === 'icc_vet_return')    return { text: 'ICC Vetting Complete', color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2, dot: 'bg-emerald-500' };
   return { text: (ve.action || '?').toUpperCase(), color: 'bg-purple-100 text-purple-700', icon: Clock, dot: 'bg-purple-500' };
 };
 
@@ -264,9 +269,13 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
   const auditParsed = hasAuditOverride
     ? (() => { try { return JSON.parse(detail.auditContent); } catch { return null; } })()
     : null;
+  const hasIccOverride = !!detail?.hasIccOverride;
+  const iccParsed = hasIccOverride
+    ? (() => { try { return JSON.parse(detail.iccOverrideContent); } catch { return null; } })()
+    : null;
 
-  const vettingOnly = (detail?.vettingEvents || []).filter(ve => !/^icc_/i.test(ve.action || ''));
-  const iccOnly      = (detail?.vettingEvents || []).filter(ve => /^icc_/i.test(ve.action || ''));
+  const vettingOnly = (detail?.vettingEvents || []).filter(ve => !/^icc_(freeze|unfreeze|comment)$/i.test(ve.action || ''));
+  const iccOnly      = (detail?.vettingEvents || []).filter(ve => /^icc_(freeze|unfreeze|comment)$/i.test(ve.action || ''));
   const forwardEvents = [...(detail?.forwardEvents || [])].reverse();
 
   return (
@@ -303,7 +312,8 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
               </div>
             </div>
             {(() => {
-              const effAmt = hasAuditOverride && detail.auditAmount != null ? detail.auditAmount : detail.amount;
+              const effAmt = hasIccOverride && detail.iccOverrideAmount != null ? detail.iccOverrideAmount
+                : hasAuditOverride && detail.auditAmount != null ? detail.auditAmount : detail.amount;
               const label = effectiveStatusLabel(detail);
               return (
                 <div className="text-right">
@@ -330,10 +340,10 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5">
                       <Paperclip size={12} className="text-primary" />
-                      <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em]">{hasAuditOverride ? "Creator's Estimate (Original)" : 'Item Details'}</p>
-                      {hasAuditOverride && <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-muted border border-border text-muted-foreground uppercase">For Reference</span>}
+                      <p className="text-[10px] font-black text-foreground/70 uppercase tracking-[0.15em]">{(hasAuditOverride || hasIccOverride) ? "Creator's Estimate (Original)" : 'Item Details'}</p>
+                      {(hasAuditOverride || hasIccOverride) && <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-muted border border-border text-muted-foreground uppercase">For Reference</span>}
                     </div>
-                    <ItemsTable items={parsedContent.items} total={parsedContent.total} comment={parsedContent.comment} variant={hasAuditOverride ? 'muted' : 'default'} />
+                    <ItemsTable items={parsedContent.items} total={parsedContent.total} comment={parsedContent.comment} variant={(hasAuditOverride || hasIccOverride) ? 'muted' : 'default'} />
                   </div>
 
                   {hasAuditOverride && auditParsed?.items?.length > 0 && (
@@ -341,10 +351,24 @@ const RequestDetail = ({ reqSummary, onBack, onChanged }) => {
                       <div className="flex items-center gap-1.5">
                         <Gavel size={12} className="text-purple-600" />
                         <p className="text-[10px] font-black text-purple-800 uppercase tracking-[0.15em]">Audit Verified Amount</p>
-                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-purple-100 border border-purple-300 text-purple-700 uppercase">Effective for Approval &amp; Payment</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase border ${hasIccOverride ? 'bg-muted border-border text-muted-foreground' : 'bg-purple-100 border-purple-300 text-purple-700'}`}>
+                          {hasIccOverride ? 'Superseded by ICC' : 'Effective for Approval & Payment'}
+                        </span>
                       </div>
                       {detail.auditDeptName && <p className="text-[10px] text-purple-600/80">Verified by: <span className="font-bold">{detail.auditDeptName}</span></p>}
-                      <ItemsTable items={auditParsed.items} total={auditParsed.total} comment={auditParsed.comment} variant="audit" />
+                      <ItemsTable items={auditParsed.items} total={auditParsed.total} comment={auditParsed.comment} variant={hasIccOverride ? 'muted' : 'audit'} />
+                    </div>
+                  )}
+
+                  {hasIccOverride && iccParsed?.items?.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <Gavel size={12} className="text-violet-600" />
+                        <p className="text-[10px] font-black text-violet-800 uppercase tracking-[0.15em]">ICC Verified Amount</p>
+                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-violet-100 border border-violet-300 text-violet-700 uppercase">Effective for Approval &amp; Payment</span>
+                      </div>
+                      {detail.iccOverrideDeptName && <p className="text-[10px] text-violet-600/80">Verified by: <span className="font-bold">{detail.iccOverrideDeptName}</span></p>}
+                      <ItemsTable items={iccParsed.items} total={iccParsed.total} comment={iccParsed.comment} variant="icc" />
                     </div>
                   )}
                 </div>

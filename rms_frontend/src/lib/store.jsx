@@ -780,6 +780,9 @@ export const iccComment  = (reqId, comment) => iccAPI.comment(reqId, comment);
 export const iccFreeze   = (reqId, note)    => iccAPI.freeze(reqId, note);
 export const iccUnfreeze = (reqId)          => iccAPI.unfreeze(reqId);
 
+export const iccVetForward = (reqId, comment) => iccAPI.vetForward(reqId, comment);
+export const iccVetReturn  = (reqId, payload) => iccAPI.vetReturn(reqId, payload);
+
 // ── HR offline-safe read functions ────────────────────────────────────────────
 // Each follows NetworkFirst: try the server, fall back to the local cache.
 // Write operations (create/update/delete) still go through hrAPI directly

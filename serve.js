@@ -171,7 +171,10 @@ const checkFinalApproveAuthority = (deptName, amount, isMaterial = false) => {
 // ── Sub-account privilege helpers ─────────────────────────────────────────────
 // Returns the amount that should be compared against privilege limits.
 // Uses audit-overridden amount when Audit has verified the table, otherwise original.
+// Priority: ICC's post-approval override (reviewed last, closest to payment) beats
+// Audit's pre-approval override, which beats the creator's original estimate.
 const getEffectiveReqAmount = (req) => {
+  if (req?.hasIccOverride && req?.iccOverrideAmount != null) return parseFloat(req.iccOverrideAmount);
   if (req?.hasAuditOverride && req?.auditAmount != null) return parseFloat(req.auditAmount);
   return parseFloat(req?.amount || 0);
 };
@@ -5005,6 +5008,15 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });
     }
 
+    // ICC Vets Protocol — Account cannot treat a Cash/Material request until ICC has
+    // vetted and returned it. Account must use /icc-vet-forward first. Chairman/CEO and
+    // memo requests are unaffected. Enforced server-side — never trust the UI alone.
+    const isMemoReq = /^memo/i.test(requisition.type || '');
+    const actorIsAccount = (isAccountDept) || (isPrivilegedVettingSub && isParentAccountDept);
+    if (action === 'treated' && actorIsAccount && !isMemoReq && !requisition.iccVettingCleared) {
+      return res.status(403).json({ error: 'This request must be vetted by ICC before Account can treat it. Forward it to ICC first.' });
+    }
+
     let attachmentKey = null;
     let attachmentName = null;
     if (req.file) {
@@ -5033,11 +5045,9 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       actingDeptName = d?.name || '';
     }
 
-    // Resolve disbursed amount — only relevant for 'treated' action
-    // Use audit-verified amount as the ceiling if Audit has overridden the creator's price
-    const reqAmount = (requisition.hasAuditOverride && requisition.auditAmount != null)
-      ? parseFloat(requisition.auditAmount)
-      : (requisition.amount || 0);
+    // Resolve disbursed amount — only relevant for 'treated' action.
+    // ICC's post-approval override (if any) takes priority over Audit's, per getEffectiveReqAmount.
+    const reqAmount = getEffectiveReqAmount(requisition);
     const existingDisbursed = requisition.amountDisbursed || 0;
     let disbursedThisAction = null;
     let resolvedTreatmentType = treatmentType || null;
@@ -5361,6 +5371,203 @@ app.delete('/api/requisitions/:id/audit-override', authenticateToken, async (req
 
     broadcastUpdate(reqId, { action: 'audit_override_cleared' });
     res.json({ success: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// ── ICC VETS PROTOCOL ─────────────────────────────────────────────────────────
+// Mandatory gate between Account receiving a Cash/Material request and Account
+// treating it. Account forwards to ICC; ICC vets (and may override the price
+// table for Cash only) before returning to Account, who can then treat normally.
+app.post('/api/requisitions/:id/icc-vet-forward', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    if (await blockIfIccFrozen(reqId, res)) return;
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
+      : null;
+    const isAccountDept = actingDept && /\baccount\b/i.test(actingDept.name);
+
+    // Privileged Account sub-account also allowed
+    let isPrivilegedAccountSub = false;
+    if (req.user.isSubAccount && req.user.parentDeptId) {
+      const parentDept = await prisma.department.findUnique({ where: { id: parseInt(req.user.parentDeptId) }, select: { name: true } });
+      isPrivilegedAccountSub = !!(parentDept && /\baccount\b/i.test(parentDept.name));
+    }
+
+    if (!isAdmin && !isAccountDept && !isPrivilegedAccountSub) {
+      return res.status(403).json({ error: 'Only the Account department can forward a request to ICC.' });
+    }
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { id: true, title: true, type: true, targetDepartmentId: true, currentVettingDeptId: true, finalApprovalStatus: true, hasAuditOverride: true }
+    });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+
+    const effectiveDeptId = req.user.isSubAccount ? parseInt(req.user.parentDeptId) : userDeptId;
+    const accountHoldsIt = isAdmin
+      || requisition.currentVettingDeptId === effectiveDeptId
+      || requisition.targetDepartmentId === effectiveDeptId;
+    if (!accountHoldsIt) {
+      return res.status(403).json({ error: 'Your department does not currently hold this requisition.' });
+    }
+
+    if (/^memo/i.test(requisition.type || '')) {
+      return res.status(400).json({ error: 'Memos do not go through the ICC Vets Protocol.' });
+    }
+
+    const allDeptsForIcc = await prisma.department.findMany({ where: { isSubAccount: false }, select: { id: true, name: true } });
+    const iccDept = allDeptsForIcc.find(d => isIccDept(d.name));
+    if (!iccDept) return res.status(500).json({ error: 'ICC department not found in system.' });
+
+    const parsed = z.object({ comment: z.string().optional() }).safeParse(req.body || {});
+    const comment = parsed.success ? parsed.data.comment : undefined;
+
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: { currentVettingDeptId: iccDept.id }
+    });
+
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: effectiveDeptId || 0,
+        deptName: actingDept?.name || 'Account',
+        action: 'icc_vet_forward',
+        comment: comment || null,
+        actorName: req.user?.name || actingDept?.name || 'Account',
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'ICC Vets Protocol — Forwarded',
+        details: `Req #${reqId} forwarded to ICC for vetting by ${actingDept?.name || 'Account'}.`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'icc_vet_forward', fromDept: actingDept?.name || 'Account', toDept: iccDept.name });
+    broadcastPushToInvolved(reqId, {
+      title: 'Forwarded for ICC Vetting',
+      body: `Req #${reqId} "${requisition.title || ''}" has been forwarded to ICC for vetting.`,
+      url: `/?req=${reqId}`
+    });
+
+    res.json({ success: true });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    const actingDept = userDeptId
+      ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
+      : null;
+
+    if (!isAdmin && !isIccDept(actingDept?.name)) {
+      return res.status(403).json({ error: 'Only the ICC department can return a request from vetting.' });
+    }
+
+    const requisition = await prisma.requisition.findUnique({
+      where: { id: reqId },
+      select: { id: true, title: true, type: true, currentVettingDeptId: true }
+    });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+
+    if (!isAdmin && requisition.currentVettingDeptId !== userDeptId) {
+      return res.status(403).json({ error: 'ICC does not currently hold this requisition for vetting.' });
+    }
+
+    const parsed = z.object({
+      comment: z.string().optional(),
+      overrideItems: z.array(z.object({
+        description: z.string().min(1),
+        qty: z.union([z.number(), z.string()]).transform(v => Number(v)),
+        amount: z.union([z.number(), z.string()]).transform(v => parseFloat(String(v))),
+      })).optional(),
+      overrideComment: z.string().optional(),
+    }).safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload.' });
+    const { comment, overrideItems, overrideComment } = parsed.data;
+
+    const isMaterialOrMemo = /^material|^memo/i.test(requisition.type || '');
+    if (overrideItems && overrideItems.length > 0 && isMaterialOrMemo) {
+      return res.status(400).json({ error: 'Price table override is only available for Cash/Fund requests.' });
+    }
+
+    const updateData = {
+      iccVettingCleared: true,
+      iccVettingNote: comment || null,
+      iccVettingAt: new Date(),
+      iccVettingByDeptId: userDeptId || null,
+    };
+
+    let iccTotal = null;
+    if (overrideItems && overrideItems.length > 0) {
+      const verifiedItems = overrideItems.map(item => ({
+        description: item.description,
+        qty: item.qty,
+        amount: item.amount,
+        lineTotal: parseFloat((item.qty * item.amount).toFixed(2)),
+      }));
+      iccTotal = parseFloat(verifiedItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
+      updateData.hasIccOverride = true;
+      updateData.iccOverrideContent = JSON.stringify({ itemized: true, items: verifiedItems, comment: overrideComment || null, total: iccTotal });
+      updateData.iccOverrideAmount = iccTotal;
+      updateData.iccOverrideDeptName = actingDept?.name || 'ICC';
+    }
+
+    // Resolve Account department to return the request to
+    const allDepts = await prisma.department.findMany({ where: { isSubAccount: false }, select: { id: true, name: true } });
+    const accountDept = allDepts.find(d => /\baccount\b/i.test(d.name));
+    if (!accountDept) return res.status(500).json({ error: 'Account department not found in system.' });
+    updateData.currentVettingDeptId = accountDept.id;
+
+    await prisma.requisition.update({ where: { id: reqId }, data: updateData });
+
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: userDeptId || 0,
+        deptName: actingDept?.name || 'ICC',
+        action: 'icc_vet_return',
+        comment: comment || null,
+        actorName: req.user?.name || actingDept?.name || 'ICC',
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'ICC Vets Protocol — Returned',
+        details: `Req #${reqId} returned to Account by ICC.${iccTotal != null ? ` ICC verified total: ₦${iccTotal.toLocaleString()}.` : ''}`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'icc_vet_return', fromDept: actingDept?.name || 'ICC', toDept: accountDept.name });
+    notifyDepartmentHead({
+      departmentId: accountDept.id,
+      subject: `ICC Vetting Complete — Req #${reqId}`,
+      lines: [
+        `ICC has completed vetting and returned this request to Account for treatment.`,
+        iccTotal != null ? `ICC Verified Amount: ₦${iccTotal.toLocaleString()}` : null,
+        comment ? `ICC Note: ${comment}` : null,
+      ].filter(Boolean),
+    }).catch(() => {});
+    broadcastPushToInvolved(reqId, {
+      title: 'ICC Vetting Complete',
+      body: `Req #${reqId} "${requisition.title || ''}" has been returned to Account for treatment.`,
+      url: `/?req=${reqId}`
+    });
+
+    res.json({ success: true, iccAmount: iccTotal });
   } catch (error) { sendError(res, 500, error.message); }
 });
 
@@ -5926,6 +6133,15 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
       `;
       ext = extRows?.[0] || {};
     } catch (_) { /* columns not yet migrated — ignore */ }
+    // ICC Vets Protocol fields — separate try/catch so a missing column never breaks anything above
+    try {
+      const iccVetRows = await prisma.$queryRaw`
+        SELECT "iccVettingCleared", "iccVettingNote", "iccVettingAt", "iccVettingByDeptId",
+               "hasIccOverride", "iccOverrideContent", "iccOverrideAmount", "iccOverrideDeptName"
+        FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
+      `;
+      Object.assign(ext, iccVetRows?.[0] || {});
+    } catch (_) { /* ICC Vets Protocol columns not yet migrated — default: not cleared */ }
     // ICC freeze fields — separate try/catch so a missing column never breaks access control above
     try {
       const iccRows = await prisma.$queryRaw`

@@ -203,6 +203,10 @@ export const iccAPI = {
   comment:  (reqId, comment)  => api.post(`/requisitions/${reqId}/icc-comment`,  { comment }),
   freeze:   (reqId, note)     => api.post(`/requisitions/${reqId}/icc-freeze`,   { note }),
   unfreeze: (reqId)           => api.post(`/requisitions/${reqId}/icc-unfreeze`),
+  // ICC Vets Protocol — Account forwards Cash/Material requests to ICC before treating
+  vetForward: (reqId, comment)              => api.post(`/requisitions/${reqId}/icc-vet-forward`, { comment }),
+  vetReturn:  (reqId, { comment, overrideItems, overrideComment } = {}) =>
+    api.post(`/requisitions/${reqId}/icc-vet-return`, { comment, overrideItems, overrideComment }),
 };
 
 export const settingsAPI = {
