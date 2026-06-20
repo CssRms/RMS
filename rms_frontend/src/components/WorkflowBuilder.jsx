@@ -596,7 +596,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         </div>
 
         {activeTab === 'authority' ? (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-8">
               <div>
                 <h3 className="text-lg font-black text-foreground tracking-tight">Approval Authority Bands</h3>
@@ -607,7 +607,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </div>
 
               {/* Live band preview */}
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 {/* Band 1 – HR */}
                 <div className="flex items-center gap-4 p-4 rounded-2xl bg-blue-50 border border-blue-200">
                   <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
@@ -619,7 +619,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
                       ₦0 – ₦{Number(thresholds.hr_ceiling).toLocaleString()}
                     </p>
                   </div>
-                  <ChevronRight size={14} className="text-blue-400 shrink-0" />
                 </div>
 
                 {/* Band 2 – GM (derived) */}
@@ -631,10 +630,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
                     <p className="text-xs font-black text-amber-800 uppercase tracking-widest">Band 2 — General Manager</p>
                     <p className="text-[11px] text-amber-700 font-medium mt-0.5">
                       ₦{Number(thresholds.hr_ceiling + 1).toLocaleString()} – ₦{Number(thresholds.chairman_min - 1).toLocaleString()}
-                      <span className="ml-2 text-[10px] italic opacity-60">(auto-calculated)</span>
+                      <span className="ml-2 text-[10px] italic opacity-60">(auto)</span>
                     </p>
                   </div>
-                  <ChevronRight size={14} className="text-amber-400 shrink-0" />
                 </div>
 
                 {/* Band 3 – Chairman */}
@@ -704,7 +702,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
             </div>
           </div>
         ) : activeTab === 'record' ? (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-6">
               <div>
                 <h3 className="text-lg font-black text-foreground tracking-tight">Record Visibility Access</h3>
@@ -729,7 +727,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 {recordDeptOptions.length === 0 ? (
                   <p className="text-xs text-muted-foreground italic">No configurable departments found. Make sure HR, GM, Audit, and ICC departments exist in the system.</p>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {recordDeptOptions.map(d => {
                       const checked = recordDepts.includes(d.id);
                       return (
@@ -763,209 +761,103 @@ const WorkflowBuilder = ({ onViewChange }) => {
             </div>
           </div>
         ) : activeTab === 'features' ? (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-6">
-              <div>
-                <h3 className="text-lg font-black text-foreground tracking-tight">Feature Controls</h3>
-                <p className="text-sm text-muted-foreground mt-1 font-medium leading-relaxed">
-                  Enable or disable system features for all users. Changes take effect immediately.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                {/* Document Studio toggle */}
-                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-black text-foreground">Document Studio</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Allows all users to access the Document Studio for printing and PDF generation.
-                      When disabled the Studio tab is hidden from the sidebar.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setStudioEnabled(v => !v)}
-                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${studioEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${studioEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* HR Portal toggle */}
-                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-black text-foreground">HR Portal</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Grants the HR department access to the HR management portal (employees, leave, attendance, payroll, recruitment).
-                      When disabled the HR Portal button is hidden from the sidebar.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setHrPortalEnabled(v => !v)}
-                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${hrPortalEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${hrPortalEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* Store Records toggle */}
-                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-black text-foreground">Store Records</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Gives the Store department and all its sub-accounts access to the stock ledger (store records) module.
-                      When disabled the Store Records button is hidden from the sidebar.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setStoreRecordsEnabled(v => !v)}
-                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${storeRecordsEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${storeRecordsEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* ICC Oversight toggle */}
-                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-black text-foreground">ICC Oversight Console</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Shows the "Oversight" button in ICC's sidebar, giving them the global observer console (view all requests, freeze/unfreeze, comment).
-                      When disabled, the button is hidden from ICC's sidebar.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setIccOversightEnabled(v => !v)}
-                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${iccOversightEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${iccOversightEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* Heads Can Manage Sub-Accounts toggle */}
-                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-black text-foreground">Heads Can Create/Manage Sub-Accounts</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Lets department heads create new units and act on existing ones (rename, reset code, enable/disable, delete).
-                      When disabled, heads can still see their sub-account list but lose all action buttons — only Super Admin can manage units.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setHeadsCanManageSubaccounts(v => !v)}
-                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${headsCanManageSubaccounts ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${headsCanManageSubaccounts ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* Heads Can Set Sub-Account Privileges toggle */}
-                <div className="flex items-center justify-between p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-black text-foreground">Heads Can Set Sub-Account Privileges</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Lets department heads configure Cash/Memo/Material privileges, creation/approval limits, and direct routing for their sub-accounts.
-                      When disabled, the Privilege Settings section is hidden from heads — only Super Admin can configure it.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setHeadsCanSetSubPrivileges(v => !v)}
-                    className={`relative ml-6 shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${headsCanSetSubPrivileges ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${headsCanSetSubPrivileges ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-
-                {/* Login Screen Style */}
-                <div className="p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Monitor size={18} className="text-primary shrink-0" />
-                    <div>
-                      <p className="text-sm font-black text-foreground">Login Screen Style</p>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        Choose the login screen displayed to all users. Premium uses a cinematic video background.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { value: 'standard', label: 'Standard', desc: 'Clean gradient panel, no video' },
-                      { value: 'premium', label: 'Premium', desc: 'Cinematic video background' },
-                    ].map(opt => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setLoginStyle(opt.value)}
-                        className={`flex flex-col items-start gap-1 p-4 rounded-xl border-2 text-left transition-all ${loginStyle === opt.value ? 'border-primary bg-primary/5' : 'border-border/50 bg-white hover:border-primary/30'}`}
-                      >
-                        <div className="flex items-center gap-2 w-full">
-                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${loginStyle === opt.value ? 'border-primary' : 'border-border'}`}>
-                            {loginStyle === opt.value && <div className="w-2 h-2 rounded-full bg-primary" />}
-                          </div>
-                          <span className={`text-xs font-black uppercase tracking-widest ${loginStyle === opt.value ? 'text-primary' : 'text-foreground'}`}>{opt.label}</span>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground pl-6 leading-relaxed">{opt.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 space-y-1.5">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${studioEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Document Studio is currently <strong className={studioEnabled ? 'text-emerald-600' : 'text-red-500'}>{studioEnabled ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${hrPortalEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    HR Portal is currently <strong className={hrPortalEnabled ? 'text-emerald-600' : 'text-red-500'}>{hrPortalEnabled ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${storeRecordsEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Store Records is currently <strong className={storeRecordsEnabled ? 'text-emerald-600' : 'text-red-500'}>{storeRecordsEnabled ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-blue-500" />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Login screen is set to <strong className="text-blue-600 capitalize">{loginStyle}</strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${iccOversightEnabled ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    ICC Oversight Console is currently <strong className={iccOversightEnabled ? 'text-emerald-600' : 'text-red-500'}>{iccOversightEnabled ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${headsCanManageSubaccounts ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Heads managing sub-accounts is <strong className={headsCanManageSubaccounts ? 'text-emerald-600' : 'text-red-500'}>{headsCanManageSubaccounts ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${headsCanSetSubPrivileges ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Heads setting sub-account privileges is <strong className={headsCanSetSubPrivileges ? 'text-emerald-600' : 'text-red-500'}>{headsCanSetSubPrivileges ? 'enabled' : 'disabled'}</strong>
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={saveFeatureFlags}
-                disabled={savingFeatures}
-                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
-              >
-                {savingFeatures ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
-              </button>
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div>
+              <h3 className="text-lg font-black text-foreground tracking-tight">Feature Controls</h3>
+              <p className="text-sm text-muted-foreground mt-1 font-medium leading-relaxed">
+                Enable or disable system features for all users. Changes take effect immediately.
+              </p>
             </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {[
+                { label: 'Document Studio', desc: 'Allows all users to access the Document Studio for printing and PDF generation. When disabled the Studio tab is hidden from the sidebar.', value: studioEnabled, set: setStudioEnabled },
+                { label: 'HR Portal', desc: 'Grants the HR department access to the HR management portal (employees, leave, attendance, payroll, recruitment). When disabled the HR Portal button is hidden from the sidebar.', value: hrPortalEnabled, set: setHrPortalEnabled },
+                { label: 'Store Records', desc: 'Gives the Store department and all its sub-accounts access to the stock ledger (store records) module. When disabled the Store Records button is hidden from the sidebar.', value: storeRecordsEnabled, set: setStoreRecordsEnabled },
+                { label: 'ICC Oversight Console', desc: 'Shows the "Oversight" button in ICC\'s sidebar, giving them the global observer console (view all requests, freeze/unfreeze, comment). When disabled, the button is hidden from ICC\'s sidebar.', value: iccOversightEnabled, set: setIccOversightEnabled },
+                { label: 'Heads Can Create/Manage Sub-Accounts', desc: 'Lets department heads create new units and act on existing ones (rename, reset code, enable/disable, delete). When disabled, heads can still see their sub-account list but lose all action buttons — only Super Admin can manage units.', value: headsCanManageSubaccounts, set: setHeadsCanManageSubaccounts },
+                { label: 'Heads Can Set Sub-Account Privileges', desc: 'Lets department heads configure Cash/Memo/Material privileges, creation/approval limits, and direct routing for their sub-accounts. When disabled, the Privilege Settings section is hidden from heads — only Super Admin can configure it.', value: headsCanSetSubPrivileges, set: setHeadsCanSetSubPrivileges },
+              ].map(({ label, desc, value, set }) => (
+                <div key={label} className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
+                  <div className="space-y-0.5 min-w-0">
+                    <p className="text-sm font-black text-foreground">{label}</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{desc}</p>
+                  </div>
+                  <button
+                    onClick={() => set(v => !v)}
+                    className={`relative shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${value ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${value ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              ))}
+
+              {/* Login Screen Style — spans both columns */}
+              <div className="lg:col-span-2 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
+                <div className="flex items-center gap-3">
+                  <Monitor size={18} className="text-primary shrink-0" />
+                  <div>
+                    <p className="text-sm font-black text-foreground">Login Screen Style</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Choose the login screen displayed to all users. Premium uses a cinematic video background.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { value: 'standard', label: 'Standard', desc: 'Clean gradient panel, no video' },
+                    { value: 'premium', label: 'Premium', desc: 'Cinematic video background' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setLoginStyle(opt.value)}
+                      className={`flex flex-col items-start gap-1 p-4 rounded-xl border-2 text-left transition-all ${loginStyle === opt.value ? 'border-primary bg-primary/5' : 'border-border/50 bg-white hover:border-primary/30'}`}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${loginStyle === opt.value ? 'border-primary' : 'border-border'}`}>
+                          {loginStyle === opt.value && <div className="w-2 h-2 rounded-full bg-primary" />}
+                        </div>
+                        <span className={`text-xs font-black uppercase tracking-widest ${loginStyle === opt.value ? 'text-primary' : 'text-foreground'}`}>{opt.label}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground pl-6 leading-relaxed">{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Compact status summary — wraps as pills instead of a tall vertical list */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: 'Document Studio', value: studioEnabled },
+                { label: 'HR Portal', value: hrPortalEnabled },
+                { label: 'Store Records', value: storeRecordsEnabled },
+                { label: 'ICC Oversight', value: iccOversightEnabled },
+                { label: 'Heads Manage Sub-Accounts', value: headsCanManageSubaccounts },
+                { label: 'Heads Set Privileges', value: headsCanSetSubPrivileges },
+              ].map(({ label, value }) => (
+                <span key={label} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border ${value ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-600'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${value ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                  {label}: {value ? 'On' : 'Off'}
+                </span>
+              ))}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border bg-blue-50 border-blue-200 text-blue-700">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                Login Screen: <span className="capitalize">{loginStyle}</span>
+              </span>
+            </div>
+
+            <button
+              onClick={saveFeatureFlags}
+              disabled={savingFeatures}
+              className="w-full lg:w-auto lg:ml-auto lg:block flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 px-8 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
+            >
+              {savingFeatures ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
+            </button>
           </div>
         ) : activeTab === 'refcode' ? (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-6">
               <div className="flex items-start gap-3">
                 <Hash size={22} className="text-primary mt-0.5 shrink-0" />
