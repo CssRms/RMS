@@ -2007,11 +2007,14 @@ function normalizeNgPhone(raw) {
 }
 
 async function sendSms({ to, message }) {
-  const apiKey   = process.env.TERMII_SECRET_KEY;
+  // Termii's classic REST API (get-balance, sms/send) authenticates with the long
+  // "API Key" from the dashboard — NOT the "tsk_"-prefixed Secret Key, which is for
+  // their newer Bearer-token API and doesn't work as the `api_key` query param here.
+  const apiKey   = process.env.TERMII_API_KEY || process.env.TERMII_SECRET_KEY;
   const senderId = process.env.TERMII_SENDER_ID || 'TVET';
   const channel  = process.env.TERMII_SMS_CHANNEL || 'generic';
   if (!apiKey || !to) {
-    logger.warn(`[SMS] Skipped — ${!apiKey ? 'TERMII_SECRET_KEY missing' : 'no phone number'}.`);
+    logger.warn(`[SMS] Skipped — ${!apiKey ? 'TERMII_API_KEY missing' : 'no phone number'}.`);
     return { skipped: true };
   }
   const phone = normalizeNgPhone(to);
@@ -4079,7 +4082,7 @@ app.patch('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
 app.get('/api/admin/sms-balance', authenticateToken, async (req, res) => {
   if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
   try {
-    const apiKey = process.env.TERMII_SECRET_KEY;
+    const apiKey = process.env.TERMII_API_KEY || process.env.TERMII_SECRET_KEY;
     if (!apiKey) return res.json({ configured: false });
     const resp = await fetch(`https://api.ng.termii.com/api/get-balance?api_key=${encodeURIComponent(apiKey)}`);
     const data = await resp.json().catch(() => ({}));
