@@ -4075,6 +4075,21 @@ app.patch('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
   } catch (e) { sendError(res, 500, e.message); }
 });
 
+// ── Termii SMS Balance ────────────────────────────────────────────────────────
+app.get('/api/admin/sms-balance', authenticateToken, async (req, res) => {
+  if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const apiKey = process.env.TERMII_SECRET_KEY;
+    if (!apiKey) return res.json({ configured: false });
+    const resp = await fetch(`https://api.ng.termii.com/api/get-balance?api_key=${encodeURIComponent(apiKey)}`);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return res.json({ configured: true, error: data?.message || 'Could not fetch balance.' });
+    res.json({ configured: true, balance: data.balance, currency: data.currency || 'NGN', user: data.user || null });
+  } catch (error) {
+    res.json({ configured: true, error: error.message });
+  }
+});
+
 // ── Print Access Settings ─────────────────────────────────────────────────────
 // GET  /api/admin/print-settings  — returns all depts with canPrint + global showStamp
 app.get('/api/admin/print-settings', authenticateToken, async (req, res) => {

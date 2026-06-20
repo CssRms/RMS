@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardStats, getRequisitions, isMemoRecord, isOperationalRequisition } from '../lib/store';
-import { reqAPI, settingsAPI } from '../lib/api';
+import { reqAPI, settingsAPI, adminAPI } from '../lib/api';
 import toast from 'react-hot-toast';
-import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText } from 'lucide-react';
+import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare } from 'lucide-react';
 
 const StatCard = ({ label, value, icon: Icon, color, onClick }) => (
   <div onClick={onClick} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group transition-all bg-white/70 shadow-sm ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
@@ -159,6 +159,13 @@ const Dashboard = ({ onViewChange }) => {
     }
   }, [user]);
 
+  // ── Termii SMS balance (Super Admin only) ───────────────────────────────────
+  const [smsBalance, setSmsBalance] = useState(null);
+  useEffect(() => {
+    if (normalizeRole(user?.role) !== 'global_admin') return;
+    adminAPI.getSmsBalance().then(setSmsBalance).catch(() => setSmsBalance({ error: 'Could not load balance.' }));
+  }, [user]);
+
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -286,12 +293,25 @@ const Dashboard = ({ onViewChange }) => {
           </div>
         )}
 
-        <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
+        <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' || normalizeRole(user?.role) === 'global_admin' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
           <StatCard label="Pending Actions" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Approved Reqs" value={String(stats.approved).padStart(2, '0')} icon={CheckCircle2} color="emerald" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Rejected Reqs" value={String(stats.rejected).padStart(2, '0')} icon={XCircle} color="red" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Total Spent" value={formatCurrency(stats.totalSpent)} icon={ArrowUpRight} color="blue" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Memo Traffic" value={String(stats.memos).padStart(2, '0')} icon={FileText} color="purple" onClick={() => onViewChange('memos')} />
+          {normalizeRole(user?.role) === 'global_admin' && (
+            <StatCard
+              label="SMS Balance"
+              value={
+                !smsBalance ? '…'
+                : smsBalance.configured === false ? 'Not Set Up'
+                : smsBalance.error ? 'Error'
+                : `${smsBalance.balance ?? '—'} ${smsBalance.currency || ''}`.trim()
+              }
+              icon={MessageSquare}
+              color="teal"
+            />
+          )}
           {user?.role === 'department' && (
             <div
               onClick={() => setCcOpen(o => !o)}
