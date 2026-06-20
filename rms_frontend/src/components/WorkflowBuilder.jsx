@@ -155,7 +155,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [headsCanManageSubaccounts, setHeadsCanManageSubaccounts] = useState(true);
   const [headsCanSetSubPrivileges, setHeadsCanSetSubPrivileges]   = useState(true);
   const [iccOversightEnabled, setIccOversightEnabled]             = useState(true);
-  const [smsProvider, setSmsProvider]                             = useState('termii');
   const [savingFeatures, setSavingFeatures]         = useState(false);
 
   // ── All departments (for chairman/print toggles) ───────────────────────────
@@ -285,7 +284,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
   const loadFeatureFlags = async () => {
     try {
-      const [studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes, smsProviderRes] = await Promise.allSettled([
+      const [studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
         settingsAPI.get('login_style'),
@@ -293,7 +292,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.get('heads_can_manage_subaccounts'),
         settingsAPI.get('heads_can_set_subaccount_privileges'),
         settingsAPI.get('icc_oversight_enabled'),
-        settingsAPI.get('sms_provider'),
       ]);
       if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
         setStudioEnabled(studioRes.value.value !== 'false');
@@ -309,8 +307,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setHeadsCanSetSubPrivileges(headsPrivRes.value.value !== 'false');
       if (iccOversightRes.status === 'fulfilled' && iccOversightRes.value?.value !== undefined)
         setIccOversightEnabled(iccOversightRes.value.value !== 'false');
-      if (smsProviderRes.status === 'fulfilled' && smsProviderRes.value?.value)
-        setSmsProvider(smsProviderRes.value.value === 'twilio' ? 'twilio' : 'termii');
     } catch {}
   };
 
@@ -325,7 +321,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('heads_can_manage_subaccounts', String(headsCanManageSubaccounts)),
         settingsAPI.set('heads_can_set_subaccount_privileges', String(headsCanSetSubPrivileges)),
         settingsAPI.set('icc_oversight_enabled', String(iccOversightEnabled)),
-        settingsAPI.set('sms_provider', smsProvider),
       ]);
       toast.success('Feature settings saved.');
     } catch {
@@ -830,38 +825,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 </div>
               </div>
 
-              {/* SMS Provider — spans both columns */}
-              <div className="lg:col-span-2 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
-                <div className="flex items-center gap-3">
-                  <MessageSquare size={18} className="text-primary shrink-0" />
-                  <div>
-                    <p className="text-sm font-black text-foreground">SMS Provider</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Choose which provider sends SMS (e.g. access codes) across the system. Check the SMS Balance cards on the Dashboard to see which one has more funds before switching.
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    { value: 'termii', label: 'Termii', desc: 'Nigeria-focused SMS gateway' },
-                    { value: 'twilio', label: 'Twilio', desc: 'Global SMS gateway' },
-                  ].map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setSmsProvider(opt.value)}
-                      className={`flex flex-col items-start gap-1 p-4 rounded-xl border-2 text-left transition-all ${smsProvider === opt.value ? 'border-primary bg-primary/5' : 'border-border/50 bg-white hover:border-primary/30'}`}
-                    >
-                      <div className="flex items-center gap-2 w-full">
-                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${smsProvider === opt.value ? 'border-primary' : 'border-border'}`}>
-                          {smsProvider === opt.value && <div className="w-2 h-2 rounded-full bg-primary" />}
-                        </div>
-                        <span className={`text-xs font-black uppercase tracking-widest ${smsProvider === opt.value ? 'text-primary' : 'text-foreground'}`}>{opt.label}</span>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground pl-6 leading-relaxed">{opt.desc}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
 
             {/* Compact status summary — wraps as pills instead of a tall vertical list */}
@@ -882,10 +845,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border bg-blue-50 border-blue-200 text-blue-700">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                 Login Screen: <span className="capitalize">{loginStyle}</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border bg-indigo-50 border-indigo-200 text-indigo-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                SMS Provider: <span className="capitalize">{smsProvider}</span>
               </span>
             </div>
 

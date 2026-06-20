@@ -5,9 +5,14 @@ import { reqAPI, settingsAPI, adminAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare } from 'lucide-react';
 
-const StatCard = ({ label, value, icon: Icon, color, onClick, title }) => (
-  <div onClick={onClick} title={title} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-border/40 relative overflow-hidden group transition-all bg-white/70 shadow-sm ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
+const StatCard = ({ label, value, icon: Icon, color, onClick, title, active, activeLabel }) => (
+  <div onClick={onClick} title={title} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border relative overflow-hidden group transition-all bg-white/70 shadow-sm ${active ? `border-${color}-400 ring-2 ring-${color}-300/50` : 'border-border/40'} ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
     <div className={`absolute top-0 right-0 w-24 h-24 bg-${color}-500/5 blur-[60px] rounded-full translate-x-8 -translate-y-8`}></div>
+    {active && activeLabel && (
+      <span className={`absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-${color}-500 text-white shadow-sm z-10`}>
+        {activeLabel}
+      </span>
+    )}
     <div className="flex flex-col gap-2.5 sm:gap-4 relative z-10">
       <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-${color}-500/10 border border-${color}-500/20 text-${color}-600 flex items-center justify-center group-hover:bg-${color}-500 group-hover:text-white transition-all duration-500 shadow-inner`}>
         <Icon size={18} />
@@ -161,10 +166,27 @@ const Dashboard = ({ onViewChange }) => {
 
   // ── SMS provider balances (Super Admin only) — Termii + Twilio side by side ──
   const [smsBalance, setSmsBalance] = useState(null);
+  const [switchingProvider, setSwitchingProvider] = useState(false);
+  const loadSmsBalance = () => {
+    adminAPI.getSmsBalance().then(setSmsBalance).catch(() => setSmsBalance({ termii: { error: 'Could not load.' }, twilio: { error: 'Could not load.' } }));
+  };
   useEffect(() => {
     if (normalizeRole(user?.role) !== 'global_admin') return;
-    adminAPI.getSmsBalance().then(setSmsBalance).catch(() => setSmsBalance({ termii: { error: 'Could not load.' }, twilio: { error: 'Could not load.' } }));
+    loadSmsBalance();
   }, [user]);
+
+  const switchSmsProvider = async (provider) => {
+    if (switchingProvider || smsBalance?.provider === provider) return;
+    setSwitchingProvider(true);
+    try {
+      await settingsAPI.set('sms_provider', provider);
+      setSmsBalance(prev => ({ ...prev, provider }));
+      toast.success(`${provider === 'twilio' ? 'Twilio' : 'Termii'} is now the active SMS provider.`);
+      loadSmsBalance();
+    } catch {
+      toast.error('Could not switch SMS provider.');
+    } finally { setSwitchingProvider(false); }
+  };
 
   useEffect(() => {
     loadDashboard();
@@ -311,18 +333,24 @@ const Dashboard = ({ onViewChange }) => {
             return (
               <>
                 <StatCard
-                  label={`Termii Balance${activeProvider === 'termii' ? ' ★' : ''}`}
+                  label="Termii Balance"
                   value={fmtProviderBalance(smsBalance?.termii)}
                   icon={MessageSquare}
                   color="teal"
-                  title={smsBalance?.termii?.error || (activeProvider === 'termii' ? 'Currently active provider' : undefined)}
+                  active={activeProvider === 'termii'}
+                  activeLabel="Active"
+                  onClick={() => switchSmsProvider('termii')}
+                  title={smsBalance?.termii?.error || (activeProvider === 'termii' ? 'Active — click Twilio to switch' : 'Click to activate Termii')}
                 />
                 <StatCard
-                  label={`Twilio Balance${activeProvider === 'twilio' ? ' ★' : ''}`}
+                  label="Twilio Balance"
                   value={fmtProviderBalance(smsBalance?.twilio)}
                   icon={MessageSquare}
                   color="indigo"
-                  title={smsBalance?.twilio?.error || (activeProvider === 'twilio' ? 'Currently active provider' : undefined)}
+                  active={activeProvider === 'twilio'}
+                  activeLabel="Active"
+                  onClick={() => switchSmsProvider('twilio')}
+                  title={smsBalance?.twilio?.error || (activeProvider === 'twilio' ? 'Active — click Termii to switch' : 'Click to activate Twilio')}
                 />
               </>
             );
