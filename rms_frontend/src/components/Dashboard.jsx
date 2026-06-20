@@ -159,11 +159,11 @@ const Dashboard = ({ onViewChange }) => {
     }
   }, [user]);
 
-  // ── Termii SMS balance (Super Admin only) ───────────────────────────────────
+  // ── SMS provider balances (Super Admin only) — Termii + Twilio side by side ──
   const [smsBalance, setSmsBalance] = useState(null);
   useEffect(() => {
     if (normalizeRole(user?.role) !== 'global_admin') return;
-    adminAPI.getSmsBalance().then(setSmsBalance).catch(() => setSmsBalance({ error: 'Could not load balance.' }));
+    adminAPI.getSmsBalance().then(setSmsBalance).catch(() => setSmsBalance({ termii: { error: 'Could not load.' }, twilio: { error: 'Could not load.' } }));
   }, [user]);
 
   useEffect(() => {
@@ -293,26 +293,40 @@ const Dashboard = ({ onViewChange }) => {
           </div>
         )}
 
-        <div className={`grid gap-3 sm:gap-6 ${user?.role === 'department' || normalizeRole(user?.role) === 'global_admin' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
+        <div className={`grid gap-3 sm:gap-6 ${normalizeRole(user?.role) === 'global_admin' ? 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-7' : user?.role === 'department' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-2 lg:grid-cols-5'}`}>
           <StatCard label="Pending Actions" value={String(stats.pending).padStart(2, '0')} icon={Clock} color="orange" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Approved Reqs" value={String(stats.approved).padStart(2, '0')} icon={CheckCircle2} color="emerald" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Rejected Reqs" value={String(stats.rejected).padStart(2, '0')} icon={XCircle} color="red" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Total Spent" value={formatCurrency(stats.totalSpent)} icon={ArrowUpRight} color="blue" onClick={() => onViewChange('requisitions')} />
           <StatCard label="Memo Traffic" value={String(stats.memos).padStart(2, '0')} icon={FileText} color="purple" onClick={() => onViewChange('memos')} />
-          {normalizeRole(user?.role) === 'global_admin' && (
-            <StatCard
-              label="SMS Balance"
-              value={
-                !smsBalance ? '…'
-                : smsBalance.configured === false ? 'Not Set Up'
-                : smsBalance.error ? 'Error'
-                : `${smsBalance.balance ?? '—'} ${smsBalance.currency || ''}`.trim()
-              }
-              icon={MessageSquare}
-              color="teal"
-              title={smsBalance?.error || undefined}
-            />
-          )}
+          {normalizeRole(user?.role) === 'global_admin' && (() => {
+            const fmtProviderBalance = (p) => {
+              if (!smsBalance) return '…';
+              if (!p) return 'Not Set Up';
+              if (p.configured === false) return 'Not Set Up';
+              if (p.error) return 'Error';
+              return `${p.balance ?? '—'} ${p.currency || ''}`.trim();
+            };
+            const activeProvider = smsBalance?.provider || 'termii';
+            return (
+              <>
+                <StatCard
+                  label={`Termii Balance${activeProvider === 'termii' ? ' ★' : ''}`}
+                  value={fmtProviderBalance(smsBalance?.termii)}
+                  icon={MessageSquare}
+                  color="teal"
+                  title={smsBalance?.termii?.error || (activeProvider === 'termii' ? 'Currently active provider' : undefined)}
+                />
+                <StatCard
+                  label={`Twilio Balance${activeProvider === 'twilio' ? ' ★' : ''}`}
+                  value={fmtProviderBalance(smsBalance?.twilio)}
+                  icon={MessageSquare}
+                  color="indigo"
+                  title={smsBalance?.twilio?.error || (activeProvider === 'twilio' ? 'Currently active provider' : undefined)}
+                />
+              </>
+            );
+          })()}
           {user?.role === 'department' && (
             <div
               onClick={() => setCcOpen(o => !o)}

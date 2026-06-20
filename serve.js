@@ -2006,7 +2006,7 @@ function normalizeNgPhone(raw) {
   return p;
 }
 
-async function sendSms({ to, message }) {
+async function sendTermiiSms({ to, message }) {
   // Termii's classic REST API (get-balance, sms/send) authenticates with the long
   // "API Key" from the dashboard — NOT the "tsk_"-prefixed Secret Key, which is for
   // their newer Bearer-token API and doesn't work as the `api_key` query param here.
@@ -2029,12 +2029,66 @@ async function sendSms({ to, message }) {
       logger.warn('[SMS] Termii send failed:', JSON.stringify(data));
       return { error: data };
     }
-    logger.info(`[SMS] Sent to ${phone}`);
+    logger.info(`[SMS] Sent via Termii to ${phone}`);
     return data;
   } catch (e) {
     logger.warn('[SMS] Termii request error:', e.message);
     return { error: e.message };
   }
+}
+
+// Twilio requires full E.164 format (leading +). Reuses the same digit-cleanup as
+// Termii's normalizer, then re-adds the +.
+function normalizeE164Phone(raw) {
+  const digits = normalizeNgPhone(raw);
+  return digits ? `+${digits}` : null;
+}
+
+async function sendTwilioSms({ to, message }) {
+  const sid   = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from  = process.env.TWILIO_PHONE_NUMBER;
+  if (!sid || !token || !from || !to) {
+    logger.warn(`[SMS] Skipped — Twilio not fully configured or no phone number.`);
+    return { skipped: true };
+  }
+  const phone = normalizeE164Phone(to);
+  try {
+    const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'),
+      },
+      body: new URLSearchParams({ To: phone, From: from, Body: message }).toString(),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      logger.warn('[SMS] Twilio send failed:', JSON.stringify(data));
+      return { error: data };
+    }
+    logger.info(`[SMS] Sent via Twilio to ${phone}`);
+    return data;
+  } catch (e) {
+    logger.warn('[SMS] Twilio request error:', e.message);
+    return { error: e.message };
+  }
+}
+
+// Reads the Super-Admin-selected provider (default 'termii' if never set).
+async function getSmsProvider() {
+  try {
+    const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'sms_provider' LIMIT 1`;
+    const v = rows?.[0]?.value;
+    return v === 'twilio' ? 'twilio' : 'termii';
+  } catch { return 'termii'; }
+}
+
+// Single entry point used everywhere else in the app — dispatches to whichever
+// provider Super Admin has selected in System Settings.
+async function sendSms({ to, message }) {
+  const provider = await getSmsProvider();
+  return provider === 'twilio' ? sendTwilioSms({ to, message }) : sendTermiiSms({ to, message });
 }
 
 async function notifyDepartmentHead({ departmentId, requisition, subject, lines }) {
@@ -4078,21 +4132,52 @@ app.patch('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
   } catch (e) { sendError(res, 500, e.message); }
 });
 
-// ── Termii SMS Balance ────────────────────────────────────────────────────────
+// ── SMS Provider Balances (Termii + Twilio) ───────────────────────────────────
+async function getTermiiBalance() {
+  const apiKey = process.env.TERMII_API_KEY || process.env.TERMII_SECRET_KEY;
+  if (!apiKey) return { configured: false };
+  try {
+    const resp = await fetch(`https://api.ng.termii.com/api/get-balance?api_key=${encodeURIComponent(apiKey)}`);
+    const data = await resp.json().catch(() => ({}));
+    logger.info(`[SMS] Termii balance check — status ${resp.status}, body: ${JSON.stringify(data)}`);
+    if (!resp.ok) return { configured: true, error: data?.message || `Termii returned status ${resp.status}.` };
+    if (data.balance === undefined) return { configured: true, error: data?.message || 'Unexpected response from Termii.' };
+    return { configured: true, balance: data.balance, currency: data.currency || 'NGN' };
+  } catch (error) {
+    logger.warn('[SMS] Termii balance check failed:', error.message);
+    return { configured: true, error: error.message };
+  }
+}
+
+async function getTwilioBalance() {
+  const sid   = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return { configured: false };
+  try {
+    const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Balance.json`, {
+      headers: { 'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64') },
+    });
+    const data = await resp.json().catch(() => ({}));
+    logger.info(`[SMS] Twilio balance check — status ${resp.status}, body: ${JSON.stringify(data)}`);
+    if (!resp.ok) return { configured: true, error: data?.message || `Twilio returned status ${resp.status}.` };
+    return { configured: true, balance: data.balance, currency: data.currency || 'USD' };
+  } catch (error) {
+    logger.warn('[SMS] Twilio balance check failed:', error.message);
+    return { configured: true, error: error.message };
+  }
+}
+
 app.get('/api/admin/sms-balance', authenticateToken, async (req, res) => {
   if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
   try {
-    const apiKey = process.env.TERMII_API_KEY || process.env.TERMII_SECRET_KEY;
-    if (!apiKey) return res.json({ configured: false });
-    const resp = await fetch(`https://api.ng.termii.com/api/get-balance?api_key=${encodeURIComponent(apiKey)}`);
-    const data = await resp.json().catch(() => ({}));
-    logger.info(`[SMS] Balance check — status ${resp.status}, body: ${JSON.stringify(data)}`);
-    if (!resp.ok) return res.json({ configured: true, error: data?.message || `Termii returned status ${resp.status}.`, raw: data });
-    if (data.balance === undefined) return res.json({ configured: true, error: data?.message || 'Unexpected response from Termii.', raw: data });
-    res.json({ configured: true, balance: data.balance, currency: data.currency || 'NGN', user: data.user || null });
+    const [termii, twilio, provider] = await Promise.all([
+      getTermiiBalance(),
+      getTwilioBalance(),
+      getSmsProvider(),
+    ]);
+    res.json({ termii, twilio, provider });
   } catch (error) {
-    logger.warn('[SMS] Balance check request failed:', error.message);
-    res.json({ configured: true, error: error.message });
+    sendError(res, 500, error.message);
   }
 });
 
