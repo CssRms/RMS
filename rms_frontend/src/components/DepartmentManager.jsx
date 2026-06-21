@@ -4,11 +4,11 @@ import { useRef } from 'react';
 import {
   Plus, Trash2, Building2, Briefcase, Search,
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
-  CheckCircle2, RotateCcw, Info, User, Mail, Phone, MapPin, BadgeCheck, Download,
+  CheckCircle2, RotateCcw, Info, User, Mail, Phone, Hash, BadgeCheck, Download,
   Upload, PenTool, AlertTriangle
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
-import { deptAPI, reqAPI } from '../lib/api';
+import { deptAPI, reqAPI, settingsAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import ConfirmModal from './ConfirmModal';
 
@@ -172,13 +172,13 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
   const [form, setForm] = useState({
     name: dept.name || '',
     type: dept.type || 'Operational',
+    headStaffId:   dept.staffId || '',
     headSurname:   existingParts[0] || '',
     headFirstName: existingParts[1] || '',
     headOtherName: existingParts.slice(2).join(' ') || '',
     headTitle: dept.headTitle || '',
     headEmail: dept.headEmail || '',
     phone: dept.phone || '',
-    address: dept.address || '',
   });
   const [newCode, setNewCode] = useState('');
   const [showCode, setShowCode] = useState(false);
@@ -188,6 +188,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('Department name is required.'); return; }
+    if (!form.headStaffId.trim()) { toast.error('Staff ID is required.'); return; }
     if (!form.headSurname.trim()) { toast.error('Surname is required.'); return; }
     if (!form.headFirstName.trim()) { toast.error('First name is required.'); return; }
     if (!form.headEmail.trim()) { toast.error('Official email is required.'); return; }
@@ -195,7 +196,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
     const combinedName = [form.headSurname, form.headFirstName, form.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
     setSaving(true);
     try {
-      await deptAPI.updateDepartment(dept.id, { ...form, headName: combinedName });
+      await deptAPI.updateDepartment(dept.id, { ...form, headName: combinedName, staffId: form.headStaffId.trim().toUpperCase() });
       toast.success(`${form.name} updated successfully.`);
       onSaved();
       onClose();
@@ -266,13 +267,13 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
           <div className="space-y-4">
             <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em]">Head Official</p>
             {[
+              { key: 'headStaffId',   label: 'Staff ID',         icon: Hash,       placeholder: 'e.g. CSS001', required: true },
               { key: 'headSurname',   label: 'Surname',          icon: User,       placeholder: 'e.g. Musa', required: true },
               { key: 'headFirstName', label: 'First Name',        icon: User,       placeholder: 'e.g. Chindo', required: true },
               { key: 'headOtherName', label: 'Other Name',        icon: User,       placeholder: 'e.g. James (optional)' },
               { key: 'headTitle',     label: 'Designation / Title', icon: BadgeCheck, placeholder: 'General Manager' },
               { key: 'headEmail',     label: 'Official Email',    icon: Mail,       placeholder: 'head@cssgroup.internal', type: 'email', required: true },
               { key: 'phone',         label: 'Contact Phone',     icon: Phone,      placeholder: '+234 800 000 0000', required: true },
-              { key: 'address',       label: 'Office Address',    icon: MapPin,     placeholder: 'Floor 3, CSS Tower... (optional)' },
             ].map(({ key, label, icon: Icon, placeholder, type, required }) => (
               <div key={key} className="relative">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">
@@ -358,7 +359,11 @@ const DepartmentManager = ({ onViewChange }) => {
   const [pendingDept, setPendingDept] = useState(null);
   const [editingDept, setEditingDept] = useState(null);
   const [sealDept, setSealDept] = useState(null);
-  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '', phone: '' });
+  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headStaffId: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '', phone: '' });
+
+  // Flash-free: default null (unknown/hidden) until the real setting resolves, so the
+  // Head Official section never flashes visible-then-hidden when it's actually disabled.
+  const [deptCreationHeadDetailsEnabled, setDeptCreationHeadDetailsEnabled] = useState(null);
 
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -390,6 +395,12 @@ const DepartmentManager = ({ onViewChange }) => {
 
   useEffect(() => { loadDepts(); }, []);
 
+  useEffect(() => {
+    settingsAPI.get('dept_creation_head_details_enabled')
+      .then(res => setDeptCreationHeadDetailsEnabled(res?.value !== 'false'))
+      .catch(() => setDeptCreationHeadDetailsEnabled(true)); // fail open — don't get stuck hidden over a network blip
+  }, []);
+
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!newDeptData.name || !newDeptData.accessCode) {
@@ -403,15 +414,19 @@ const DepartmentManager = ({ onViewChange }) => {
       toast.error(`A department named "${newDeptData.name.trim()}" already exists. Please choose a different name.`);
       return;
     }
+    const headDetailsOn = deptCreationHeadDetailsEnabled === true;
     const headName = [newDeptData.headSurname, newDeptData.headFirstName, newDeptData.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
+    const payload = headDetailsOn
+      ? { ...newDeptData, headName, staffId: newDeptData.headStaffId.trim().toUpperCase() }
+      : { name: newDeptData.name, type: newDeptData.type, accessCode: newDeptData.accessCode };
     setIsProcessing(true);
     try {
       await new Promise(r => setTimeout(r, 400));
-      await addDepartment({ ...newDeptData, headName });
+      await addDepartment(payload);
       await loadDepts();
       setIsAddModalOpen(false);
       const deptName = newDeptData.name;
-      setNewDeptData({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '', phone: '' });
+      setNewDeptData({ name: '', type: 'Operational', accessCode: '', headStaffId: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '', phone: '' });
       toast.success(`${deptName} Department added`);
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to create department.');
@@ -530,12 +545,12 @@ const DepartmentManager = ({ onViewChange }) => {
                   <th className="py-4 px-4 border-y">Category</th>
                   <th className="py-4 px-4 border-y">Login Code</th>
                   <th className="py-4 px-4 border-y">Signature</th>
+                  <th className="py-4 px-4 border-y">Staff ID</th>
                   <th className="py-4 px-4 border-y">First Name</th>
                   <th className="py-4 px-4 border-y">Surname</th>
                   <th className="py-4 px-4 border-y">Other Name</th>
                   <th className="py-4 px-4 border-y">Official Email</th>
                   <th className="py-4 px-4 border-y">Contact Phone</th>
-                  <th className="py-4 px-4 border-y">Office Address</th>
                   <th className="py-4 px-4 rounded-tr-xl border-y border-r text-center">Actions</th>
                 </tr>
               </thead>
@@ -598,6 +613,7 @@ const DepartmentManager = ({ onViewChange }) => {
                             );
                           })()}
                         </td>
+                        <td className="py-4 px-4 text-xs font-mono font-bold text-muted-foreground">{dept.staffId || '—'}</td>
                         {(() => {
                           const parts = (dept.headName || '').trim().split(/\s+/).filter(Boolean);
                           const surname   = parts[0] || '—';
@@ -613,7 +629,6 @@ const DepartmentManager = ({ onViewChange }) => {
                         })()}
                         <td className="py-4 px-4 text-xs text-primary font-medium">{dept.headEmail || '—'}</td>
                         <td className="py-4 px-4 text-xs text-muted-foreground font-medium">{dept.phone || '—'}</td>
-                        <td className="py-4 px-4 text-xs text-muted-foreground/60 font-medium truncate max-w-[150px]" title={dept.address}>{dept.address || '—'}</td>
                         <td className="py-4 px-4 border-r border-border/10">
                           <div className="flex items-center justify-center space-x-1">
                             <button onClick={() => setEditingDept(dept)} className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg transition-all" title="Edit Unit">
@@ -729,7 +744,8 @@ const DepartmentManager = ({ onViewChange }) => {
                 ))}
               </div>
 
-              {/* Head Official Details */}
+              {/* Head Official Details — hidden entirely when Super Admin disables this setting */}
+              {deptCreationHeadDetailsEnabled === true && (
               <div className="space-y-3 pt-1">
                 <div className="flex items-center gap-2">
                   <div className="h-px flex-1 bg-border/40" />
@@ -737,6 +753,7 @@ const DepartmentManager = ({ onViewChange }) => {
                   <div className="h-px flex-1 bg-border/40" />
                 </div>
                 {[
+                  { key: 'headStaffId',   label: 'Staff ID',          placeholder: 'e.g. CSS001',                icon: Hash,       required: true },
                   { key: 'headSurname',   label: 'Surname',          placeholder: 'e.g. Adeyemi',               icon: User,       required: true },
                   { key: 'headFirstName', label: 'First Name',        placeholder: 'e.g. John',                  icon: User,       required: true },
                   { key: 'headOtherName', label: 'Other Name',        placeholder: 'e.g. Chukwuemeka (optional)', icon: User },
@@ -765,13 +782,26 @@ const DepartmentManager = ({ onViewChange }) => {
                   Phone is used to SMS the access code to the head official when their account is set up.
                 </p>
               </div>
+              )}
+
+              {deptCreationHeadDetailsEnabled === false && (
+                <p className="text-[10px] text-muted-foreground/70 italic pl-1 pt-1">
+                  Head Official details are currently disabled in System Settings. This department will be created without a head — assign one later via Edit.
+                </p>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setIsAddModalOpen(false)}
                   className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">
                   Cancel
                 </button>
-                <button type="submit" disabled={isProcessing || nameClash || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim() || !newDeptData.phone.trim()}
+                <button type="submit" disabled={
+                    isProcessing || nameClash || !newDeptData.name.trim() || !newDeptData.accessCode.trim() ||
+                    (deptCreationHeadDetailsEnabled === true && (
+                      !newDeptData.headStaffId.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() ||
+                      !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim() || !newDeptData.phone.trim()
+                    ))
+                  }
                   className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                   {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
                 </button>

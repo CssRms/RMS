@@ -2628,12 +2628,14 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
       headTitle: z.string().optional(),
       headEmail: z.string().email().optional().or(z.literal('')),
       phone:     z.string().optional(),
+      staffId:   z.string().optional(),
     }).safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid department payload' });
     }
-    const { name, type, accessCode, headName, headTitle, headEmail, phone } = parsed.data;
+    const { name, type, accessCode, headName, headTitle, headEmail, phone, staffId } = parsed.data;
     const trimmedName = name.trim();
+    const trimmedStaffId = staffId?.trim() ? staffId.trim().toUpperCase() : null;
 
     // Reject name clashes case-insensitively, regardless of Strategic/Operational type —
     // department names must be unique system-wide.
@@ -2645,6 +2647,16 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
       return res.status(409).json({ error: `A department named "${clash.name}" already exists. Please choose a different name.` });
     }
 
+    if (trimmedStaffId) {
+      const staffClash = await prisma.department.findFirst({
+        where: { staffId: { equals: trimmedStaffId, mode: 'insensitive' } },
+        select: { id: true, staffId: true }
+      });
+      if (staffClash) {
+        return res.status(409).json({ error: `Staff ID "${staffClash.staffId}" is already assigned to another department head. Please use a different Staff ID.` });
+      }
+    }
+
     const accessCodeHash = await bcrypt.hash(accessCode, 10);
     const dept = await prisma.department.create({
       data: {
@@ -2654,6 +2666,7 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
         headTitle: headTitle?.trim() || null,
         headEmail: headEmail?.trim() || null,
         phone:     phone?.trim()     || null,
+        staffId:   trimmedStaffId,
       }
     });
     const { accessCode: _ac, accessCodeHash: _ach, accessCodeLabel: _acl, codeChangedByDept: _ccbd, ...safeDept } = dept;
@@ -2664,6 +2677,7 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
     if (dept.headName && dept.headEmail && dept.phone) {
       setImmediate(async () => {
         const detailLines = [
+          `Staff ID: ${dept.staffId || 'Not set'}`,
           `Name: ${dept.headName}`,
           `Position/Title: ${dept.headTitle || 'Not set'}`,
           `Department: ${dept.name}`,
@@ -2690,7 +2704,7 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
         sendEmail({ to: dept.headEmail, subject, text, html }).catch(() => {});
         sendSms({
           to: dept.phone,
-          message: `CSS RMS: Your account for ${dept.name} is now active. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
+          message: `CSS RMS: Your account for ${dept.name} is now active. Staff ID: ${dept.staffId || 'N/A'}. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
         }).catch(() => {});
 
         if (SUPER_ADMIN_EMAIL) {
@@ -2718,8 +2732,9 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
 app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, type, headName, headTitle, headEmail, phone, address } = req.body;
+    const { name, type, headName, headTitle, headEmail, phone, staffId } = req.body;
     if (!name?.trim()) return sendError(res, 400, 'Department name is required.');
+    if (!staffId?.trim()) return sendError(res, 400, 'Staff ID is required.');
     if (!headName?.trim()) return sendError(res, 400, 'Head official name is required.');
     if (!headEmail?.trim()) return sendError(res, 400, 'Head official email is required.');
     if (!phone?.trim()) return sendError(res, 400, 'Contact phone is required — used to SMS the access code.');
@@ -2733,6 +2748,15 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
     });
     if (clash) {
       return res.status(409).json({ error: `A department named "${clash.name}" already exists. Please choose a different name.` });
+    }
+
+    const trimmedStaffId = staffId.trim().toUpperCase();
+    const staffClash = await prisma.department.findFirst({
+      where: { staffId: { equals: trimmedStaffId, mode: 'insensitive' }, id: { not: parseInt(id) } },
+      select: { id: true, staffId: true }
+    });
+    if (staffClash) {
+      return res.status(409).json({ error: `Staff ID "${staffClash.staffId}" is already assigned to another department head. Please use a different Staff ID.` });
     }
 
     // Snapshot BEFORE the update — codeChangedByDept tells us whether this head has
@@ -2751,7 +2775,7 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
         headTitle: headTitle ?? null,
         headEmail: headEmail ?? null,
         phone: phone ?? null,
-        address: address ?? null
+        staffId: trimmedStaffId
       }
     });
     await prisma.activityLog.create({
@@ -2785,6 +2809,7 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
           lines: [
             `Your department account has been activated on the RMS Portal by the RMS Administrator.`,
             ``,
+            `Staff ID: ${updated.staffId || 'Not set'}`,
             `Name: ${updated.headName}`,
             `Position/Title: ${updated.headTitle || 'Not set'}`,
             `Department: ${updated.name}`,
@@ -2799,7 +2824,7 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
         sendEmail({ to: updated.headEmail, subject, text, html }).catch(() => {});
         sendSms({
           to: updated.phone,
-          message: `CSS RMS: Your account for ${updated.name} is now active. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
+          message: `CSS RMS: Your account for ${updated.name} is now active. Staff ID: ${updated.staffId || 'N/A'}. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
         }).catch(() => {});
       } else {
         const subject = 'Your Department Profile Was Updated';
@@ -2808,12 +2833,12 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
           lines: [
             `The RMS Administrator has updated your department's official profile.`,
             ``,
+            `Staff ID: ${updated.staffId || 'Not set'}`,
             `Name: ${updated.headName || 'Not set'}`,
             `Position/Title: ${updated.headTitle || 'Not set'}`,
             `Department: ${updated.name}`,
             `Email: ${updated.headEmail || 'Not set'}`,
             `Phone: ${updated.phone || 'Not set'}`,
-            `Address: ${updated.address || 'Not set'}`,
           ],
           actionLabel: 'Open RMS Portal',
         });
@@ -2829,11 +2854,11 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
             lines: [
               `You successfully updated the department profile for ${updated.name}.`,
               `Department: ${updated.name}`,
+              `Staff ID: ${updated.staffId || 'Not set'}`,
               `Head Name: ${updated.headName || 'Not set'}`,
               `Position/Title: ${updated.headTitle || 'Not set'}`,
               `Email: ${updated.headEmail || 'Not set'}`,
               `Phone: ${updated.phone || 'Not set'}`,
-              `Address: ${updated.address || 'Not set'}`,
               isFreshAssignment
                 ? `An "Account Activated" email and SMS with the access code were sent to the head.`
                 : `A profile-update notice was emailed to the head (no access code — account already active).`,
@@ -5086,13 +5111,51 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });
     }
 
-    // ICC Vets Protocol — Account cannot treat a Cash/Material request until ICC has
-    // vetted and returned it. Account must use /icc-vet-forward first. Chairman/CEO and
-    // memo requests are unaffected. Enforced server-side — never trust the UI alone.
+    // ICC Vets Protocol — Account and CEO/Chairman cannot treat a Cash/Material request
+    // until ICC has vetted and returned it (Account must use /icc-vet-forward first).
+    // Memo requests are unaffected. Either department can be individually exempted via
+    // a Super-Admin-controlled System Setting checkbox. Enforced server-side — never trust the UI alone.
     const isMemoReq = /^memo/i.test(requisition.type || '');
     const actorIsAccount = (isAccountDept) || (isPrivilegedVettingSub && isParentAccountDept);
-    if (action === 'treated' && actorIsAccount && !isMemoReq && !requisition.iccVettingCleared) {
-      return res.status(403).json({ error: 'This request must be vetted by ICC before Account can treat it. Forward it to ICC first.' });
+    const isCeoDept = actingDeptRecord && /ceo|chairman/i.test(actingDeptRecord.name);
+    const isParentCeoDept = parentDeptRecord && /ceo|chairman/i.test(parentDeptRecord.name);
+    const actorIsCeo = isCeoDept || (isPrivilegedVettingSub && isParentCeoDept);
+
+    if (action === 'treated' && !isMemoReq && (actorIsAccount || actorIsCeo) && !requisition.iccVettingCleared) {
+      const [
+        accountBypassSetting, ceoBypassSetting,
+        accountThreshEnabledSetting, accountThreshAmountSetting,
+        ceoThreshEnabledSetting, ceoThreshAmountSetting,
+      ] = await Promise.all([
+        prisma.systemSetting.findUnique({ where: { key: 'icc_bypass_account_enabled' } }),
+        prisma.systemSetting.findUnique({ where: { key: 'icc_bypass_ceo_enabled' } }),
+        prisma.systemSetting.findUnique({ where: { key: 'icc_bypass_account_threshold_enabled' } }),
+        prisma.systemSetting.findUnique({ where: { key: 'icc_bypass_account_threshold_amount' } }),
+        prisma.systemSetting.findUnique({ where: { key: 'icc_bypass_ceo_threshold_enabled' } }),
+        prisma.systemSetting.findUnique({ where: { key: 'icc_bypass_ceo_threshold_amount' } }),
+      ]);
+
+      // Effective amount this request would be treated at — same figure used for disbursement.
+      const reqAmtForGate = getEffectiveReqAmount(requisition);
+
+      // Master bypass must be on. If a threshold is additionally enabled, the bypass only
+      // covers amounts at or below it — anything above still goes through ICC. With no
+      // threshold configured, the master bypass covers every amount (act freely).
+      let accountBypassed = actorIsAccount && accountBypassSetting?.value === 'true';
+      if (accountBypassed && accountThreshEnabledSetting?.value === 'true') {
+        const limit = parseFloat(accountThreshAmountSetting?.value);
+        if (!isNaN(limit) && reqAmtForGate > limit) accountBypassed = false;
+      }
+
+      let ceoBypassed = actorIsCeo && ceoBypassSetting?.value === 'true';
+      if (ceoBypassed && ceoThreshEnabledSetting?.value === 'true') {
+        const limit = parseFloat(ceoThreshAmountSetting?.value);
+        if (!isNaN(limit) && reqAmtForGate > limit) ceoBypassed = false;
+      }
+
+      if (!accountBypassed && !ceoBypassed) {
+        return res.status(403).json({ error: 'This request must be vetted by ICC before it can be treated. Forward it to ICC first.' });
+      }
     }
 
     let attachmentKey = null;
@@ -5467,6 +5530,7 @@ app.post('/api/requisitions/:id/icc-vet-forward', authenticateToken, async (req,
       ? await prisma.department.findUnique({ where: { id: userDeptId }, select: { id: true, name: true } })
       : null;
     const isAccountDept = actingDept && /\baccount\b/i.test(actingDept.name);
+    const isCeoDept = actingDept && /ceo|chairman/i.test(actingDept.name);
 
     // Privileged Account sub-account also allowed
     let isPrivilegedAccountSub = false;
@@ -5475,8 +5539,8 @@ app.post('/api/requisitions/:id/icc-vet-forward', authenticateToken, async (req,
       isPrivilegedAccountSub = !!(parentDept && /\baccount\b/i.test(parentDept.name));
     }
 
-    if (!isAdmin && !isAccountDept && !isPrivilegedAccountSub) {
-      return res.status(403).json({ error: 'Only the Account department can forward a request to ICC.' });
+    if (!isAdmin && !isAccountDept && !isPrivilegedAccountSub && !isCeoDept) {
+      return res.status(403).json({ error: 'Only Account or CEO/Chairman can forward a request to ICC.' });
     }
 
     const requisition = await prisma.requisition.findUnique({
@@ -5506,7 +5570,7 @@ app.post('/api/requisitions/:id/icc-vet-forward', authenticateToken, async (req,
 
     await prisma.requisition.update({
       where: { id: reqId },
-      data: { currentVettingDeptId: iccDept.id }
+      data: { currentVettingDeptId: iccDept.id, iccForwardedFromDeptId: effectiveDeptId || null }
     });
 
     await prisma.vettingEvent.create({
@@ -5555,7 +5619,7 @@ app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, 
 
     const requisition = await prisma.requisition.findUnique({
       where: { id: reqId },
-      select: { id: true, title: true, type: true, currentVettingDeptId: true }
+      select: { id: true, title: true, type: true, currentVettingDeptId: true, iccForwardedFromDeptId: true }
     });
     if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
 
@@ -5602,11 +5666,13 @@ app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, 
       updateData.iccOverrideDeptName = actingDept?.name || 'ICC';
     }
 
-    // Resolve Account department to return the request to
+    // Return to whichever department forwarded this to ICC (Account or CEO/Chairman).
+    // Falls back to Account for legacy in-flight requests forwarded before this field existed.
     const allDepts = await prisma.department.findMany({ where: { isSubAccount: false }, select: { id: true, name: true } });
-    const accountDept = allDepts.find(d => /\baccount\b/i.test(d.name));
-    if (!accountDept) return res.status(500).json({ error: 'Account department not found in system.' });
-    updateData.currentVettingDeptId = accountDept.id;
+    const returnDept = (requisition.iccForwardedFromDeptId && allDepts.find(d => d.id === requisition.iccForwardedFromDeptId))
+      || allDepts.find(d => /\baccount\b/i.test(d.name));
+    if (!returnDept) return res.status(500).json({ error: 'Could not resolve which department to return this requisition to.' });
+    updateData.currentVettingDeptId = returnDept.id;
 
     await prisma.requisition.update({ where: { id: reqId }, data: updateData });
 
@@ -5625,23 +5691,23 @@ app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, 
       data: {
         userId: getNumericUserId(req.user) || null,
         action: 'ICC Vets Protocol — Returned',
-        details: `Req #${reqId} returned to Account by ICC.${iccTotal != null ? ` ICC verified total: ₦${iccTotal.toLocaleString()}.` : ''}`
+        details: `Req #${reqId} returned to ${returnDept.name} by ICC.${iccTotal != null ? ` ICC verified total: ₦${iccTotal.toLocaleString()}.` : ''}`
       }
     });
 
-    broadcastUpdate(reqId, { action: 'icc_vet_return', fromDept: actingDept?.name || 'ICC', toDept: accountDept.name });
+    broadcastUpdate(reqId, { action: 'icc_vet_return', fromDept: actingDept?.name || 'ICC', toDept: returnDept.name });
     notifyDepartmentHead({
-      departmentId: accountDept.id,
+      departmentId: returnDept.id,
       subject: `ICC Vetting Complete — Req #${reqId}`,
       lines: [
-        `ICC has completed vetting and returned this request to Account for treatment.`,
+        `ICC has completed vetting and returned this request to ${returnDept.name} for treatment.`,
         iccTotal != null ? `ICC Verified Amount: ₦${iccTotal.toLocaleString()}` : null,
         comment ? `ICC Note: ${comment}` : null,
       ].filter(Boolean),
     }).catch(() => {});
     broadcastPushToInvolved(reqId, {
       title: 'ICC Vetting Complete',
-      body: `Req #${reqId} "${requisition.title || ''}" has been returned to Account for treatment.`,
+      body: `Req #${reqId} "${requisition.title || ''}" has been returned to ${returnDept.name} for treatment.`,
       url: `/?req=${reqId}`
     });
 
@@ -6215,6 +6281,7 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
     try {
       const iccVetRows = await prisma.$queryRaw`
         SELECT "iccVettingCleared", "iccVettingNote", "iccVettingAt", "iccVettingByDeptId",
+               "iccForwardedFromDeptId",
                "hasIccOverride", "iccOverrideContent", "iccOverrideAmount", "iccOverrideDeptName"
         FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
       `;

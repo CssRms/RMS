@@ -155,6 +155,13 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [headsCanManageSubaccounts, setHeadsCanManageSubaccounts] = useState(true);
   const [headsCanSetSubPrivileges, setHeadsCanSetSubPrivileges]   = useState(true);
   const [iccOversightEnabled, setIccOversightEnabled]             = useState(true);
+  const [deptCreationHeadDetailsEnabled, setDeptCreationHeadDetailsEnabled] = useState(true);
+  const [accountIccBypassEnabled, setAccountIccBypassEnabled]     = useState(false);
+  const [ceoIccBypassEnabled, setCeoIccBypassEnabled]             = useState(false);
+  const [accountThreshEnabled, setAccountThreshEnabled]           = useState(false);
+  const [accountThreshAmount, setAccountThreshAmount]             = useState('');
+  const [ceoThreshEnabled, setCeoThreshEnabled]                   = useState(false);
+  const [ceoThreshAmount, setCeoThreshAmount]                     = useState('');
   const [savingFeatures, setSavingFeatures]         = useState(false);
 
   // ── All departments (for chairman/print toggles) ───────────────────────────
@@ -284,7 +291,11 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
   const loadFeatureFlags = async () => {
     try {
-      const [studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes] = await Promise.allSettled([
+      const [
+        studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes, deptHeadDetailsRes,
+        accountIccBypassRes, ceoIccBypassRes,
+        accountThreshEnabledRes, accountThreshAmountRes, ceoThreshEnabledRes, ceoThreshAmountRes,
+      ] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
         settingsAPI.get('login_style'),
@@ -292,6 +303,13 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.get('heads_can_manage_subaccounts'),
         settingsAPI.get('heads_can_set_subaccount_privileges'),
         settingsAPI.get('icc_oversight_enabled'),
+        settingsAPI.get('dept_creation_head_details_enabled'),
+        settingsAPI.get('icc_bypass_account_enabled'),
+        settingsAPI.get('icc_bypass_ceo_enabled'),
+        settingsAPI.get('icc_bypass_account_threshold_enabled'),
+        settingsAPI.get('icc_bypass_account_threshold_amount'),
+        settingsAPI.get('icc_bypass_ceo_threshold_enabled'),
+        settingsAPI.get('icc_bypass_ceo_threshold_amount'),
       ]);
       if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
         setStudioEnabled(studioRes.value.value !== 'false');
@@ -307,10 +325,32 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setHeadsCanSetSubPrivileges(headsPrivRes.value.value !== 'false');
       if (iccOversightRes.status === 'fulfilled' && iccOversightRes.value?.value !== undefined)
         setIccOversightEnabled(iccOversightRes.value.value !== 'false');
+      if (deptHeadDetailsRes.status === 'fulfilled' && deptHeadDetailsRes.value?.value !== undefined)
+        setDeptCreationHeadDetailsEnabled(deptHeadDetailsRes.value.value !== 'false');
+      if (accountIccBypassRes.status === 'fulfilled' && accountIccBypassRes.value?.value !== undefined)
+        setAccountIccBypassEnabled(accountIccBypassRes.value.value === 'true');
+      if (ceoIccBypassRes.status === 'fulfilled' && ceoIccBypassRes.value?.value !== undefined)
+        setCeoIccBypassEnabled(ceoIccBypassRes.value.value === 'true');
+      if (accountThreshEnabledRes.status === 'fulfilled' && accountThreshEnabledRes.value?.value !== undefined)
+        setAccountThreshEnabled(accountThreshEnabledRes.value.value === 'true');
+      if (accountThreshAmountRes.status === 'fulfilled' && accountThreshAmountRes.value?.value !== undefined)
+        setAccountThreshAmount(accountThreshAmountRes.value.value);
+      if (ceoThreshEnabledRes.status === 'fulfilled' && ceoThreshEnabledRes.value?.value !== undefined)
+        setCeoThreshEnabled(ceoThreshEnabledRes.value.value === 'true');
+      if (ceoThreshAmountRes.status === 'fulfilled' && ceoThreshAmountRes.value?.value !== undefined)
+        setCeoThreshAmount(ceoThreshAmountRes.value.value);
     } catch {}
   };
 
   const saveFeatureFlags = async () => {
+    if (accountThreshEnabled && (accountThreshAmount === '' || isNaN(parseFloat(accountThreshAmount)))) {
+      toast.error('Enter a valid threshold amount for Account, or turn off its threshold limit.');
+      return;
+    }
+    if (ceoThreshEnabled && (ceoThreshAmount === '' || isNaN(parseFloat(ceoThreshAmount)))) {
+      toast.error('Enter a valid threshold amount for CEO/Chairman, or turn off its threshold limit.');
+      return;
+    }
     setSavingFeatures(true);
     try {
       await Promise.all([
@@ -321,6 +361,13 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('heads_can_manage_subaccounts', String(headsCanManageSubaccounts)),
         settingsAPI.set('heads_can_set_subaccount_privileges', String(headsCanSetSubPrivileges)),
         settingsAPI.set('icc_oversight_enabled', String(iccOversightEnabled)),
+        settingsAPI.set('dept_creation_head_details_enabled', String(deptCreationHeadDetailsEnabled)),
+        settingsAPI.set('icc_bypass_account_enabled', String(accountIccBypassEnabled)),
+        settingsAPI.set('icc_bypass_ceo_enabled', String(ceoIccBypassEnabled)),
+        settingsAPI.set('icc_bypass_account_threshold_enabled', String(accountThreshEnabled)),
+        settingsAPI.set('icc_bypass_account_threshold_amount', String(parseFloat(accountThreshAmount) || 0)),
+        settingsAPI.set('icc_bypass_ceo_threshold_enabled', String(ceoThreshEnabled)),
+        settingsAPI.set('icc_bypass_ceo_threshold_amount', String(parseFloat(ceoThreshAmount) || 0)),
       ]);
       toast.success('Feature settings saved.');
     } catch {
@@ -777,6 +824,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 { label: 'ICC Oversight Console', desc: 'Shows the "Oversight" button in ICC\'s sidebar, giving them the global observer console (view all requests, freeze/unfreeze, comment). When disabled, the button is hidden from ICC\'s sidebar.', value: iccOversightEnabled, set: setIccOversightEnabled },
                 { label: 'Heads Can Create/Manage Sub-Accounts', desc: 'Lets department heads create new units and act on existing ones (rename, reset code, enable/disable, delete). When disabled, heads can still see their sub-account list but lose all action buttons — only Super Admin can manage units.', value: headsCanManageSubaccounts, set: setHeadsCanManageSubaccounts },
                 { label: 'Heads Can Set Sub-Account Privileges', desc: 'Lets department heads configure Cash/Memo/Material privileges, creation/approval limits, and direct routing for their sub-accounts. When disabled, the Privilege Settings section is hidden from heads — only Super Admin can configure it.', value: headsCanSetSubPrivileges, set: setHeadsCanSetSubPrivileges },
+                { label: 'Department Creation Includes Head Details', desc: 'When enabled, Super Admin fills in the head official\'s details (Staff ID, name, email, phone) together with the department at creation. When disabled, the head official fields are hidden — Super Admin creates a bare department (name + access code only) and assigns a head later via Edit.', value: deptCreationHeadDetailsEnabled, set: setDeptCreationHeadDetailsEnabled },
               ].map(({ label, desc, value, set }) => (
                 <div key={label} className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
                   <div className="space-y-0.5 min-w-0">
@@ -789,6 +837,74 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   >
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${value ? 'translate-x-6' : 'translate-x-0'}`} />
                   </button>
+                </div>
+              ))}
+
+              {/* ICC Vets Protocol bypass cards — master toggle + optional amount threshold */}
+              {[
+                {
+                  key: 'account', label: 'Account Can Treat Without ICC Vetting',
+                  desc: 'ICC Vets Protocol: by default, Account must forward Cash/Material requests to ICC for vetting before they can treat (disburse).',
+                  bypassValue: accountIccBypassEnabled, setBypass: setAccountIccBypassEnabled,
+                  threshEnabled: accountThreshEnabled, setThreshEnabled: setAccountThreshEnabled,
+                  threshAmount: accountThreshAmount, setThreshAmount: setAccountThreshAmount,
+                },
+                {
+                  key: 'ceo', label: 'CEO/Chairman Can Treat Without ICC Vetting',
+                  desc: 'ICC Vets Protocol: by default, the CEO/Chairman department must wait for ICC to vet Cash/Material requests before treating them, same as Account.',
+                  bypassValue: ceoIccBypassEnabled, setBypass: setCeoIccBypassEnabled,
+                  threshEnabled: ceoThreshEnabled, setThreshEnabled: setCeoThreshEnabled,
+                  threshAmount: ceoThreshAmount, setThreshAmount: setCeoThreshAmount,
+                },
+              ].map(({ key, label, desc, bypassValue, setBypass, threshEnabled, setThreshEnabled, threshAmount, setThreshAmount }) => (
+                <div key={key} className="p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="text-sm font-black text-foreground">{label}</p>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {desc} {bypassValue ? 'Currently free to treat without ICC.' : 'Enable to let them treat freely without waiting for ICC.'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setBypass(v => !v)}
+                      className={`relative shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${bypassValue ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${bypassValue ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  {bypassValue && (
+                    <div className="border-t border-border/30 pt-4 space-y-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="text-xs font-bold text-foreground">Limit Bypass to an Amount Threshold</p>
+                          <p className="text-[10px] text-muted-foreground leading-relaxed">
+                            {threshEnabled
+                              ? 'Only requests at or below the amount below skip ICC — anything above still goes through the full process, including ICC.'
+                              : 'Off — every amount is free to treat without ICC while the toggle above is on.'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setThreshEnabled(v => !v)}
+                          className={`relative shrink-0 w-10 h-5 rounded-full transition-colors duration-300 focus:outline-none ${threshEnabled ? 'bg-amber-500' : 'bg-muted-foreground/30'}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-300 ${threshEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                      {threshEnabled && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Max Amount Treatable Without ICC (₦)</label>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={threshAmount}
+                            onChange={e => setThreshAmount(e.target.value)}
+                            placeholder="e.g. 500000"
+                            className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-300"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -836,12 +952,27 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 { label: 'ICC Oversight', value: iccOversightEnabled },
                 { label: 'Heads Manage Sub-Accounts', value: headsCanManageSubaccounts },
                 { label: 'Heads Set Privileges', value: headsCanSetSubPrivileges },
+                { label: 'Dept Creation Includes Head Details', value: deptCreationHeadDetailsEnabled },
+                { label: 'Account ICC Bypass', value: accountIccBypassEnabled },
+                { label: 'CEO/Chairman ICC Bypass', value: ceoIccBypassEnabled },
               ].map(({ label, value }) => (
                 <span key={label} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border ${value ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-600'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${value ? 'bg-emerald-500' : 'bg-red-400'}`} />
                   {label}: {value ? 'On' : 'Off'}
                 </span>
               ))}
+              {accountIccBypassEnabled && accountThreshEnabled && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border bg-amber-50 border-amber-200 text-amber-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  Account Limit: ₦{Number(accountThreshAmount || 0).toLocaleString()}
+                </span>
+              )}
+              {ceoIccBypassEnabled && ceoThreshEnabled && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border bg-amber-50 border-amber-200 text-amber-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  CEO/Chairman Limit: ₦{Number(ceoThreshAmount || 0).toLocaleString()}
+                </span>
+              )}
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border bg-blue-50 border-blue-200 text-blue-700">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                 Login Screen: <span className="capitalize">{loginStyle}</span>

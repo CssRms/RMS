@@ -2085,7 +2085,7 @@ const AuditOverridePanel = ({ req, detail, user, departments = [], onDone }) => 
 // Shown to Account instead of the normal treatment form when a Cash/Material
 // request hasn't yet been vetted+returned by ICC. Account's only options here
 // are to forward it to ICC, or return it up the chain as usual.
-const IccVetForwardGate = ({ req, detail, departments, returnDestLabel, onDone }) => {
+const IccVetForwardGate = ({ req, detail, departments, returnDestLabel, holderLabel = 'Account', onDone }) => {
   const [comment, setComment] = useState('');
   const [forwarding, setForwarding] = useState(false);
   const [returning, setReturning]   = useState(false);
@@ -2124,7 +2124,7 @@ const IccVetForwardGate = ({ req, detail, departments, returnDestLabel, onDone }
         <span className="ml-auto px-2 py-0.5 rounded-full bg-indigo-100 border border-indigo-300 text-[9px] font-black text-indigo-700 uppercase">Awaiting ICC Clearance</span>
       </div>
       <p className="text-[11px] text-indigo-700/80 leading-relaxed pl-1">
-        This request must be vetted by ICC before Account can treat it. Forward it to ICC now, or return it to {returnDestLabel} if something needs correcting first.
+        This request must be vetted by ICC before {holderLabel} can treat it. Forward it to ICC now, or return it to {returnDestLabel} if something needs correcting first.
       </p>
       <textarea
         value={comment}
@@ -2167,6 +2167,25 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const [treatInitiated, setTreatInitiated] = useState(false);
   const [paymentType, setPaymentType]       = useState(''); // 'full' | 'partial'
   const [kivActing, setKivActing]           = useState(false);
+  // ICC Vets Protocol bypass flags — default null/false (gate applies) until confirmed,
+  // since the safe default is to keep the ICC gate enforced.
+  const [accountIccBypass, setAccountIccBypass] = useState(null);
+  const [ceoIccBypass, setCeoIccBypass]         = useState(null);
+  // Optional per-department amount threshold that narrows the bypass — only amounts at/below
+  // the threshold are exempt from ICC; above it, the full process (including ICC) still applies.
+  const [accountThreshEnabled, setAccountThreshEnabled] = useState(false);
+  const [accountThreshAmount, setAccountThreshAmount]   = useState(null);
+  const [ceoThreshEnabled, setCeoThreshEnabled]         = useState(false);
+  const [ceoThreshAmount, setCeoThreshAmount]           = useState(null);
+
+  useEffect(() => {
+    settingsAPI.get('icc_bypass_account_enabled').then(r => setAccountIccBypass(r?.value === 'true')).catch(() => setAccountIccBypass(false));
+    settingsAPI.get('icc_bypass_ceo_enabled').then(r => setCeoIccBypass(r?.value === 'true')).catch(() => setCeoIccBypass(false));
+    settingsAPI.get('icc_bypass_account_threshold_enabled').then(r => setAccountThreshEnabled(r?.value === 'true')).catch(() => {});
+    settingsAPI.get('icc_bypass_account_threshold_amount').then(r => setAccountThreshAmount(r?.value != null ? parseFloat(r.value) : null)).catch(() => {});
+    settingsAPI.get('icc_bypass_ceo_threshold_enabled').then(r => setCeoThreshEnabled(r?.value === 'true')).catch(() => {});
+    settingsAPI.get('icc_bypass_ceo_threshold_amount').then(r => setCeoThreshAmount(r?.value != null ? parseFloat(r.value) : null)).catch(() => {});
+  }, []);
 
   const deptName = user?.name || '';
   const currentVettingDeptId   = detail?.currentVettingDeptId   ? parseInt(detail.currentVettingDeptId)   : null;
@@ -2231,15 +2250,23 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   if (finalApprovalStatus === 'treated') return null;
 
   // ── ICC Vets Protocol gate ──────────────────────────────────────────────────
-  // Account cannot treat a Cash/Material request until ICC has vetted and returned
-  // it. Their only action here is to forward to ICC (or return up the chain as usual).
+  // Account and CEO/Chairman cannot treat a Cash/Material request until ICC has vetted
+  // and returned it, unless their department has been individually exempted via System
+  // Settings. Their only action here is to forward to ICC (or return up the chain as usual).
   const _isMemoReqForGate = /^memo/i.test(req?.type || '');
-  if (isAccount && !_isMemoReqForGate && !detail?.iccVettingCleared) {
+  // A threshold (if enabled) narrows the bypass to amounts at/below it — above it, the
+  // gate still applies even though the master bypass is on.
+  const _accountBypassActive = accountIccBypass && !(accountThreshEnabled && accountThreshAmount != null && _effAmt > accountThreshAmount);
+  const _ceoBypassActive     = ceoIccBypass && !(ceoThreshEnabled && ceoThreshAmount != null && _effAmt > ceoThreshAmount);
+  const _iccGateAppliesToAccount = isAccount && !_accountBypassActive;
+  const _iccGateAppliesToChairman = isChairman && !_ceoBypassActive;
+  if ((_iccGateAppliesToAccount || _iccGateAppliesToChairman) && !_isMemoReqForGate && !detail?.iccVettingCleared) {
     return (
       <IccVetForwardGate
         req={req}
         detail={detail}
         departments={departments}
+        holderLabel={isChairman ? 'CEO/Chairman' : 'Account'}
         returnDestLabel={finalApprovedByDeptId
           ? (departments.find(d => d.id === finalApprovedByDeptId)?.name || 'Approving Authority')
           : 'Approving Authority'}
@@ -2805,6 +2832,10 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
 const IccVetsPanel = ({ req, detail, departments, onDone }) => {
   const _fmt = n => `₦${Number(n || 0).toLocaleString()}`;
   const isMaterialReq = /^material/i.test(req?.type || '');
+  const forwarderDeptId = detail?.iccForwardedFromDeptId ? parseInt(detail.iccForwardedFromDeptId) : null;
+  const forwarderLabel = forwarderDeptId
+    ? (departments.find(d => d.id === forwarderDeptId)?.name || 'the forwarding department')
+    : 'Account';
 
   const existingOverride = detail?.hasIccOverride
     ? (() => { try { return JSON.parse(detail.iccOverrideContent); } catch { return null; } })()
@@ -2858,10 +2889,10 @@ const IccVetsPanel = ({ req, detail, departments, onDone }) => {
         overrideItems,
         overrideComment: overrideItems ? (tableComment.trim() || undefined) : undefined,
       });
-      toast.success('Vetting complete — returned to Account for treatment.');
+      toast.success(`Vetting complete — returned to ${forwarderLabel} for treatment.`);
       onDone();
     } catch (err) {
-      toast.error(err?.response?.data?.error || 'Could not return to Account.');
+      toast.error(err?.response?.data?.error || `Could not return to ${forwarderLabel}.`);
     } finally { setActing(false); }
   };
 
@@ -2874,8 +2905,8 @@ const IccVetsPanel = ({ req, detail, departments, onDone }) => {
         <span className="ml-auto px-2 py-0.5 rounded-full bg-violet-100 border border-violet-300 text-[9px] font-black text-violet-700 uppercase">Awaiting Your Vetting</span>
       </div>
       <p className="text-[11px] text-violet-700/80 leading-relaxed pl-1">
-        Account has forwarded this request to ICC for vetting before treatment.
-        {isMaterialReq ? ' Review and return it to Account when ready.' : ' You may optionally set a verified price table — it will take priority for payment.'}
+        {forwarderLabel} has forwarded this request to ICC for vetting before treatment.
+        {isMaterialReq ? ` Review and return it to ${forwarderLabel} when ready.` : ' You may optionally set a verified price table — it will take priority for payment.'}
       </p>
 
       {!isMaterialReq && isItemized && (
@@ -2954,7 +2985,7 @@ const IccVetsPanel = ({ req, detail, departments, onDone }) => {
           value={note}
           onChange={e => setNote(e.target.value)}
           rows={2}
-          placeholder="Optional note for Account…"
+          placeholder={`Optional note for ${forwarderLabel}…`}
           className="w-full text-xs border border-violet-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none"
         />
       </div>
@@ -2962,7 +2993,7 @@ const IccVetsPanel = ({ req, detail, departments, onDone }) => {
       <button onClick={handleReturn} disabled={acting}
         className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 rounded-xl transition-all disabled:opacity-40 text-sm shadow-sm">
         {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-        Complete Vetting — Return to Account
+        Complete Vetting — Return to {forwarderLabel}
       </button>
     </div>
   );
