@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, Users, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail, Eye, X, AlertTriangle, Zap, BadgeCheck, ArrowRight, Clock, PenTool, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, Shield, ArrowDown, Settings2, Info, FileText, ChevronRight, Save, Loader2, Monitor, Hash, ShieldCheck, Sparkles, Printer, Award, Phone, Send, CheckCircle2, Wifi, WifiOff, AlertCircle, RotateCcw, Mail, Eye, X, AlertTriangle, Zap, BadgeCheck, ArrowRight, Clock, PenTool, MessageSquare } from 'lucide-react';
 
 const WorkflowStage = ({ stage, onUpdate, onDelete, isFirst }) => {
   return (
@@ -57,10 +57,7 @@ import { getWorkflows, updateWorkflows, getRequisitionTypes, addRequisitionType,
 import { settingsAPI, adminAPI } from '../lib/api';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
-import Modal from './Modal';
 import ConfirmModal from './ConfirmModal';
-
-const DEFAULT_THRESHOLDS = { hr_ceiling: 50000, chairman_min: 100000 };
 
 // ── Deleted Record Detail Modal ───────────────────────────────────────────────
 const DeletedRecordModal = ({ rec, onClose }) => {
@@ -128,20 +125,11 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [stages, setStages] = useState([]);
   const [types, setTypes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('stages'); // 'stages' | 'types' | 'authority'
+  const [activeTab, setActiveTab] = useState('features');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [pendingStage, setPendingStage] = useState(null);
   const [pendingType, setPendingType] = useState(null);
   const [newTypeName, setNewTypeName] = useState('');
-
-  // ── Authority threshold state ──────────────────────────────────────────────
-  const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS);
-  const [savingThresholds, setSavingThresholds] = useState(false);
-
-  // ── Record access state ────────────────────────────────────────────────────
-  const [recordDepts, setRecordDepts]       = useState([]);
-  const [recordDeptOptions, setRecordDeptOptions] = useState([]);
-  const [savingRecord, setSavingRecord]     = useState(false);
 
   // ── Reference code pattern ────────────────────────────────────────────────
   const [refPattern, setRefPattern] = useState({ orgPrefix: 'CSSG', typeCash: 'FR', typeMaterial: 'MR', typeMemo: 'MO' });
@@ -243,34 +231,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
     setStages(workflowData);
     setTypes(typeData);
     setLoading(false);
-  };
-
-  const loadRecordAccess = async (allDepts = []) => {
-    // Only HR, GM, Audit, ICC are configurable — Account/Chairman always have access
-    const configurable = allDepts.filter(d =>
-      /\bhr\b|human\s*resource|general\s*manager|\bgm\b|\bicc\b|internal.*control|control.*compliance|audit/i.test(d.name)
-    );
-    setRecordDeptOptions(configurable);
-    try {
-      const res = await settingsAPI.get('record_visibility_depts');
-      if (res?.value) {
-        try { setRecordDepts(JSON.parse(res.value)); } catch {}
-      }
-    } catch {}
-  };
-
-  const saveRecordAccess = async () => {
-    setSavingRecord(true);
-    try {
-      await settingsAPI.set('record_visibility_depts', JSON.stringify(recordDepts));
-      toast.success('Record visibility settings saved.');
-    } catch {
-      toast.error('Failed to save. Please try again.');
-    } finally { setSavingRecord(false); }
-  };
-
-  const toggleRecordDept = (id) => {
-    setRecordDepts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const loadRefPattern = async () => {
@@ -480,42 +440,16 @@ const WorkflowBuilder = ({ onViewChange }) => {
     } finally { setEmailTesting(false); }
   };
 
-  const loadThresholds = async () => {
-    try {
-      const res = await settingsAPI.get('approval_thresholds');
-      if (res?.value) {
-        try { setThresholds({ ...DEFAULT_THRESHOLDS, ...JSON.parse(res.value) }); } catch {}
-      }
-    } catch {}
-  };
-
-  const saveThresholds = async () => {
-    // Basic validation: hr_ceiling must be less than chairman_min
-    if (thresholds.hr_ceiling >= thresholds.chairman_min) {
-      toast.error('HR Ceiling must be less than the Chairman / CEO floor.');
-      return;
-    }
-    setSavingThresholds(true);
-    try {
-      await settingsAPI.set('approval_thresholds', JSON.stringify(thresholds));
-      toast.success('Authority thresholds saved successfully.');
-    } catch {
-      toast.error('Failed to save thresholds. Please try again.');
-    } finally { setSavingThresholds(false); }
-  };
-
   useEffect(() => {
     (async () => {
       const { getDepartments } = await import('../lib/store');
-      const [, , depts] = await Promise.all([
+      const [, depts] = await Promise.all([
         loadData(),
-        loadThresholds(),
         getDepartments()
       ]);
       const deptsArr = Array.isArray(depts) ? depts : [];
       setAllDepts(deptsArr);
       await Promise.all([
-        loadRecordAccess(deptsArr),
         loadFeatureFlags(),
         loadRefPattern(),
         loadChairmanSetting(),
@@ -618,18 +552,13 @@ const WorkflowBuilder = ({ onViewChange }) => {
         <div className="overflow-x-auto pb-1 -mb-1">
           <div className="flex bg-muted/40 p-1.5 rounded-2xl border border-border/50 shadow-inner min-w-max gap-0.5">
             {[
+              { id: 'features', label: 'Features' },
               { id: 'stages',   label: 'Approval Workflow' },
               { id: 'types',    label: 'Unit Types' },
-              { id: 'authority',label: 'Authority Bands' },
-              { id: 'record',   label: 'Record Access' },
-              { id: 'features', label: 'Features' },
               { id: 'refcode',  label: 'Ref Code' },
-              { id: 'chairman', label: 'CEO Routing' },
-              { id: 'ai',       label: 'AI Features' },
               { id: 'print',    label: 'Print & Stamp' },
               { id: 'contact',  label: 'Contact & Email' },
-              { id: 'bin',      label: 'Deleted Records' },
-              { id: 'reset',    label: 'Danger Zone' },
+              { id: 'bin',      label: 'Deleted Records & Danger Zone' },
             ].map(({ id, label }) => (
               <button
                 key={id}
@@ -642,172 +571,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
           </div>
         </div>
 
-        {activeTab === 'authority' ? (
-          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-8">
-              <div>
-                <h3 className="text-lg font-black text-foreground tracking-tight">Approval Authority Bands</h3>
-                <p className="text-sm text-muted-foreground mt-1 font-medium leading-relaxed">
-                  Define the two amount boundaries that split requisitions across the three signatory tiers.
-                  Changes take effect immediately for all new approvals.
-                </p>
-              </div>
-
-              {/* Live band preview */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {/* Band 1 – HR */}
-                <div className="flex items-center gap-4 p-4 rounded-2xl bg-blue-50 border border-blue-200">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
-                    <Users size={18} className="text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-blue-800 uppercase tracking-widest">Band 1 — HR</p>
-                    <p className="text-[11px] text-blue-700 font-medium mt-0.5">
-                      ₦0 – ₦{Number(thresholds.hr_ceiling).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Band 2 – GM (derived) */}
-                <div className="flex items-center gap-4 p-4 rounded-2xl bg-amber-50 border border-amber-200">
-                  <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
-                    <Shield size={18} className="text-amber-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-amber-800 uppercase tracking-widest">Band 2 — General Manager</p>
-                    <p className="text-[11px] text-amber-700 font-medium mt-0.5">
-                      ₦{Number(thresholds.hr_ceiling + 1).toLocaleString()} – ₦{Number(thresholds.chairman_min - 1).toLocaleString()}
-                      <span className="ml-2 text-[10px] italic opacity-60">(auto)</span>
-                    </p>
-                  </div>
-                </div>
-
-                {/* Band 3 – Chairman */}
-                <div className="flex items-center gap-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0">
-                    <Settings2 size={18} className="text-emerald-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-emerald-800 uppercase tracking-widest">Band 3 — Chairman / CEO</p>
-                    <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                      ₦{Number(thresholds.chairman_min).toLocaleString()} and above
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Input controls */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 border-t border-border/40">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                    HR Ceiling (₦)
-                  </label>
-                  <p className="text-[10px] text-muted-foreground/60 italic -mt-1">
-                    HR can approve amounts up to and including this value
-                  </p>
-                  <input
-                    type="number"
-                    min="1"
-                    value={thresholds.hr_ceiling}
-                    onChange={e => setThresholds(prev => ({ ...prev, hr_ceiling: parseInt(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                    Chairman / CEO Floor (₦)
-                  </label>
-                  <p className="text-[10px] text-muted-foreground/60 italic -mt-1">
-                    Chairman must approve amounts from this value upwards
-                  </p>
-                  <input
-                    type="number"
-                    min="1"
-                    value={thresholds.chairman_min}
-                    onChange={e => setThresholds(prev => ({ ...prev, chairman_min: parseInt(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm"
-                  />
-                </div>
-              </div>
-
-              {thresholds.hr_ceiling >= thresholds.chairman_min && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
-                  <Info size={14} className="shrink-0" />
-                  HR Ceiling must be strictly less than the Chairman / CEO Floor.
-                </div>
-              )}
-
-              <button
-                onClick={saveThresholds}
-                disabled={savingThresholds || thresholds.hr_ceiling >= thresholds.chairman_min}
-                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
-              >
-                {savingThresholds ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {savingThresholds ? 'Saving…' : 'Save Thresholds'}
-              </button>
-            </div>
-          </div>
-        ) : activeTab === 'record' ? (
-          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-6">
-              <div>
-                <h3 className="text-lg font-black text-foreground tracking-tight">Record Visibility Access</h3>
-                <p className="text-sm text-muted-foreground mt-1 font-medium leading-relaxed">
-                  By default, full records are visible to the <strong>Creator Department, Super Admin, Account,</strong> and <strong>Chairman/CEO</strong>.
-                  Toggle additional departments below to extend access.
-                </p>
-              </div>
-
-              {/* Always-on badges */}
-              <div className="flex flex-wrap gap-2">
-                {['Creator Dept', 'Super Admin', 'Account', 'Chairman / CEO'].map(label => (
-                  <span key={label} className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[10px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    {label} — Always
-                  </span>
-                ))}
-              </div>
-
-              <div className="border-t border-border/40 pt-5 space-y-3">
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Configurable Departments</p>
-                {recordDeptOptions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No configurable departments found. Make sure HR, GM, Audit, and ICC departments exist in the system.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {recordDeptOptions.map(d => {
-                      const checked = recordDepts.includes(d.id);
-                      return (
-                        <button
-                          key={d.id}
-                          onClick={() => toggleRecordDept(d.id)}
-                          className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left ${checked ? 'border-primary bg-primary/5' : 'border-border/50 bg-white/80 hover:border-primary/30'}`}
-                        >
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${checked ? 'bg-primary border-primary' : 'border-border'}`}>
-                            {checked && <div className="w-2.5 h-2.5 bg-white rounded-sm" />}
-                          </div>
-                          <div>
-                            <p className={`text-xs font-black uppercase tracking-widest ${checked ? 'text-primary' : 'text-foreground'}`}>{d.name}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{checked ? 'Full record access granted' : 'Access restricted'}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={saveRecordAccess}
-                disabled={savingRecord}
-                className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-primary/20 text-xs uppercase tracking-widest disabled:opacity-50 active:scale-[0.98]"
-              >
-                {savingRecord ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {savingRecord ? 'Saving…' : 'Save Access Settings'}
-              </button>
-            </div>
-          </div>
-        ) : activeTab === 'features' ? (
+        {activeTab === 'features' ? (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div>
               <h3 className="text-lg font-black text-foreground tracking-tight">Feature Controls</h3>
@@ -989,6 +753,87 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
               </button>
             </div>
+
+            {/* AIGC Features — own save action (immediate org-wide effect) */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center shrink-0">
+                    <Sparkles size={18} className="text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">AIGC Features</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Control organisation-wide AI tools.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveAISetting}
+                  disabled={savingAI}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-purple-200 active:scale-[0.98]"
+                >
+                  {savingAI ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
+                <div className="space-y-1">
+                  <p className="text-xs font-black text-foreground uppercase tracking-tight">
+                    {aiToggle ? 'Neural Engines Active' : 'Neural Engines Suspended'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    {aiToggle
+                      ? 'AI Refinement and Voice Dictation are enabled across the entire hierarchy.'
+                      : 'Organisation-wide AI capabilities have been restricted.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setAiToggle(v => !v)}
+                  className={`relative shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${aiToggle ? 'bg-purple-600' : 'bg-muted-foreground/30'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${aiToggle ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Chairman / CEO Routing Access — own save action */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={18} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Chairman / CEO Routing Access</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Control which departments can route requests directly to Chairman / CEO.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveChairmanSetting}
+                  disabled={savingChairman}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-amber-200 active:scale-[0.98]"
+                >
+                  {savingChairman ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              <div className="max-h-[420px] overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {allDepts.filter(d => !/ceo|chairman/i.test(d.name)).map(dept => {
+                  const allowed = chairmanAllowedIds.includes(dept.id);
+                  return (
+                    <button
+                      key={dept.id}
+                      onClick={() => toggleChairmanDept(dept.id)}
+                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${allowed ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-border/40 text-muted-foreground hover:border-amber-200'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${allowed ? 'bg-amber-500 border-amber-500' : 'border-border'}`}>
+                        {allowed && <CheckCircle2 size={10} className="text-white" />}
+                      </div>
+                      <span className="text-[11px] font-bold truncate">{dept.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         ) : activeTab === 'refcode' ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -1139,99 +984,6 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </div>
             </div>
           </div>
-        ) : activeTab === 'chairman' ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
-                    <ShieldCheck size={18} className="text-amber-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">Chairman / CEO Routing Access</h3>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Control which departments can route requests directly to Chairman / CEO.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={saveChairmanSetting}
-                  disabled={savingChairman}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-amber-200 active:scale-[0.98]"
-                >
-                  {savingChairman ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                  Save
-                </button>
-              </div>
-              <div className="max-h-[420px] overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {allDepts.filter(d => !/ceo|chairman/i.test(d.name)).map(dept => {
-                  const allowed = chairmanAllowedIds.includes(dept.id);
-                  return (
-                    <button
-                      key={dept.id}
-                      onClick={() => toggleChairmanDept(dept.id)}
-                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${allowed ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-white border-border/40 text-muted-foreground hover:border-amber-200'}`}
-                    >
-                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${allowed ? 'bg-amber-500 border-amber-500' : 'border-border'}`}>
-                        {allowed && <CheckCircle2 size={10} className="text-white" />}
-                      </div>
-                      <span className="text-[11px] font-bold truncate">{dept.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-        ) : activeTab === 'ai' ? (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center shrink-0">
-                    <Sparkles size={18} className="text-purple-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-foreground">AIGC Features</h3>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Control organisation-wide AI tools.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={saveAISetting}
-                  disabled={savingAI}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-purple-200 active:scale-[0.98]"
-                >
-                  {savingAI ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                  Save
-                </button>
-              </div>
-              <div className="flex flex-col justify-center space-y-6">
-                <div className="flex items-center justify-between p-5 rounded-2xl border border-border/40 bg-white shadow-inner">
-                  <div className="space-y-1">
-                    <p className="text-xs font-black text-foreground uppercase tracking-tight">
-                      {aiToggle ? 'Neural Engines Active' : 'Neural Engines Suspended'}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground leading-tight">
-                      {aiToggle
-                        ? 'AI Refinement and Voice Dictation are enabled across the entire hierarchy.'
-                        : 'Organisation-wide AI capabilities have been restricted.'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setAiToggle(v => !v)}
-                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none shadow-inner ${aiToggle ? 'bg-purple-600' : 'bg-muted-foreground/30'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${aiToggle ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-                <div className="p-4 bg-muted/20 rounded-xl border border-border/10 flex items-start gap-3">
-                  <Info size={14} className="text-muted-foreground shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-muted-foreground/80 font-medium italic">
-                    Changes to AI status propagate to all active department sessions within seconds and do not require a system reboot.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
         ) : activeTab === 'print' ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {/* Print Record Access */}
@@ -1588,10 +1340,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 </div>
               )}
             </div>
-          </div>
 
-        ) : activeTab === 'reset' ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="glass bg-white/70 rounded-3xl border border-red-200/60 p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
