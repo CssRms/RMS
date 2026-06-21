@@ -2627,22 +2627,89 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
       headName:  z.string().optional(),
       headTitle: z.string().optional(),
       headEmail: z.string().email().optional().or(z.literal('')),
+      phone:     z.string().optional(),
     }).safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Invalid department payload' });
     }
-    const { name, type, accessCode, headName, headTitle, headEmail } = parsed.data;
+    const { name, type, accessCode, headName, headTitle, headEmail, phone } = parsed.data;
+    const trimmedName = name.trim();
+
+    // Reject name clashes case-insensitively, regardless of Strategic/Operational type —
+    // department names must be unique system-wide.
+    const clash = await prisma.department.findFirst({
+      where: { name: { equals: trimmedName, mode: 'insensitive' } },
+      select: { id: true, name: true }
+    });
+    if (clash) {
+      return res.status(409).json({ error: `A department named "${clash.name}" already exists. Please choose a different name.` });
+    }
+
     const accessCodeHash = await bcrypt.hash(accessCode, 10);
     const dept = await prisma.department.create({
       data: {
-        name, type,
+        name: trimmedName, type,
         accessCode: null, accessCodeHash, accessCodeLabel: accessCode,
         headName:  headName?.trim()  || null,
         headTitle: headTitle?.trim() || null,
         headEmail: headEmail?.trim() || null,
+        phone:     phone?.trim()     || null,
       }
     });
     const { accessCode: _ac, accessCodeHash: _ach, accessCodeLabel: _acl, codeChangedByDept: _ccbd, ...safeDept } = dept;
+
+    // If the head's full contact details were provided at creation, send the same
+    // "Account Activated" welcome email + SMS used when assigning a head via Edit —
+    // fire-and-forget, never blocks the response.
+    if (dept.headName && dept.headEmail && dept.phone) {
+      setImmediate(async () => {
+        const detailLines = [
+          `Name: ${dept.headName}`,
+          `Position/Title: ${dept.headTitle || 'Not set'}`,
+          `Department: ${dept.name}`,
+          `Email: ${dept.headEmail}`,
+          `Phone: ${dept.phone}`,
+          `Access Code: ${accessCode}`,
+        ];
+        await prisma.notification.create({
+          data: { departmentId: dept.id, content: 'Your department account is ready — check your email for your access code.' }
+        }).catch(() => {});
+
+        const subject = 'Account Activated — Welcome to RMS Portal';
+        const { text, html } = buildEmailContent({
+          title: subject,
+          lines: [
+            `Your department account has been activated on the RMS Portal by the RMS Administrator.`,
+            ``,
+            ...detailLines,
+            ``,
+            `Use this access code to log in for the first time. You will be asked to create your own password — once set, the access code no longer works and only your password will grant access to your dashboard.`,
+          ],
+          actionLabel: 'Open RMS Portal',
+        });
+        sendEmail({ to: dept.headEmail, subject, text, html }).catch(() => {});
+        sendSms({
+          to: dept.phone,
+          message: `CSS RMS: Your account for ${dept.name} is now active. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
+        }).catch(() => {});
+
+        if (SUPER_ADMIN_EMAIL) {
+          try {
+            const confirmSubject = `Confirmed: ${dept.name} Department Created`;
+            const { text: ct, html: ch } = buildEmailContent({
+              title: confirmSubject,
+              lines: [
+                `You successfully created the department "${dept.name}".`,
+                ...detailLines,
+                `An "Account Activated" email and SMS with the access code were sent to the head.`,
+              ],
+            });
+            await sendEmail({ to: SUPER_ADMIN_EMAIL, subject: confirmSubject, text: ct, html: ch });
+          } catch (e) { logger.warn('[MAIL] Super Admin confirmation failed:', e.message); }
+        }
+      });
+    }
+
     res.json(safeDept);
   } catch (error) { sendError(res, 500, error.message); }
 });
@@ -2656,6 +2723,17 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
     if (!headName?.trim()) return sendError(res, 400, 'Head official name is required.');
     if (!headEmail?.trim()) return sendError(res, 400, 'Head official email is required.');
     if (!phone?.trim()) return sendError(res, 400, 'Contact phone is required — used to SMS the access code.');
+
+    // Reject name clashes case-insensitively (excluding this department itself),
+    // regardless of Strategic/Operational type — names must be unique system-wide.
+    const trimmedName = name.trim();
+    const clash = await prisma.department.findFirst({
+      where: { name: { equals: trimmedName, mode: 'insensitive' }, id: { not: parseInt(id) } },
+      select: { id: true, name: true }
+    });
+    if (clash) {
+      return res.status(409).json({ error: `A department named "${clash.name}" already exists. Please choose a different name.` });
+    }
 
     // Snapshot BEFORE the update — codeChangedByDept tells us whether this head has
     // ever activated their account (set their own password) yet.

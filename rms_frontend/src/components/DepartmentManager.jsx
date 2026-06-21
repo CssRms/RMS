@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Building2, Briefcase, Search,
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
   CheckCircle2, RotateCcw, Info, User, Mail, Phone, MapPin, BadgeCheck, Download,
-  Upload, PenTool
+  Upload, PenTool, AlertTriangle
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
 import { deptAPI, reqAPI } from '../lib/api';
@@ -358,7 +358,7 @@ const DepartmentManager = ({ onViewChange }) => {
   const [pendingDept, setPendingDept] = useState(null);
   const [editingDept, setEditingDept] = useState(null);
   const [sealDept, setSealDept] = useState(null);
-  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '' });
+  const [newDeptData, setNewDeptData] = useState({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '', phone: '' });
 
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -396,16 +396,28 @@ const DepartmentManager = ({ onViewChange }) => {
       toast.error('Department name and password are required.');
       return;
     }
+    // Defense in depth — the live check already blocks the button, but guard here too
+    // in case the loaded department list is momentarily stale.
+    const trimmedName = newDeptData.name.trim().toLowerCase();
+    if (departments.some(d => (d.name || '').trim().toLowerCase() === trimmedName)) {
+      toast.error(`A department named "${newDeptData.name.trim()}" already exists. Please choose a different name.`);
+      return;
+    }
     const headName = [newDeptData.headSurname, newDeptData.headFirstName, newDeptData.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
     setIsProcessing(true);
-    await new Promise(r => setTimeout(r, 400));
-    await addDepartment({ ...newDeptData, headName });
-    await loadDepts();
-    setIsProcessing(false);
-    setIsAddModalOpen(false);
-    const deptName = newDeptData.name;
-    setNewDeptData({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '' });
-    toast.success(`${deptName} Department added`);
+    try {
+      await new Promise(r => setTimeout(r, 400));
+      await addDepartment({ ...newDeptData, headName });
+      await loadDepts();
+      setIsAddModalOpen(false);
+      const deptName = newDeptData.name;
+      setNewDeptData({ name: '', type: 'Operational', accessCode: '', headSurname: '', headFirstName: '', headOtherName: '', headTitle: '', headEmail: '', phone: '' });
+      toast.success(`${deptName} Department added`);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to create department.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const confirmDelete = async () => {
@@ -678,12 +690,22 @@ const DepartmentManager = ({ onViewChange }) => {
               </div>
             </div>
 
+            {(() => {
+              const trimmedNewName = newDeptData.name.trim().toLowerCase();
+              const nameClash = !!trimmedNewName && departments.some(d => (d.name || '').trim().toLowerCase() === trimmedNewName);
+              return (
             <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Department Name</label>
                 <input type="text" value={newDeptData.name} onChange={e => setNewDeptData(d => ({ ...d, name: e.target.value }))}
                   placeholder="e.g. Finance & Accounts"
-                  className="w-full bg-muted/30 border border-border/50 rounded-xl p-4 focus:ring-2 focus:ring-primary/20 outline-none" />
+                  className={`w-full bg-muted/30 border rounded-xl p-4 outline-none ${nameClash ? 'border-red-400 focus:ring-2 focus:ring-red-200' : 'border-border/50 focus:ring-2 focus:ring-primary/20'}`} />
+                {nameClash && (
+                  <p className="text-[11px] text-red-600 font-semibold flex items-center gap-1.5">
+                    <AlertTriangle size={12} className="shrink-0" />
+                    A department named "{newDeptData.name.trim()}" already exists. Please choose a different name.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Password</label>
@@ -715,14 +737,17 @@ const DepartmentManager = ({ onViewChange }) => {
                   <div className="h-px flex-1 bg-border/40" />
                 </div>
                 {[
-                  { key: 'headSurname',   label: 'Surname',          placeholder: 'e.g. Adeyemi',               icon: User },
-                  { key: 'headFirstName', label: 'First Name',        placeholder: 'e.g. John',                  icon: User },
+                  { key: 'headSurname',   label: 'Surname',          placeholder: 'e.g. Adeyemi',               icon: User,       required: true },
+                  { key: 'headFirstName', label: 'First Name',        placeholder: 'e.g. John',                  icon: User,       required: true },
                   { key: 'headOtherName', label: 'Other Name',        placeholder: 'e.g. Chukwuemeka (optional)', icon: User },
-                  { key: 'headTitle',     label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck },
-                  { key: 'headEmail',     label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email' },
-                ].map(({ key, label, placeholder, icon: Icon, type }) => (
+                  { key: 'headTitle',     label: 'Position / Title',  placeholder: 'e.g. General Manager',       icon: BadgeCheck, required: true },
+                  { key: 'headEmail',     label: 'Official Email',    placeholder: 'e.g. head@cssgroup.internal', icon: Mail, type: 'email', required: true },
+                  { key: 'phone',         label: 'Contact Phone',     placeholder: '+234 800 000 0000',          icon: Phone,      type: 'tel', required: true },
+                ].map(({ key, label, placeholder, icon: Icon, type, required }) => (
                   <div key={key} className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{label}</label>
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+                    </label>
                     <div className="flex items-center border border-border/50 rounded-xl focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 bg-white">
                       <Icon size={14} className="text-muted-foreground ml-3 shrink-0" />
                       <input
@@ -730,11 +755,15 @@ const DepartmentManager = ({ onViewChange }) => {
                         onChange={e => setNewDeptData(d => ({ ...d, [key]: e.target.value }))}
                         type={type || 'text'}
                         placeholder={placeholder}
+                        required={required}
                         className="flex-1 px-3 py-3 text-sm font-medium bg-transparent outline-none"
                       />
                     </div>
                   </div>
                 ))}
+                <p className="text-[10px] text-muted-foreground/70 italic pl-1">
+                  Phone is used to SMS the access code to the head official when their account is set up.
+                </p>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -742,12 +771,14 @@ const DepartmentManager = ({ onViewChange }) => {
                   className="flex-1 px-4 py-3 rounded-xl border border-border font-bold text-sm hover:bg-muted transition-all">
                   Cancel
                 </button>
-                <button type="submit" disabled={isProcessing || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim()}
+                <button type="submit" disabled={isProcessing || nameClash || !newDeptData.name.trim() || !newDeptData.accessCode.trim() || !newDeptData.headSurname.trim() || !newDeptData.headFirstName.trim() || !newDeptData.headTitle.trim() || !newDeptData.headEmail.trim() || !newDeptData.phone.trim()}
                   className="flex-1 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                   {isProcessing ? <><Loader2 size={14} className="animate-spin" /><span>Creating…</span></> : <span>Create Department</span>}
                 </button>
               </div>
             </form>
+              );
+            })()}
           </div>
         </div>
       )}

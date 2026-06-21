@@ -618,6 +618,10 @@ export async function addDepartment(dept) {
     toast.success(`${dept.name} added to cloud`);
     return result;
   } catch (err) {
+    // Only fall back to offline-local-save for a genuine connectivity failure
+    // (no response at all). A real server error (e.g. 409 name clash, 400 validation)
+    // must propagate to the caller — silently "succeeding" locally would hide it.
+    if (err?.response) throw err;
     console.warn("Offline: Department saved locally ONLY", err);
     const all = await getDepartments();
     const newDept = { id: Date.now(), ...dept };
