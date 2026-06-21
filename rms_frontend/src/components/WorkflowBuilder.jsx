@@ -507,12 +507,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
     setIsProcessing(true);
     await new Promise(r => setTimeout(r, 600));
     
-    if (activeTab === 'stages' && pendingStage) {
+    if (pendingStage) {
       const updated = stages.filter(s => s.id !== pendingStage.id).map((s, idx) => ({ ...s, sequence: idx + 1 }));
       setStages(updated);
       await updateWorkflows(updated);
       toast.error('Stage removed');
-    } else if (activeTab === 'types' && pendingType) {
+    } else if (pendingType) {
       await deleteRequisitionType(pendingType.id);
       setTypes(types.filter(t => t.id !== pendingType.id));
     }
@@ -569,11 +569,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
           <div className="flex bg-muted/40 p-1.5 rounded-2xl border border-border/50 shadow-inner min-w-max gap-0.5">
             {[
               { id: 'features', label: 'Features' },
-              { id: 'stages',   label: 'Approval Workflow' },
-              { id: 'types',    label: 'Unit Types' },
-              { id: 'refcode',  label: 'Ref Code' },
-              { id: 'print',    label: 'Print & Stamp' },
-              { id: 'contact',  label: 'Contact & Email' },
+              { id: 'stages',   label: 'Workflow, Types & Ref Code' },
+              { id: 'print',    label: 'Print, Stamp & Contact' },
               { id: 'bin',      label: 'Deleted Records & Danger Zone' },
             ].map(({ id, label }) => (
               <button
@@ -857,7 +854,89 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </div>
             </div>
           </div>
-        ) : activeTab === 'refcode' ? (
+        ) : activeTab === 'stages' ? (
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div>
+              <p className="text-[10px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] mb-3">Approval Workflow</p>
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="flex justify-end">
+              <button 
+                onClick={addStage}
+                disabled={isProcessing}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessing ? (
+                   <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
+                ) : (
+                   <Plus size={18} />
+                )}
+                <span>{isProcessing ? 'Adding...' : 'Add Stage'}</span>
+              </button>
+            </div>
+            
+            <div className="flex flex-col items-center space-y-0">
+              {stages.map((stage, idx) => (
+                <WorkflowStage 
+                  key={stage.id} 
+                  stage={stage} 
+                  onUpdate={updateStage}
+                  onDelete={() => { setPendingStage(stage); setIsDeleteModalOpen(true); }}
+                  isFirst={idx === 0}
+                />
+              ))}
+
+              <div className="flex flex-col items-center mt-4">
+                 <div className="h-8 w-px bg-border"></div>
+                 <div className="glass p-4 rounded-2xl border border-emerald-500/20 bg-emerald-50 text-emerald-600 font-bold text-xs uppercase tracking-[0.2em] shadow-sm">
+                    Finance Processing (Final)
+                 </div>
+              </div>
+            </div>
+          </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] mb-3">Unit Types</p>
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+             <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl overflow-hidden relative">
+                <div className="flex items-center justify-between mb-8 pb-6 border-b border-border/40">
+                    <h3 className="text-xl font-bold text-foreground">Manage Requisition Types</h3>
+                    <form onSubmit={handleAddType} className="flex items-center space-x-3">
+                        <input 
+                            type="text" 
+                            value={newTypeName}
+                            onChange={(e) => setNewTypeName(e.target.value)}
+                            placeholder="New Type (e.g. Petty Cash)"
+                            className="bg-muted/30 border border-border/50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none w-64"
+                        />
+                        <button type="submit" disabled={isProcessing} className="bg-primary p-3 rounded-xl text-primary-foreground hover:scale-105 transition-all shadow-lg shadow-primary/20 active:scale-95">
+                           <Plus size={20} />
+                        </button>
+                    </form>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {types.map(type => (
+                        <div key={type.id} className="p-5 rounded-2xl border border-border/40 bg-white/40 group hover:border-primary/20 transition-all flex items-center justify-between">
+                            <div className="flex items-center space-x-4">
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                                   <FileText size={20} />
+                                </div>
+                                <span className="font-bold text-foreground">{type.name}</span>
+                            </div>
+                            <button 
+                                onClick={() => { setPendingType(type); setIsDeleteModalOpen(true); }}
+                                className="p-2 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/5 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+             </div>
+          </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] mb-3">Reference Code Pattern</p>
           <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl space-y-6">
               <div className="flex items-start gap-3">
@@ -970,43 +1049,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </button>
             </div>
           </div>
-        ) : activeTab === 'stages' ? (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex justify-end">
-              <button 
-                onClick={addStage}
-                disabled={isProcessing}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isProcessing ? (
-                   <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-                ) : (
-                   <Plus size={18} />
-                )}
-                <span>{isProcessing ? 'Adding...' : 'Add Stage'}</span>
-              </button>
-            </div>
-            
-            <div className="flex flex-col items-center space-y-0">
-              {stages.map((stage, idx) => (
-                <WorkflowStage 
-                  key={stage.id} 
-                  stage={stage} 
-                  onUpdate={updateStage}
-                  onDelete={() => { setPendingStage(stage); setIsDeleteModalOpen(true); }}
-                  isFirst={idx === 0}
-                />
-              ))}
-
-              <div className="flex flex-col items-center mt-4">
-                 <div className="h-8 w-px bg-border"></div>
-                 <div className="glass p-4 rounded-2xl border border-emerald-500/20 bg-emerald-50 text-emerald-600 font-bold text-xs uppercase tracking-[0.2em] shadow-sm">
-                    Finance Processing (Final)
-                 </div>
-              </div>
             </div>
           </div>
         ) : activeTab === 'print' ? (
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div>
+              <p className="text-[10px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] mb-3">Print Settings</p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {/* Print Record Access */}
             <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
@@ -1201,7 +1249,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
             </div>
           </div>
 
-        ) : activeTab === 'contact' ? (
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-muted-foreground/50 uppercase tracking-[0.25em] mb-3">Contact & Email</p>
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {/* ICT Support Phone */}
             <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
@@ -1308,6 +1358,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
             </div>
           </div>
 
+            </div>
+          </div>
         ) : activeTab === 'bin' ? (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm">
@@ -1437,46 +1489,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
             </div>
           </div>
 
-        ) : (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-             <div className="glass bg-white/60 p-8 rounded-[2.5rem] border border-border/50 shadow-xl overflow-hidden relative">
-                <div className="flex items-center justify-between mb-8 pb-6 border-b border-border/40">
-                    <h3 className="text-xl font-bold text-foreground">Manage Requisition Types</h3>
-                    <form onSubmit={handleAddType} className="flex items-center space-x-3">
-                        <input 
-                            type="text" 
-                            value={newTypeName}
-                            onChange={(e) => setNewTypeName(e.target.value)}
-                            placeholder="New Type (e.g. Petty Cash)"
-                            className="bg-muted/30 border border-border/50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none w-64"
-                        />
-                        <button type="submit" disabled={isProcessing} className="bg-primary p-3 rounded-xl text-primary-foreground hover:scale-105 transition-all shadow-lg shadow-primary/20 active:scale-95">
-                           <Plus size={20} />
-                        </button>
-                    </form>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {types.map(type => (
-                        <div key={type.id} className="p-5 rounded-2xl border border-border/40 bg-white/40 group hover:border-primary/20 transition-all flex items-center justify-between">
-                            <div className="flex items-center space-x-4">
-                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                                   <FileText size={20} />
-                                </div>
-                                <span className="font-bold text-foreground">{type.name}</span>
-                            </div>
-                            <button 
-                                onClick={() => { setPendingType(type); setIsDeleteModalOpen(true); }}
-                                className="p-2 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/5 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                            >
-                                <Trash2 size={16} />
-                            </button>
-                        </div>
-                    ))}
-                </div>
-             </div>
-          </div>
-        )}
+        ) : null}
       </div>
 
       <ConfirmModal
@@ -1485,8 +1498,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
         onConfirm={confirmDelete}
         size="lg"
         isProcessing={isProcessing}
-        title={activeTab === 'stages' ? "Delete Workflow Stage" : "Delete Requisition Type"}
-        message={activeTab === 'stages'
+        title={pendingStage ? "Delete Workflow Stage" : "Delete Requisition Type"}
+        message={pendingStage
           ? `Are you sure you want to delete the "${pendingStage?.name}" stage? This will re-sequence the approval chain.`
           : `Are you sure you want to delete the "${pendingType?.name}" requisition type? This cannot be undone.`
         }
