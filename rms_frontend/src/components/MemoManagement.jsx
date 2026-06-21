@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getMemoRecords, getDepartments, getRequisitionDetail, uploadAttachments } from '../lib/store';
-import { forwardAPI, memoAPI, reqAPI } from '../lib/api';
+import { forwardAPI, memoAPI, reqAPI, settingsAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import ConfirmModal from './ConfirmModal';
 import {
@@ -617,6 +617,14 @@ const MemoManagement = ({ onViewChange }) => {
   const [deletingMemo, setDeletingMemo] = useState(false);
   const [selectedMemo, setSelectedMemo] = useState(null);
   const [tab, setTab]             = useState('all'); // 'all' | 'incoming' | 'published'
+  // Super Admin's "Generate Memo" button defaults OFF and starts `null` (hidden) until the
+  // real setting resolves — flash-free, since the safe default is "hidden".
+  const [adminCreateMemoEnabled, setAdminCreateMemoEnabled] = useState(null);
+
+  useEffect(() => {
+    if (user?.role !== 'global_admin') return;
+    settingsAPI.get('admin_create_memo_enabled').then(r => setAdminCreateMemoEnabled(r?.value === 'true')).catch(() => setAdminCreateMemoEnabled(false));
+  }, [user?.role]);
 
   const loadMemos = useCallback(async () => {
     setLoading(true);
@@ -720,13 +728,15 @@ const MemoManagement = ({ onViewChange }) => {
                   Orchestrate and monitor official communications across the CSS Group modular network.
                 </p>
               </div>
-              <button
-                onClick={() => setShowCreate(true)}
-                className="group bg-primary hover:bg-primary/90 text-white font-black py-4 px-8 rounded-2xl transition-all shadow-xl shadow-primary/20 flex items-center gap-3 w-fit active:scale-95"
-              >
-                <Plus size={20} className="group-hover:rotate-90 transition-transform" />
-                <span className="text-xs uppercase tracking-widest font-black">Generate Memo</span>
-              </button>
+              {(user?.role !== 'global_admin' || adminCreateMemoEnabled) && (
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="group bg-primary hover:bg-primary/90 text-white font-black py-4 px-8 rounded-2xl transition-all shadow-xl shadow-primary/20 flex items-center gap-3 w-fit active:scale-95"
+                >
+                  <Plus size={20} className="group-hover:rotate-90 transition-transform" />
+                  <span className="text-xs uppercase tracking-widest font-black">Generate Memo</span>
+                </button>
+              )}
             </div>
 
             {/* Unified Search & Filters Row */}

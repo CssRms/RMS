@@ -4828,7 +4828,17 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   // Starts `null` (unknown) so the Print button stays hidden until the real access list
   // loads — defaulting to `true` would flash the button then hide it when restricted.
   const [canPrint, setCanPrint]         = useState(null);
+  // Super Admin's create buttons default OFF and start `null` (hidden) until the real
+  // setting resolves — same flash-free pattern, since the safe default is "hidden".
+  const [adminCreateFundEnabled, setAdminCreateFundEnabled]         = useState(null);
+  const [adminCreateMaterialEnabled, setAdminCreateMaterialEnabled] = useState(null);
   const selectedReqRef = React.useRef(null);
+
+  useEffect(() => {
+    if (user?.role !== 'global_admin') return;
+    settingsAPI.get('admin_create_fund_enabled').then(r => setAdminCreateFundEnabled(r?.value === 'true')).catch(() => setAdminCreateFundEnabled(false));
+    settingsAPI.get('admin_create_material_enabled').then(r => setAdminCreateMaterialEnabled(r?.value === 'true')).catch(() => setAdminCreateMaterialEnabled(false));
+  }, [user?.role]);
 
   // Normalize a requisition so department/creator are always strings, not nested objects.
   // isFromSubAccount and deptHeadName are already extracted by store.normalizeRequisitionList
@@ -5185,20 +5195,26 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                 <span className="uppercase tracking-widest text-[10px]">Purge {selectedIds.length} Units</span>
               </button>
             )}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsFormOpen('Cash')}
-                className="bg-primary hover:bg-primary/90 text-white font-black py-3 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
-              >
-                <Plus size={16} /> Fund Request
-              </button>
-              <button
-                onClick={() => setIsFormOpen('Material')}
-                className="bg-foreground hover:bg-foreground/90 text-background font-black py-3 px-5 rounded-2xl transition-all shadow-lg flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
-              >
-                <Plus size={16} /> Material Request
-              </button>
-            </div>
+            {(!isAdmin || adminCreateFundEnabled || adminCreateMaterialEnabled) && (
+              <div className="flex items-center gap-2">
+                {(!isAdmin || adminCreateFundEnabled) && (
+                  <button
+                    onClick={() => setIsFormOpen('Cash')}
+                    className="bg-primary hover:bg-primary/90 text-white font-black py-3 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
+                  >
+                    <Plus size={16} /> Fund Request
+                  </button>
+                )}
+                {(!isAdmin || adminCreateMaterialEnabled) && (
+                  <button
+                    onClick={() => setIsFormOpen('Material')}
+                    className="bg-foreground hover:bg-foreground/90 text-background font-black py-3 px-5 rounded-2xl transition-all shadow-lg flex items-center gap-2 active:scale-95 text-[10px] uppercase tracking-widest"
+                  >
+                    <Plus size={16} /> Material Request
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

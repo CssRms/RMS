@@ -150,6 +150,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [accountThreshAmount, setAccountThreshAmount]             = useState('');
   const [ceoThreshEnabled, setCeoThreshEnabled]                   = useState(false);
   const [ceoThreshAmount, setCeoThreshAmount]                     = useState('');
+  const [adminCreateFundEnabled, setAdminCreateFundEnabled]       = useState(false);
+  const [adminCreateMaterialEnabled, setAdminCreateMaterialEnabled] = useState(false);
+  const [adminCreateMemoEnabled, setAdminCreateMemoEnabled]       = useState(false);
   const [savingFeatures, setSavingFeatures]         = useState(false);
 
   // ── All departments (for chairman/print toggles) ───────────────────────────
@@ -255,6 +258,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes, deptHeadDetailsRes,
         accountIccBypassRes, ceoIccBypassRes,
         accountThreshEnabledRes, accountThreshAmountRes, ceoThreshEnabledRes, ceoThreshAmountRes,
+        adminCreateFundRes, adminCreateMaterialRes, adminCreateMemoRes,
       ] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
@@ -270,6 +274,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.get('icc_bypass_account_threshold_amount'),
         settingsAPI.get('icc_bypass_ceo_threshold_enabled'),
         settingsAPI.get('icc_bypass_ceo_threshold_amount'),
+        settingsAPI.get('admin_create_fund_enabled'),
+        settingsAPI.get('admin_create_material_enabled'),
+        settingsAPI.get('admin_create_memo_enabled'),
       ]);
       if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
         setStudioEnabled(studioRes.value.value !== 'false');
@@ -299,6 +306,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setCeoThreshEnabled(ceoThreshEnabledRes.value.value === 'true');
       if (ceoThreshAmountRes.status === 'fulfilled' && ceoThreshAmountRes.value?.value !== undefined)
         setCeoThreshAmount(ceoThreshAmountRes.value.value);
+      if (adminCreateFundRes.status === 'fulfilled' && adminCreateFundRes.value?.value !== undefined)
+        setAdminCreateFundEnabled(adminCreateFundRes.value.value === 'true');
+      if (adminCreateMaterialRes.status === 'fulfilled' && adminCreateMaterialRes.value?.value !== undefined)
+        setAdminCreateMaterialEnabled(adminCreateMaterialRes.value.value === 'true');
+      if (adminCreateMemoRes.status === 'fulfilled' && adminCreateMemoRes.value?.value !== undefined)
+        setAdminCreateMemoEnabled(adminCreateMemoRes.value.value === 'true');
     } catch {}
   };
 
@@ -328,6 +341,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('icc_bypass_account_threshold_amount', String(parseFloat(accountThreshAmount) || 0)),
         settingsAPI.set('icc_bypass_ceo_threshold_enabled', String(ceoThreshEnabled)),
         settingsAPI.set('icc_bypass_ceo_threshold_amount', String(parseFloat(ceoThreshAmount) || 0)),
+        settingsAPI.set('admin_create_fund_enabled', String(adminCreateFundEnabled)),
+        settingsAPI.set('admin_create_material_enabled', String(adminCreateMaterialEnabled)),
+        settingsAPI.set('admin_create_memo_enabled', String(adminCreateMemoEnabled)),
       ]);
       toast.success('Feature settings saved.');
     } catch {
@@ -589,6 +605,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 { label: 'Heads Can Create/Manage Sub-Accounts', desc: 'Lets department heads create new units and act on existing ones (rename, reset code, enable/disable, delete). When disabled, heads can still see their sub-account list but lose all action buttons — only Super Admin can manage units.', value: headsCanManageSubaccounts, set: setHeadsCanManageSubaccounts },
                 { label: 'Heads Can Set Sub-Account Privileges', desc: 'Lets department heads configure Cash/Memo/Material privileges, creation/approval limits, and direct routing for their sub-accounts. When disabled, the Privilege Settings section is hidden from heads — only Super Admin can configure it.', value: headsCanSetSubPrivileges, set: setHeadsCanSetSubPrivileges },
                 { label: 'Department Creation Includes Head Details', desc: 'When enabled, Super Admin fills in the head official\'s details (Staff ID, name, email, phone) together with the department at creation. When disabled, the head official fields are hidden — Super Admin creates a bare department (name + access code only) and assigns a head later via Edit.', value: deptCreationHeadDetailsEnabled, set: setDeptCreationHeadDetailsEnabled },
+                { label: 'Super Admin Can Create Fund Requests', desc: 'Super Admin\'s Requisitions page hides the "Fund Request" creation button by default, since Admin oversees the registry rather than originating requests. Enable to let Super Admin create Fund Requests directly.', value: adminCreateFundEnabled, set: setAdminCreateFundEnabled },
+                { label: 'Super Admin Can Create Material Requests', desc: 'Same restriction as Fund Requests, applied to Material Requests. Enable to let Super Admin create Material Requests directly.', value: adminCreateMaterialEnabled, set: setAdminCreateMaterialEnabled },
+                { label: 'Super Admin Can Create Memos', desc: 'Super Admin\'s Memo Exchange page hides the "Generate Memo" button by default. Enable to let Super Admin create memos directly.', value: adminCreateMemoEnabled, set: setAdminCreateMemoEnabled },
               ].map(({ label, desc, value, set }) => (
                 <div key={label} className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all">
                   <div className="space-y-0.5 min-w-0">
@@ -719,6 +738,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 { label: 'Dept Creation Includes Head Details', value: deptCreationHeadDetailsEnabled },
                 { label: 'Account ICC Bypass', value: accountIccBypassEnabled },
                 { label: 'CEO/Chairman ICC Bypass', value: ceoIccBypassEnabled },
+                { label: 'Admin Create Fund', value: adminCreateFundEnabled },
+                { label: 'Admin Create Material', value: adminCreateMaterialEnabled },
+                { label: 'Admin Create Memo', value: adminCreateMemoEnabled },
               ].map(({ label, value }) => (
                 <span key={label} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border ${value ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-600'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${value ? 'bg-emerald-500' : 'bg-red-400'}`} />

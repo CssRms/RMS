@@ -3670,6 +3670,19 @@ app.post('/api/requisitions', authenticateToken, generalLimiter, async (req, res
       const eligibleStages = await getEligibleStages(amount);
       const firstStage = eligibleStages[0] || null;
       const isDraft = data.isDraft === true || data.isDraft === 'true';
+
+      // Super Admin oversees the registry rather than originating requests — each
+      // request type can be individually re-enabled for Admin via System Settings.
+      if (req.user.role === 'global_admin' && !isDraft) {
+        const settingKey = isMemoPayload ? 'admin_create_memo_enabled'
+          : isMaterialPayload ? 'admin_create_material_enabled'
+          : 'admin_create_fund_enabled';
+        const setting = await prisma.systemSetting.findUnique({ where: { key: settingKey } });
+        if (setting?.value !== 'true') {
+          return res.status(403).json({ error: `Super Admin cannot create ${isMemoPayload ? 'memos' : isMaterialPayload ? 'Material Requests' : 'Fund Requests'} until enabled in System Settings → Features.` });
+        }
+      }
+
       const originDeptId = parseInt(data.departmentId || req.user.deptId || 1);
       if (req.user.role === 'department' && req.user.deptId && originDeptId !== parseInt(req.user.deptId)) {
         return res.status(403).json({ error: 'Department users can only create for their own department' });
