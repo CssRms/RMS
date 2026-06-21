@@ -723,7 +723,7 @@ const DepartmentManager = ({ onViewChange }) => {
                 )}
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Login Password</label>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Access Code</label>
                 <div className="relative">
                   <input type={showAccessCode ? 'text' : 'password'} value={newDeptData.accessCode}
                     onChange={e => setNewDeptData(d => ({ ...d, accessCode: e.target.value }))}
