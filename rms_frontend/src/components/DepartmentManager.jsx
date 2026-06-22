@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Building2, Briefcase, Search,
   Eye, EyeOff, Pencil, X, Save, Loader2, KeyRound,
   CheckCircle2, RotateCcw, Info, User, Mail, Phone, Hash, BadgeCheck, Download,
-  Upload, PenTool, AlertTriangle
+  Upload, PenTool, AlertTriangle, ShieldAlert, ShieldCheck
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
 import { deptAPI, reqAPI, settingsAPI } from '../lib/api';
@@ -447,6 +447,20 @@ const DepartmentManager = ({ onViewChange }) => {
     setPendingDept(null);
   };
 
+  const [togglingDeptId, setTogglingDeptId] = useState(null);
+  const handleToggleDisable = async (dept) => {
+    setTogglingDeptId(dept.id);
+    try {
+      const res = await deptAPI.toggleDisable(dept.id);
+      await loadDepts();
+      toast[res.isDisabled ? 'error' : 'success'](
+        `${dept.name} ${res.isDisabled ? 'suspended' : 'reactivated'}.${res.successionNote ? ' ' + res.successionNote : ''}`
+      );
+    } catch (err) {
+      toast.error(err?.response?.data?.error || `Failed to ${dept.isDisabled ? 'reactivate' : 'suspend'} ${dept.name}.`);
+    } finally { setTogglingDeptId(null); }
+  };
+
   const strategic = departments.filter(d => d.type === 'Strategic');
   const operational = departments.filter(d => d.type === 'Operational');
   const filteredS = strategic.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -561,7 +575,12 @@ const DepartmentManager = ({ onViewChange }) => {
                     const displayCode = dept.accessCodeLabel || dept.accessCode || null;
                     return (
                       <tr key={dept.id} className="hover:bg-primary/[0.02] transition-colors group">
-                        <td className="py-4 px-4 text-xs font-bold text-foreground border-l border-border/10">{dept.name}</td>
+                        <td className="py-4 px-4 text-xs font-bold text-foreground border-l border-border/10">
+                          {dept.name}
+                          {dept.isDisabled && (
+                            <span className="ml-2 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-red-50 text-red-600 border border-red-200 align-middle">Suspended</span>
+                          )}
+                        </td>
                         <td className="py-4 px-4">
                           <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${dept.type === 'Strategic' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                             {dept.type}
@@ -636,6 +655,14 @@ const DepartmentManager = ({ onViewChange }) => {
                             </button>
                             <button onClick={() => setSealDept(dept)} className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-all" title="View Seal">
                               <Eye size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleToggleDisable(dept)}
+                              disabled={togglingDeptId === dept.id}
+                              className={`p-2 rounded-lg transition-all disabled:opacity-40 ${dept.isDisabled ? 'text-emerald-500 hover:bg-emerald-50' : 'text-amber-500 hover:bg-amber-50'}`}
+                              title={dept.isDisabled ? 'Reactivate Department' : 'Suspend Department (blocks login; auto-elevates designated successor sub-account if one exists)'}
+                            >
+                              {togglingDeptId === dept.id ? <Loader2 size={14} className="animate-spin" /> : dept.isDisabled ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
                             </button>
                             <button onClick={() => { setPendingDept(dept); setIsDeleteModalOpen(true); }} className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-all" title="Delete Unit">
                               <Trash2 size={14} />

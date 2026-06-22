@@ -84,6 +84,13 @@ model Department {
   allowedRouteDeptIds  String?
   // Head dept routing control: if false, sub-account requests land here first before going anywhere
   subAccountAutoRoute  Boolean          @default(true)
+  // Batch-upload succession — marks the sub-account designated to inherit the parent
+  // department's full approval authority if the head is disabled/deleted. Auto-elevated
+  // (privilegeAmount/approvalLimit/directRoute overwritten) the moment that happens;
+  // preElevationPrivileges snapshots the prior values so they can be restored if the head
+  // is reinstated.
+  isActingHeadCandidate Boolean         @default(false)
+  preElevationPrivileges String?        @db.Text // JSON: { privilegeAmount, approvalLimit, directRoute, cashPrivilege, memoPrivilege, materialPrivilege }
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 }

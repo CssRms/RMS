@@ -951,6 +951,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [newStaffId, setNewStaffId] = useState('');
   const [newHeadTitle, setNewHeadTitle] = useState('');
   const [newHeadEmail, setNewHeadEmail] = useState('');
+  const [newHeadPhone, setNewHeadPhone] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newCode, setNewCode] = useState(null);
   const [newSubName, setNewSubName] = useState('');
@@ -963,6 +964,13 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   // Admin dept selector
   const [departments, setDepartments] = useState([]);
   const [selectedDeptId, setSelectedDeptId] = useState('');
+
+  // Batch upload (CSV/Excel)
+  const [showBatchUpload, setShowBatchUpload] = useState(false);
+  const [batchFile, setBatchFile] = useState(null);
+  const [batchUploading, setBatchUploading] = useState(false);
+  const [batchIssues, setBatchIssues] = useState(null);   // string[] — validation errors, if any
+  const [batchResults, setBatchResults] = useState(null); // { headAssigned, created, actingHeadCandidate }
 
   // The parentId to use for all API calls
   const parentId = isAdmin ? (selectedDeptId ? parseInt(selectedDeptId) : null) : null;
@@ -1024,18 +1032,17 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     setNewStaffId('');
     setNewHeadTitle('');
     setNewHeadEmail('');
+    setNewHeadPhone('');
   };
 
   const create = async () => {
-    if (!newFirstName.trim() || !newSurname.trim()) return;
+    if (!newFirstName.trim() || !newSurname.trim() || !newStaffId.trim() || !newHeadEmail.trim() || !newHeadPhone.trim()) return;
     const fullName = [newFirstName.trim(), newSurname.trim(), newOtherName.trim()].filter(Boolean).join(' ');
     setCreating(true);
     setConflict(null);
     try {
-      const extra = { headName: fullName };
-      if (newStaffId.trim()) extra.staffId = newStaffId.trim().toUpperCase();
+      const extra = { headName: fullName, staffId: newStaffId.trim().toUpperCase(), headEmail: newHeadEmail.trim(), phone: newHeadPhone.trim() };
       if (newHeadTitle.trim()) extra.headTitle = newHeadTitle.trim();
-      if (newHeadEmail.trim()) extra.headEmail = newHeadEmail.trim();
       const res = await subAccountAPI.create(fullName, parentId || undefined, extra);
       setNewCode(res.accessCode);
       setNewSubName(res.name);
@@ -1080,7 +1087,9 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     if (!name) return;
     setResolving(true);
     try {
-      const res = await subAccountAPI.create(name, parentId || undefined);
+      const extra = { headName: name, staffId: newStaffId.trim().toUpperCase(), headEmail: newHeadEmail.trim(), phone: newHeadPhone.trim() };
+      if (newHeadTitle.trim()) extra.headTitle = newHeadTitle.trim();
+      const res = await subAccountAPI.create(name, parentId || undefined, extra);
       setNewCode(res.accessCode);
       setNewSubName(res.name);
       setConflict(null);
@@ -1100,6 +1109,45 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
     } finally { setResolving(false); }
   };
 
+  const downloadBatchTemplate = () => {
+    const header = 'Staff ID,Surname,First Name,Other Name,Title,Email,Phone';
+    const sample = 'CSS001,Adeyemi,John,Chukwuemeka,General Manager,john.adeyemi@cssgroup.internal,+2348000000000';
+    const csv = `${header}\n${sample}\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'batch-upload-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetBatchUpload = () => {
+    setBatchFile(null);
+    setBatchIssues(null);
+    setBatchResults(null);
+  };
+
+  const submitBatchUpload = async () => {
+    if (!batchFile || !parentId) return;
+    setBatchUploading(true);
+    setBatchIssues(null);
+    setBatchResults(null);
+    try {
+      const res = await subAccountAPI.batchUpload(batchFile, parentId);
+      setBatchResults(res);
+      load();
+      toast.success(`Batch upload complete — ${res.created.length + (res.headAssigned ? 1 : 0)} account(s) created.`);
+    } catch (err) {
+      const data = err?.response?.data;
+      if (Array.isArray(data?.issues) && data.issues.length) {
+        setBatchIssues(data.issues);
+      } else {
+        toast.error(data?.error || 'Batch upload failed. Please check the file and try again.');
+      }
+    } finally { setBatchUploading(false); }
+  };
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -1113,14 +1161,24 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
           </p>
         </div>
         {(isAdmin || canManage) && (
-          <button
-            onClick={() => setShowCreate(v => !v)}
-            disabled={isAdmin && !selectedDeptId}
-            title={isAdmin && !selectedDeptId ? 'Select a department first' : undefined}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus size={13} /> New Unit
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreate(v => !v)}
+              disabled={isAdmin && !selectedDeptId}
+              title={isAdmin && !selectedDeptId ? 'Select a department first' : undefined}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[11px] font-black uppercase tracking-wider hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus size={13} /> New Unit
+            </button>
+            <button
+              onClick={() => { resetBatchUpload(); setShowBatchUpload(v => !v); }}
+              disabled={isAdmin && !selectedDeptId}
+              title={isAdmin && !selectedDeptId ? 'Select a department first' : undefined}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-primary/40 text-primary text-[11px] font-black uppercase tracking-wider hover:bg-primary/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <FileText size={13} /> Batch Upload
+            </button>
+          </div>
         )}
       </div>
 
@@ -1217,7 +1275,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Email Address</label>
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Email Address <span className="text-red-400">*</span></label>
               <input
                 type="email"
                 value={newHeadEmail}
@@ -1226,11 +1284,22 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
                 className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Phone Number <span className="text-red-400">*</span></label>
+              <input
+                type="tel"
+                value={newHeadPhone}
+                onChange={e => setNewHeadPhone(e.target.value)}
+                placeholder="+234 800 000 0000"
+                className="w-full border border-border/50 rounded-xl px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="text-[9px] text-muted-foreground/60 italic">Required — used to SMS the access code to this sub-account.</p>
+            </div>
           </div>
 
           <button
             onClick={create}
-            disabled={creating || !newFirstName.trim() || !newSurname.trim()}
+            disabled={creating || !newFirstName.trim() || !newSurname.trim() || !newStaffId.trim() || !newHeadEmail.trim() || !newHeadPhone.trim()}
             className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
             {creating ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
@@ -1239,6 +1308,108 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
           <p className="text-[10px] text-muted-foreground/60 italic text-center">
             A one-time Access Code is auto-generated. The sub-account creates their own password on first login.
           </p>
+        </div>
+      )}
+
+      {/* ── Batch Upload panel ─────────────────────────────────────────────── */}
+      {showBatchUpload && (
+        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black text-primary uppercase tracking-wider">
+              Batch Upload{isAdmin && selectedDeptId ? ` — ${departments.find(d => String(d.id) === selectedDeptId)?.name || ''}` : ''}
+            </p>
+            <button onClick={() => { setShowBatchUpload(false); resetBatchUpload(); }} className="p-1 rounded-lg text-muted-foreground hover:text-foreground transition-all">
+              <X size={14} />
+            </button>
+          </div>
+
+          {!batchResults && (
+            <>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Upload a CSV or Excel file with one row per person — <strong>Staff ID, Surname, First Name, Email, and Phone are required</strong> (Other Name and Title are optional). Row order matters: the first row is the most senior. If this department has no head yet, row 1 becomes the head; everyone else becomes a sub-account. If a head already exists, everyone uploaded becomes a sub-account, and row 1 is marked as the designated successor.
+              </p>
+              <button
+                onClick={downloadBatchTemplate}
+                className="flex items-center gap-1.5 text-[10px] font-bold text-primary hover:text-primary/80 transition-all"
+              >
+                <FileText size={12} /> Download CSV Template
+              </button>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">File <span className="text-red-400">*</span></label>
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={e => { setBatchFile(e.target.files?.[0] || null); setBatchIssues(null); }}
+                  className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-primary/20 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-primary/10 file:text-primary file:text-[10px] file:font-bold file:uppercase"
+                />
+              </div>
+
+              {batchIssues && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-1.5 max-h-48 overflow-y-auto">
+                  <p className="text-[10px] font-black text-red-700 uppercase tracking-wider">
+                    {batchIssues.length} issue(s) found — nothing was created
+                  </p>
+                  {batchIssues.map((issue, i) => (
+                    <p key={i} className="text-[10px] text-red-700 leading-relaxed">• {issue}</p>
+                  ))}
+                  <p className="text-[10px] text-red-600/80 italic pt-1">Fix these in your file and re-upload.</p>
+                </div>
+              )}
+
+              <button
+                onClick={submitBatchUpload}
+                disabled={batchUploading || !batchFile}
+                className="w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {batchUploading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {batchUploading ? 'Uploading…' : 'Upload & Create'}
+              </button>
+            </>
+          )}
+
+          {batchResults && (
+            <div className="space-y-3">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">
+                  Upload complete — {batchResults.created.length + (batchResults.headAssigned ? 1 : 0)} account(s) created
+                </p>
+              </div>
+
+              {batchResults.headAssigned && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
+                  <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Assigned as Department Head</p>
+                  <p className="text-xs font-bold text-foreground">{batchResults.headAssigned.name} ({batchResults.headAssigned.staffId})</p>
+                  <p className="text-[10px] font-mono text-amber-800">Access Code: {batchResults.headAssigned.accessCode}</p>
+                </div>
+              )}
+
+              {batchResults.created.length > 0 && (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {batchResults.created.map(c => (
+                    <div key={c.id} className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${c.isActingHeadCandidate ? 'bg-primary/5 border-primary/30' : 'bg-white border-border/40'}`}>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-foreground truncate">
+                          {c.name} ({c.staffId}) {c.isActingHeadCandidate && <span className="text-primary font-black">— Successor</span>}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-foreground shrink-0">{c.accessCode}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-[10px] text-muted-foreground/60 italic">
+                Access codes are also being emailed and texted to each person now. Copy any you need from above — this list won't be shown again.
+              </p>
+              <button
+                onClick={() => { setShowBatchUpload(false); resetBatchUpload(); }}
+                className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-all"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
       )}
 

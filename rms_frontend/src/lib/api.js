@@ -171,6 +171,9 @@ export const deptAPI = {
   },
   async changeDeptAccessCode(currentCode, newCode, confirmCode) {
     return api.put('/department/access-code', { currentCode, newCode, confirmCode });
+  },
+  async toggleDisable(deptId) {
+    return api.patch(`/departments/${deptId}/toggle-disable`);
   }
 };
 
@@ -512,6 +515,15 @@ export const subAccountAPI = {
   delete: (id) => api.delete(`/sub-accounts/${id}`),
   reactivate: (id) => api.post(`/sub-accounts/${id}/reactivate`),
   getRequisitions: (id) => api.get(`/sub-accounts/${id}/requisitions`),
+  batchUpload: (file, parentId) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (parentId) formData.append('parentId', parentId);
+    return api.post('/sub-accounts/batch-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000
+    });
+  },
 };
 
 export default api;

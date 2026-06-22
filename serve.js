@@ -25,6 +25,7 @@ const logger = pino({
 });
 
 const multer = require('multer');
+const XLSX = require('xlsx');
 const {
   putObject,
   deleteObject,
@@ -338,6 +339,21 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME_TYPES.has(file.mimetype)) return cb(null, true);
     cb(Object.assign(new Error(`File type not allowed: ${file.mimetype}`), { status: 415 }));
+  }
+});
+
+// Batch-upload multer: CSV/Excel files only, small size cap (a few thousand rows max)
+const BATCH_UPLOAD_MIME_TYPES = new Set([
+  'text/csv', 'application/csv', 'text/plain',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+const batchUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (_req, file, cb) => {
+    if (BATCH_UPLOAD_MIME_TYPES.has(file.mimetype) || /\.(csv|xlsx|xls)$/i.test(file.originalname || '')) return cb(null, true);
+    cb(Object.assign(new Error(`File type not allowed: ${file.mimetype}. Please upload a .csv, .xlsx, or .xls file.`), { status: 415 }));
   }
 });
 
@@ -1512,7 +1528,10 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       return res.status(403).json({ error: 'This sub-account has been deleted. Please contact your department head or system administrator.' });
     }
     if (resolved.isDisabled) {
-      return res.status(403).json({ error: 'This account has been disabled. Please contact your department head.' });
+      const msg = matchedSubAccount
+        ? 'This account has been disabled. Please contact your department head.'
+        : 'This department has been suspended by the Super Admin. Please contact the system administrator.';
+      return res.status(403).json({ error: msg });
     }
 
     if (isSuperAdmin) {
@@ -2881,6 +2900,78 @@ app.delete('/api/departments/:id', authenticateToken, requireRoles(['global_admi
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── Succession — auto-elevate / revert the acting-head candidate ────────────────
+// Triggered whenever a main department's login is suspended or restored. The
+// designated successor (set during batch upload, isActingHeadCandidate) temporarily
+// inherits the department's full approval authority while the head is unavailable.
+async function elevateActingHeadCandidate(parentId) {
+  const candidate = await prisma.department.findFirst({
+    where: { parentId, isSubAccount: true, isActingHeadCandidate: true, isDeleted: false }
+  });
+  if (!candidate) return null;
+  const snapshot = JSON.stringify({
+    privilegeAmount: candidate.privilegeAmount, approvalLimit: candidate.approvalLimit,
+    directRoute: candidate.directRoute, cashPrivilege: candidate.cashPrivilege,
+    memoPrivilege: candidate.memoPrivilege, materialPrivilege: candidate.materialPrivilege,
+  });
+  const elevated = await prisma.department.update({
+    where: { id: candidate.id },
+    data: {
+      preElevationPrivileges: snapshot,
+      approvalLimit: null, // null = no ceiling, full authority
+      directRoute: true, cashPrivilege: true, memoPrivilege: true, materialPrivilege: true,
+    }
+  });
+  return elevated;
+}
+
+async function revertActingHeadCandidate(parentId) {
+  const candidate = await prisma.department.findFirst({
+    where: { parentId, isSubAccount: true, isActingHeadCandidate: true, isDeleted: false, preElevationPrivileges: { not: null } }
+  });
+  if (!candidate) return null;
+  let prior = {};
+  try { prior = JSON.parse(candidate.preElevationPrivileges); } catch (_) {}
+  return prisma.department.update({
+    where: { id: candidate.id },
+    data: { ...prior, preElevationPrivileges: null }
+  });
+}
+
+// Suspend or restore a main department's own login (separate from deleting it).
+// Suspending auto-elevates the designated successor sub-account (if one was set during
+// batch upload); restoring reverts that successor back to their normal privileges.
+app.patch('/api/departments/:id/toggle-disable', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
+  try {
+    const deptId = parseInt(req.params.id);
+    const dept = await prisma.department.findUnique({ where: { id: deptId } });
+    if (!dept) return res.status(404).json({ error: 'Department not found.' });
+    if (dept.isSubAccount) return res.status(400).json({ error: 'Use the sub-account toggle endpoint for sub-accounts.' });
+
+    const nextDisabled = !dept.isDisabled;
+    const updated = await prisma.department.update({ where: { id: deptId }, data: { isDisabled: nextDisabled } });
+
+    let successionNote = null;
+    if (nextDisabled) {
+      const elevated = await elevateActingHeadCandidate(deptId);
+      if (elevated) successionNote = `${elevated.name} has been granted full approval authority while ${dept.name}'s head is suspended.`;
+    } else {
+      const reverted = await revertActingHeadCandidate(deptId);
+      if (reverted) successionNote = `${reverted.name}'s privileges have been restored to normal now that ${dept.name}'s head is reactivated.`;
+    }
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: nextDisabled ? 'Department Suspended' : 'Department Reactivated',
+        details: `${dept.name} ${nextDisabled ? 'suspended' : 'reactivated'} by ${req.user.name || 'Admin'}.${successionNote ? ' ' + successionNote : ''}`
+      }
+    });
+
+    res.json({ id: updated.id, isDisabled: updated.isDisabled, successionNote });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 app.put('/api/departments/:id/head', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -3101,22 +3192,23 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
   try {
     const parsed = z.object({
       name:      z.string().min(2),
-      staffId:   z.string().optional(),
+      staffId:   z.string().min(1),
       parentId:  z.number().int().optional(),
       headName:  z.string().optional(),
       headTitle: z.string().optional(),
-      headEmail: z.string().email().optional().or(z.literal('')),
+      headEmail: z.string().email(),
+      phone:     z.string().min(1),
     }).safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Sub-account name is required (min 2 chars).' });
+    if (!parsed.success) return res.status(400).json({ error: 'Name, Staff ID, Email, and Phone are all required to create a sub-account.' });
     const parentId = resolveParentId(req);
     if (!parentId) return res.status(400).json({ error: 'parentId is required for admin requests.' });
     const parent = await prisma.department.findUnique({ where: { id: parentId } });
     if (!parent) return res.status(404).json({ error: 'Parent department not found.' });
     const { name, staffId: staffIdRaw } = parsed.data;
-    const staffId = staffIdRaw?.trim() || null;
+    const staffId = staffIdRaw.trim().toUpperCase();
 
     // ── 1. Staff ID conflict (primary identifier) ─────────────────────────
-    if (staffId) {
+    {
       // Ensure staffId column exists (may not exist in older DB yet)
       try { await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "staffId" TEXT`; } catch (_) {}
       try { await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "Department_staffId_key" ON "Department"("staffId") WHERE "staffId" IS NOT NULL`; } catch (_) {}
@@ -3150,16 +3242,15 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
     }
     const plainCode = await generateUniqueAccessCode(name.trim());
     const hash = await bcrypt.hash(plainCode, 10);
-    const { headName: hName, headTitle: hTitle, headEmail: hEmail } = parsed.data;
+    const { headName: hName, headTitle: hTitle, headEmail: hEmail, phone: hPhone } = parsed.data;
     const sub = await prisma.department.create({
       data: {
         name: name.trim(), type: 'Sub-Account',
         isSubAccount: true, parentId, createdByDeptId: parentId,
         accessCodeHash: hash, accessCodeLabel: plainCode,
-        ...(staffId ? { staffId } : {}),
+        staffId, headEmail: hEmail.trim(), phone: hPhone.trim(),
         ...(hName  ? { headName:  hName.trim()  } : {}),
         ...(hTitle ? { headTitle: hTitle.trim() } : {}),
-        ...(hEmail ? { headEmail: hEmail.trim() } : {}),
       }
     });
     await prisma.activityLog.create({ data: { action: 'Sub-Account Created', details: `${name.trim()} created under ${parent.name}` } });
@@ -3178,9 +3269,11 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
           ``,
           `Unit Name: ${name.trim()}`,
           `Parent Department: ${parent.name}`,
+          `Staff ID: ${staffId}`,
           ...(hName?.trim()  ? [`Full Name: ${hName.trim()}`]           : []),
           ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`]   : []),
           ...(subEmailAddr   ? [`Unit Email: ${subEmailAddr}`]           : []),
+          `Phone: ${hPhone.trim()}`,
           ``,
           `ACCESS CODE: ${plainCode}`,
           ``,
@@ -3205,6 +3298,7 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
           ``,
           `Account Name: ${name.trim()}`,
           `Parent Department: ${parent.name}`,
+          `Staff ID: ${staffId}`,
           ...(hTitle?.trim() ? [`Position / Title: ${hTitle.trim()}`] : []),
           `Date Created: ${createdDate}`,
           ``,
@@ -3221,8 +3315,234 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
       sendEmail({ to: subEmailAddr, subject: `[RMS] Welcome — Your Sub-Account Access Code: ${name.trim()}`, text, html }).catch(() => {});
     }
 
+    // — Welcome SMS to SUB-ACCOUNT — phone is now required, always send
+    sendSms({
+      to: hPhone.trim(),
+      message: `CSS RMS: Your sub-account "${name.trim()}" under ${parent.name} is ready. Staff ID: ${staffId}. Access Code: ${plainCode}. Log in then create your password. - RMS Administrator`,
+    }).catch(() => {});
+
     res.json({ id: sub.id, name: sub.name, staffId: sub.staffId || null, accessCode: plainCode, isDisabled: false, userCount: 0, reqCount: 0, parentDept: { id: parent.id, name: parent.name } });
   } catch (err) { sendError(res, 500, err.message); }
+});
+
+// ── Batch upload — create many sub-accounts (or assign a head) from one CSV/Excel file ──
+// File rows, top to bottom, encode seniority:
+//   - If the parent department has no head yet, row 1 becomes the department's head
+//     directly (fills headName/headTitle/headEmail/phone/staffId + generates its access
+//     code) and rows 2..N become ordinary sub-accounts.
+//   - If the parent department already has a head, every row becomes a sub-account, and
+//     row 1 is flagged isActingHeadCandidate so it can inherit full authority if the head
+//     is ever suspended/deleted (see toggleDepartmentDisabled).
+// Validation is all-or-nothing: any invalid/duplicate row rejects the whole file with a
+// precise per-row reason — nothing is created until every row passes.
+const BATCH_UPLOAD_COLUMNS = ['Staff ID', 'Surname', 'First Name', 'Other Name', 'Title', 'Email', 'Phone'];
+
+function parseBatchUploadFile(buffer, originalName) {
+  let workbook;
+  try {
+    workbook = XLSX.read(buffer, { type: 'buffer' });
+  } catch (e) {
+    throw Object.assign(new Error(`Could not read "${originalName}" — make sure it's a valid CSV or Excel file.`), { status: 400 });
+  }
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw Object.assign(new Error('The uploaded file has no sheets/data.'), { status: 400 });
+  const sheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  if (!rows.length) throw Object.assign(new Error('The uploaded file has no data rows below the header.'), { status: 400 });
+  return rows;
+}
+
+function normalizeBatchRow(row, idx) {
+  // Tolerant header matching — accepts "Staff ID", "staff id", "StaffID", etc.
+  const get = (label) => {
+    const key = Object.keys(row).find(k => k.replace(/[\s_-]+/g, '').toLowerCase() === label.replace(/[\s_-]+/g, '').toLowerCase());
+    return key ? String(row[key] ?? '').trim() : '';
+  };
+  return {
+    rowNum: idx + 2, // +2: 1-indexed plus the header row itself
+    staffId: get('Staff ID').toUpperCase(),
+    surname: get('Surname'),
+    firstName: get('First Name'),
+    otherName: get('Other Name'),
+    title: get('Title'),
+    email: get('Email'),
+    phone: get('Phone'),
+  };
+}
+
+function validateBatchRows(rawRows) {
+  const rows = rawRows.map(normalizeBatchRow);
+  const errors = [];
+  const seenStaffIds = new Map();
+  const seenEmails = new Map();
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  rows.forEach(r => {
+    const label = `Row ${r.rowNum}`;
+    if (!r.staffId) errors.push(`${label}: Staff ID is required.`);
+    if (!r.surname) errors.push(`${label}: Surname is required.`);
+    if (!r.firstName) errors.push(`${label}: First Name is required.`);
+    if (!r.email) errors.push(`${label}: Email is required.`);
+    else if (!emailRe.test(r.email)) errors.push(`${label}: "${r.email}" is not a valid email address.`);
+    if (!r.phone) errors.push(`${label}: Phone is required.`);
+
+    if (r.staffId) {
+      if (seenStaffIds.has(r.staffId)) errors.push(`${label}: Staff ID "${r.staffId}" is duplicated within this file (also on Row ${seenStaffIds.get(r.staffId)}).`);
+      else seenStaffIds.set(r.staffId, r.rowNum);
+    }
+    if (r.email) {
+      const emailKey = r.email.toLowerCase();
+      if (seenEmails.has(emailKey)) errors.push(`${label}: Email "${r.email}" is duplicated within this file (also on Row ${seenEmails.get(emailKey)}).`);
+      else seenEmails.set(emailKey, r.rowNum);
+    }
+  });
+
+  return { rows, errors };
+}
+
+app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, batchUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded. Please attach a .csv, .xlsx, or .xls file.' });
+
+    const parentId = resolveParentId(req);
+    if (!parentId) return res.status(400).json({ error: 'Select a department before uploading.' });
+    const parent = await prisma.department.findUnique({ where: { id: parentId } });
+    if (!parent) return res.status(404).json({ error: 'Parent department not found.' });
+    if (parent.isSubAccount) return res.status(400).json({ error: 'Batch upload must target a main department, not a sub-account.' });
+
+    let rawRows;
+    try {
+      rawRows = parseBatchUploadFile(req.file.buffer, req.file.originalname);
+    } catch (e) {
+      return res.status(e.status || 400).json({ error: e.message });
+    }
+
+    const { rows, errors: rowErrors } = validateBatchRows(rawRows);
+
+    // ── Cross-check against the database — same all-or-nothing rule ──────────
+    const dbErrors = [];
+    try {
+      await prisma.$executeRaw`ALTER TABLE "Department" ADD COLUMN IF NOT EXISTS "staffId" TEXT`;
+      await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS "Department_staffId_key" ON "Department"("staffId") WHERE "staffId" IS NOT NULL`;
+    } catch (_) { /* columns/index already exist */ }
+
+    for (const r of rows) {
+      if (!r.staffId) continue; // already reported as missing above
+      const staffIdClash = await prisma.department.findFirst({ where: { staffId: r.staffId, isDeleted: false }, select: { id: true, name: true } });
+      if (staffIdClash) dbErrors.push(`Row ${r.rowNum}: Staff ID "${r.staffId}" is already assigned to "${staffIdClash.name}".`);
+      const fullName = [r.surname, r.firstName, r.otherName].filter(Boolean).join(' ');
+      const nameClash = await prisma.department.findFirst({ where: { name: { equals: fullName, mode: 'insensitive' } }, select: { id: true } });
+      if (nameClash) dbErrors.push(`Row ${r.rowNum}: A department or sub-account named "${fullName}" already exists.`);
+    }
+
+    const allErrors = [...rowErrors, ...dbErrors];
+    if (allErrors.length > 0) {
+      return res.status(400).json({
+        error: `${allErrors.length} issue(s) found — nothing was created. Fix the file and try again.`,
+        issues: allErrors,
+      });
+    }
+
+    // ── All rows valid — determine Case A (assign head) vs Case B (all sub-accounts) ──
+    const hasHeadAlready = !!(parent.headName && parent.headEmail);
+    const createdBy = req.user?.name || req.user?.email || 'Administrator';
+    const createdDate = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+    const results = { headAssigned: null, created: [], actingHeadCandidate: null };
+
+    let subAccountRows = rows;
+    if (!hasHeadAlready) {
+      const headRow = rows[0];
+      subAccountRows = rows.slice(1);
+      const headFullName = [headRow.surname, headRow.firstName, headRow.otherName].filter(Boolean).join(' ');
+      const headAccessCode = await generateUniqueAccessCode(parent.name);
+      const headHash = await bcrypt.hash(headAccessCode, 10);
+      const updatedParent = await prisma.department.update({
+        where: { id: parent.id },
+        data: {
+          headName: headFullName, headTitle: headRow.title || null, headEmail: headRow.email,
+          phone: headRow.phone, staffId: headRow.staffId,
+          accessCodeHash: headHash, accessCodeLabel: headAccessCode, accessCode: null,
+        }
+      });
+      results.headAssigned = { name: headFullName, staffId: headRow.staffId, email: headRow.email, accessCode: headAccessCode };
+
+      setImmediate(async () => {
+        const lines = [
+          `Your department account has been activated on the RMS Portal via a batch staff upload by the RMS Administrator.`,
+          ``,
+          `Staff ID: ${headRow.staffId}`,
+          `Name: ${headFullName}`,
+          `Position/Title: ${headRow.title || 'Not set'}`,
+          `Department: ${parent.name}`,
+          `Email: ${headRow.email}`,
+          `Phone: ${headRow.phone}`,
+          `Access Code: ${headAccessCode}`,
+          ``,
+          `Use this access code to log in for the first time. You will be asked to create your own password — once set, the access code no longer works.`,
+        ];
+        const { text, html } = buildEmailContent({ title: 'Account Activated — Welcome to RMS Portal', lines, actionLabel: 'Open RMS Portal' });
+        sendEmail({ to: headRow.email, subject: '[RMS] Account Activated — Welcome to RMS Portal', text, html }).catch(() => {});
+        sendSms({ to: headRow.phone, message: `CSS RMS: Your account for ${parent.name} is now active. Staff ID: ${headRow.staffId}. Access Code: ${headAccessCode}. Log in then create your password. - RMS Administrator` }).catch(() => {});
+      });
+    }
+
+    for (let i = 0; i < subAccountRows.length; i++) {
+      const r = subAccountRows[i];
+      const fullName = [r.surname, r.firstName, r.otherName].filter(Boolean).join(' ');
+      const plainCode = await generateUniqueAccessCode(fullName);
+      const hash = await bcrypt.hash(plainCode, 10);
+      // The most senior sub-account (first row) is the designated successor only when a
+      // head already existed before this upload — when we just assigned a fresh head above,
+      // there's no succession scenario yet.
+      const isCandidate = hasHeadAlready && i === 0;
+      const sub = await prisma.department.create({
+        data: {
+          name: fullName, type: 'Sub-Account',
+          isSubAccount: true, parentId: parent.id, createdByDeptId: parent.id,
+          accessCodeHash: hash, accessCodeLabel: plainCode,
+          staffId: r.staffId, headName: fullName, headTitle: r.title || null,
+          headEmail: r.email, phone: r.phone,
+          isActingHeadCandidate: isCandidate,
+        }
+      });
+      results.created.push({ id: sub.id, name: fullName, staffId: r.staffId, accessCode: plainCode, isActingHeadCandidate: isCandidate });
+      if (isCandidate) results.actingHeadCandidate = { id: sub.id, name: fullName, staffId: r.staffId };
+
+      setImmediate(async () => {
+        const lines = [
+          `Welcome! Your sub-account has been set up on the CSS Group Requisition Management System (RMS) via a batch staff upload.`,
+          ``,
+          `Staff ID: ${r.staffId}`,
+          `Account Name: ${fullName}`,
+          `Parent Department: ${parent.name}`,
+          ...(r.title ? [`Position / Title: ${r.title}`] : []),
+          `Date Created: ${createdDate}`,
+          ``,
+          `YOUR ACCESS CODE: ${plainCode}`,
+          ``,
+          `IMPORTANT: This Access Code is for first-time login only. When you log in for the first time, you will be asked to create your own personal password.`,
+          ``,
+          `To log in: visit the RMS portal, select "${parent.name}" from the department list, then enter the Access Code above.`,
+        ];
+        const { text, html } = buildEmailContent({ title: `Welcome to CSS Group RMS — ${fullName}`, lines, actionLabel: 'Log In to RMS Portal' });
+        sendEmail({ to: r.email, subject: `[RMS] Welcome — Your Sub-Account Access Code: ${fullName}`, text, html }).catch(() => {});
+        sendSms({ to: r.phone, message: `CSS RMS: Your sub-account "${fullName}" under ${parent.name} is ready. Staff ID: ${r.staffId}. Access Code: ${plainCode}. Log in then create your password. - RMS Administrator` }).catch(() => {});
+      });
+    }
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'Batch Sub-Account Upload',
+        details: `${createdBy} uploaded ${rows.length} staff record(s) for ${parent.name}${results.headAssigned ? ' (1 assigned as head)' : ''}.`
+      }
+    });
+
+    res.json(results);
+  } catch (err) {
+    logger.error('[BATCH-UPLOAD] Failed:', err);
+    sendError(res, 500, 'Batch upload failed unexpectedly. No records were created. Please try again or contact support if this persists.');
+  }
 });
 
 // Update sub-account details
@@ -8292,6 +8612,19 @@ app.use((req, res) => {
   }
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(indexPath);
+});
+
+// ── Global error handler — catches errors thrown by middleware (multer file-type/size
+// rejections, JSON parse failures, etc.) before they reach Express's default HTML/stack
+// trace response. Every API error becomes a clean JSON message, never raw or silent.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const isMulterError = err?.name === 'MulterError';
+  const status = err?.status || (isMulterError && err.code === 'LIMIT_FILE_SIZE' ? 413 : err?.statusCode) || 400;
+  let message = err?.message || 'Request failed. Please try again.';
+  if (isMulterError && err.code === 'LIMIT_FILE_SIZE') message = 'File is too large. Please upload a smaller file.';
+  logger.warn(`[ERROR] ${req.method} ${req.path} → ${status}: ${message}`);
+  res.status(status).json({ error: message });
 });
 
 const PORT = process.env.PORT || 3000;
