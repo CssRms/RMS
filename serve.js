@@ -2901,14 +2901,16 @@ app.delete('/api/departments/:id', authenticateToken, requireRoles(['global_admi
 });
 
 // ── Succession — auto-elevate / revert the acting-head candidate ────────────────
-// Triggered whenever a main department's login is suspended or restored. The
-// designated successor (set during batch upload, isActingHeadCandidate) temporarily
-// inherits the department's full approval authority while the head is unavailable.
+// Triggered whenever a main department's login is suspended or restored. The successor
+// is computed dynamically as the most senior (lowest seniorityRank) sub-account that is
+// NOT itself disabled — never a fixed person — so if the most senior one is also
+// suspended, it naturally cascades down to the next-most-senior active sub-account.
 async function elevateActingHeadCandidate(parentId) {
   const candidate = await prisma.department.findFirst({
-    where: { parentId, isSubAccount: true, isActingHeadCandidate: true, isDeleted: false }
+    where: { parentId, isSubAccount: true, isDeleted: false, isDisabled: false },
+    orderBy: [{ seniorityRank: 'asc' }, { createdAt: 'asc' }],
   });
-  if (!candidate) return null;
+  if (!candidate) return null; // nobody active to elevate
   const snapshot = JSON.stringify({
     privilegeAmount: candidate.privilegeAmount, approvalLimit: candidate.approvalLimit,
     directRoute: candidate.directRoute, cashPrivilege: candidate.cashPrivilege,
@@ -2917,6 +2919,7 @@ async function elevateActingHeadCandidate(parentId) {
   const elevated = await prisma.department.update({
     where: { id: candidate.id },
     data: {
+      isActingHeadCandidate: true,
       preElevationPrivileges: snapshot,
       approvalLimit: null, // null = no ceiling, full authority
       directRoute: true, cashPrivilege: true, memoPrivilege: true, materialPrivilege: true,
@@ -2926,6 +2929,8 @@ async function elevateActingHeadCandidate(parentId) {
 }
 
 async function revertActingHeadCandidate(parentId) {
+  // Find whoever is CURRENTLY elevated — not necessarily the most senior anymore, since
+  // seniority could have been reordered, or the cascade picked someone further down.
   const candidate = await prisma.department.findFirst({
     where: { parentId, isSubAccount: true, isActingHeadCandidate: true, isDeleted: false, preElevationPrivileges: { not: null } }
   });
@@ -2934,7 +2939,7 @@ async function revertActingHeadCandidate(parentId) {
   try { prior = JSON.parse(candidate.preElevationPrivileges); } catch (_) {}
   return prisma.department.update({
     where: { id: candidate.id },
-    data: { ...prior, preElevationPrivileges: null }
+    data: { ...prior, preElevationPrivileges: null, isActingHeadCandidate: false }
   });
 }
 
@@ -3165,13 +3170,14 @@ app.get('/api/sub-accounts', authenticateToken, requireSubAccountManager, async 
         parent: { select: { id: true, name: true } },
         _count: { select: { requisitions: true } }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: [{ seniorityRank: 'asc' }, { createdAt: 'asc' }]
     });
     const isAdmin = role === 'global_admin';
     res.json(subs.map(s => ({
       id: s.id, name: s.name, staffId: s.staffId || null,
       headName: s.headName, headEmail: s.headEmail,
       headTitle: s.headTitle, isDisabled: s.isDisabled, createdAt: s.createdAt,
+      seniorityRank: s.seniorityRank ?? null, isActingHeadCandidate: s.isActingHeadCandidate ?? false,
       codeChangedByDept: s.codeChangedByDept ?? false,
       userCount: s.users.length, users: s.users, reqCount: s._count.requisitions,
       // Only admins see the stored plain-text code (permanent reference); dept heads get it only on reset
@@ -3243,12 +3249,19 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
     const plainCode = await generateUniqueAccessCode(name.trim());
     const hash = await bcrypt.hash(plainCode, 10);
     const { headName: hName, headTitle: hTitle, headEmail: hEmail, phone: hPhone } = parsed.data;
+    // New sub-accounts join the bottom of the seniority list by default — freely
+    // re-orderable afterward via the move-up/move-down endpoint.
+    const maxRank = await prisma.department.aggregate({
+      where: { parentId, isSubAccount: true, isDeleted: false },
+      _max: { seniorityRank: true },
+    });
     const sub = await prisma.department.create({
       data: {
         name: name.trim(), type: 'Sub-Account',
         isSubAccount: true, parentId, createdByDeptId: parentId,
         accessCodeHash: hash, accessCodeLabel: plainCode,
         staffId, headEmail: hEmail.trim(), phone: hPhone.trim(),
+        seniorityRank: (maxRank._max.seniorityRank || 0) + 1,
         ...(hName  ? { headName:  hName.trim()  } : {}),
         ...(hTitle ? { headTitle: hTitle.trim() } : {}),
       }
@@ -3330,9 +3343,11 @@ app.post('/api/sub-accounts', authenticateToken, requireSubAccountManager, check
 //   - If the parent department has no head yet, row 1 becomes the department's head
 //     directly (fills headName/headTitle/headEmail/phone/staffId + generates its access
 //     code) and rows 2..N become ordinary sub-accounts.
-//   - If the parent department already has a head, every row becomes a sub-account, and
-//     row 1 is flagged isActingHeadCandidate so it can inherit full authority if the head
-//     is ever suspended/deleted (see toggleDepartmentDisabled).
+//   - If the parent department already has a head, every row becomes a sub-account, each
+//     assigned a seniorityRank continuing the upload's top-to-bottom order. Whoever ends up
+//     most senior (and still active) is who inherits full authority if the head is ever
+//     suspended — recomputed live, not fixed at upload time, and freely re-orderable after
+//     the fact via the move-up/move-down endpoint.
 // Validation is all-or-nothing: any invalid/duplicate row rejects the whole file with a
 // precise per-row reason — nothing is created until every row passes.
 const BATCH_UPLOAD_COLUMNS = ['Staff ID', 'Surname', 'First Name', 'Other Name', 'Title', 'Email', 'Phone'];
@@ -3447,7 +3462,7 @@ app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountM
     const hasHeadAlready = !!(parent.headName && parent.headEmail);
     const createdBy = req.user?.name || req.user?.email || 'Administrator';
     const createdDate = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
-    const results = { headAssigned: null, created: [], actingHeadCandidate: null };
+    const results = { headAssigned: null, created: [], mostSenior: null };
 
     let subAccountRows = rows;
     if (!hasHeadAlready) {
@@ -3486,15 +3501,20 @@ app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountM
       });
     }
 
+    // New sub-accounts are appended after whatever seniority ranks already exist under
+    // this parent, preserving the upload's top-to-bottom order as the new tail of the list.
+    const existingMaxRank = await prisma.department.aggregate({
+      where: { parentId: parent.id, isSubAccount: true, isDeleted: false },
+      _max: { seniorityRank: true },
+    });
+    let nextRank = (existingMaxRank._max.seniorityRank || 0) + 1;
+
     for (let i = 0; i < subAccountRows.length; i++) {
       const r = subAccountRows[i];
       const fullName = [r.surname, r.firstName, r.otherName].filter(Boolean).join(' ');
       const plainCode = await generateUniqueAccessCode(fullName);
       const hash = await bcrypt.hash(plainCode, 10);
-      // The most senior sub-account (first row) is the designated successor only when a
-      // head already existed before this upload — when we just assigned a fresh head above,
-      // there's no succession scenario yet.
-      const isCandidate = hasHeadAlready && i === 0;
+      const rank = nextRank++;
       const sub = await prisma.department.create({
         data: {
           name: fullName, type: 'Sub-Account',
@@ -3502,11 +3522,10 @@ app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountM
           accessCodeHash: hash, accessCodeLabel: plainCode,
           staffId: r.staffId, headName: fullName, headTitle: r.title || null,
           headEmail: r.email, phone: r.phone,
-          isActingHeadCandidate: isCandidate,
+          seniorityRank: rank,
         }
       });
-      results.created.push({ id: sub.id, name: fullName, staffId: r.staffId, accessCode: plainCode, isActingHeadCandidate: isCandidate });
-      if (isCandidate) results.actingHeadCandidate = { id: sub.id, name: fullName, staffId: r.staffId };
+      results.created.push({ id: sub.id, name: fullName, staffId: r.staffId, accessCode: plainCode, seniorityRank: rank });
 
       setImmediate(async () => {
         const lines = [
@@ -3529,6 +3548,15 @@ app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountM
         sendSms({ to: r.phone, message: `CSS RMS: Your sub-account "${fullName}" under ${parent.name} is ready. Staff ID: ${r.staffId}. Access Code: ${plainCode}. Log in then create your password. - RMS Administrator` }).catch(() => {});
       });
     }
+
+    // Informational only — the actual successor at suspension time is recomputed live by
+    // seniorityRank, so this just tells the admin who that would be right now.
+    const currentSenior = await prisma.department.findFirst({
+      where: { parentId: parent.id, isSubAccount: true, isDeleted: false, isDisabled: false },
+      orderBy: [{ seniorityRank: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, name: true, staffId: true },
+    });
+    results.mostSenior = currentSenior;
 
     await prisma.activityLog.create({
       data: {
@@ -3587,6 +3615,47 @@ app.patch('/api/sub-accounts/:id/toggle', authenticateToken, requireSubAccountMa
     if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'Access denied.' });
     const updated = await prisma.department.update({ where: { id: subId }, data: { isDisabled: !sub.isDisabled } });
     res.json({ id: updated.id, isDisabled: updated.isDisabled });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+// Move a sub-account up or down in seniority order — swaps seniorityRank with whichever
+// sibling currently sits on that side. This is what "rearrange the positioning" maps to:
+// the order shown here is exactly what the succession cascade reads at suspension time.
+app.patch('/api/sub-accounts/:id/move', authenticateToken, requireSubAccountManager, checkHeadCanManageSubaccounts, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.id);
+    const direction = req.body?.direction === 'up' ? 'up' : req.body?.direction === 'down' ? 'down' : null;
+    if (!direction) return res.status(400).json({ error: 'direction must be "up" or "down".' });
+
+    const sub = await prisma.department.findFirst({ where: { id: subId, isSubAccount: true, isDeleted: false } });
+    if (!sub) return res.status(404).json({ error: 'Sub-account not found.' });
+    const parentId = resolveParentId(req);
+    if (parentId && sub.parentId !== parentId) return res.status(403).json({ error: 'Access denied.' });
+
+    const siblings = await prisma.department.findMany({
+      where: { parentId: sub.parentId, isSubAccount: true, isDeleted: false },
+      orderBy: [{ seniorityRank: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, seniorityRank: true },
+    });
+    const idx = siblings.findIndex(s => s.id === subId);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= siblings.length) {
+      return res.status(400).json({ error: `Already at the ${direction === 'up' ? 'top' : 'bottom'} of the list.` });
+    }
+
+    const current = siblings[idx];
+    const swapWith = siblings[swapIdx];
+    // Backfill null ranks (legacy rows created before this field existed) using their
+    // current list position, so the swap always has real numbers to exchange.
+    const currentRank = current.seniorityRank ?? idx + 1;
+    const swapRank = swapWith.seniorityRank ?? swapIdx + 1;
+
+    await prisma.$transaction([
+      prisma.department.update({ where: { id: current.id }, data: { seniorityRank: swapRank } }),
+      prisma.department.update({ where: { id: swapWith.id }, data: { seniorityRank: currentRank } }),
+    ]);
+
+    res.json({ success: true });
   } catch (err) { sendError(res, 500, err.message); }
 });
 

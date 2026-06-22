@@ -506,6 +506,7 @@ export const subAccountAPI = {
   create: (name, parentId, extra = {}) => api.post('/sub-accounts', { name, ...(parentId ? { parentId } : {}), ...extra }),
   update: (id, data) => api.patch(`/sub-accounts/${id}`, data),
   toggle: (id) => api.patch(`/sub-accounts/${id}/toggle`),
+  move: (id, direction, parentId) => api.patch(`/sub-accounts/${id}/move`, { direction, ...(parentId ? { parentId } : {}) }),
   resetCode: (id) => api.post(`/sub-accounts/${id}/reset-code`),
   listUsers: (id) => api.get(`/sub-accounts/${id}/users`),
   assignUser: (id, userId) => api.post(`/sub-accounts/${id}/users`, { userId }),

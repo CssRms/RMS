@@ -84,11 +84,15 @@ model Department {
   allowedRouteDeptIds  String?
   // Head dept routing control: if false, sub-account requests land here first before going anywhere
   subAccountAutoRoute  Boolean          @default(true)
-  // Batch-upload succession — marks the sub-account designated to inherit the parent
-  // department's full approval authority if the head is disabled/deleted. Auto-elevated
-  // (privilegeAmount/approvalLimit/directRoute overwritten) the moment that happens;
-  // preElevationPrivileges snapshots the prior values so they can be restored if the head
-  // is reinstated.
+  // Seniority position among siblings under the same parent — lower number = more senior.
+  // Set from row order on batch upload (or appended to the end on single creation), but
+  // freely re-orderable afterward via the move-up/move-down endpoint.
+  seniorityRank        Int?
+  // Succession — true on whichever sub-account is CURRENTLY elevated to the parent's full
+  // approval authority because the head is suspended. Computed dynamically off seniorityRank
+  // (most senior non-disabled sub-account) at the moment of suspension, not fixed at upload
+  // time, so it naturally cascades to the next person if the elevated one is also disabled.
+  // preElevationPrivileges snapshots the prior values so reactivating the head can restore them.
   isActingHeadCandidate Boolean         @default(false)
   preElevationPrivileges String?        @db.Text // JSON: { privilegeAmount, approvalLimit, directRoute, cashPrivilege, memoPrivilege, materialPrivilege }
   createdAt            DateTime         @default(now())

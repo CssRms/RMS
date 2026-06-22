@@ -3,7 +3,7 @@ import {
   Plus, Users, KeyRound, ToggleLeft, ToggleRight, Pencil, X,
   Check, Loader2, Copy, UserPlus, UserMinus,
   ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
-  FileText, User, Mail, Hash, Clock, Route, Globe, Lock
+  FileText, User, Mail, Hash, Clock, Route, Globe, Lock, ArrowUp, ArrowDown, Crown
 } from 'lucide-react';
 import { subAccountAPI, deptAPI, settingsAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -620,8 +620,9 @@ const PrivilegeEditor = ({ sub, onUpdatePrivilege }) => {
 };
 
 // ── Single sub-account card ──────────────────────────────────────────────────
-const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, showParent = false, isAdmin = false, canManage = true, canSetPrivileges = true }) => {
+const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, showParent = false, isAdmin = false, canManage = true, canSetPrivileges = true, canReorder = true, position = null, isFirst = false, isLast = false }) => {
   const [expanded, setExpanded] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
   const [editStaffId, setEditStaffId] = useState(sub.staffId || '');
@@ -691,6 +692,16 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
     } finally { setDeleting(false); setConfirmDelete(false); }
   };
 
+  const move = async (direction) => {
+    setMoving(true);
+    try {
+      await subAccountAPI.move(sub.id, direction, sub.parentDept?.id);
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to reorder.');
+    } finally { setMoving(false); }
+  };
+
   return (
     <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${sub.isDisabled ? 'border-red-200 opacity-75' : 'border-border/50'}`}>
       {/* Card header */}
@@ -742,8 +753,16 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
+              {position != null && (
+                <span className="text-[9px] font-black text-muted-foreground/50 bg-muted/40 rounded-md px-1.5 py-0.5">#{position}</span>
+              )}
               <p className="text-sm font-bold text-foreground truncate">{sub.name}</p>
               <Badge color={sub.isDisabled ? 'red' : 'green'}>{sub.isDisabled ? 'Disabled' : 'Active'}</Badge>
+              {sub.isActingHeadCandidate && (
+                <span className="flex items-center gap-1 text-[9px] font-black uppercase text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                  <Crown size={10} /> Acting Head
+                </span>
+              )}
             </div>
           )}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -780,6 +799,16 @@ const SubAccountCard = ({ sub, availableUsers, onRefresh, onUpdatePrivilege, sho
         <div className="flex items-center gap-1 shrink-0">
           {canManage && (
             <>
+              {canReorder && (
+                <>
+                  <button onClick={() => move('up')} disabled={moving || isFirst} title="Move up (more senior)" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all disabled:opacity-25 disabled:cursor-not-allowed">
+                    <ArrowUp size={13} />
+                  </button>
+                  <button onClick={() => move('down')} disabled={moving || isLast} title="Move down (less senior)" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all disabled:opacity-25 disabled:cursor-not-allowed">
+                    <ArrowDown size={13} />
+                  </button>
+                </>
+              )}
               <button onClick={() => setEditing(true)} title="Rename" className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/8 transition-all">
                 <Pencil size={13} />
               </button>
@@ -970,7 +999,7 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
   const [batchFile, setBatchFile] = useState(null);
   const [batchUploading, setBatchUploading] = useState(false);
   const [batchIssues, setBatchIssues] = useState(null);   // string[] — validation errors, if any
-  const [batchResults, setBatchResults] = useState(null); // { headAssigned, created, actingHeadCandidate }
+  const [batchResults, setBatchResults] = useState(null); // { headAssigned, created, mostSenior }
 
   // The parentId to use for all API calls
   const parentId = isAdmin ? (selectedDeptId ? parseInt(selectedDeptId) : null) : null;
@@ -1386,17 +1415,26 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
               {batchResults.created.length > 0 && (
                 <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                  {batchResults.created.map(c => (
-                    <div key={c.id} className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${c.isActingHeadCandidate ? 'bg-primary/5 border-primary/30' : 'bg-white border-border/40'}`}>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-foreground truncate">
-                          {c.name} ({c.staffId}) {c.isActingHeadCandidate && <span className="text-primary font-black">— Successor</span>}
-                        </p>
+                  {batchResults.created.map(c => {
+                    const isMostSenior = batchResults.mostSenior?.id === c.id;
+                    return (
+                      <div key={c.id} className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${isMostSenior ? 'bg-primary/5 border-primary/30' : 'bg-white border-border/40'}`}>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-foreground truncate">
+                            {c.name} ({c.staffId}) {isMostSenior && <span className="text-primary font-black">— Most Senior</span>}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold text-foreground shrink-0">{c.accessCode}</span>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-foreground shrink-0">{c.accessCode}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
+              )}
+
+              {batchResults.mostSenior && (
+                <p className="text-[10px] text-muted-foreground/70 italic">
+                  {batchResults.mostSenior.name} is currently most senior — they'll be the one auto-elevated to full authority if the head is ever suspended. Reorder anytime from the list below.
+                </p>
               )}
 
               <p className="text-[10px] text-muted-foreground/60 italic">
@@ -1510,19 +1548,29 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
         </div>
       ) : (
         <div className="space-y-3">
-          {subs.map(sub => (
-            <SubAccountCard
-              key={sub.id}
-              sub={sub}
-              availableUsers={availableUsers}
-              onRefresh={load}
-              onUpdatePrivilege={updates => setSubs(prev => prev.map(s => s.id === sub.id ? { ...s, ...updates } : s))}
-              showParent={isAdmin && !selectedDeptId}
-              isAdmin={isAdmin}
-              canManage={isAdmin || canManage}
-              canSetPrivileges={isAdmin || canSetPrivileges}
-            />
-          ))}
+          {subs.map((sub, idx) => {
+            // Position/reorder only makes sense within a single department's list — when
+            // admin is viewing "All Departments" the flat list mixes siblings from different
+            // parents, so showing a position number or move buttons there would be misleading.
+            const singleDeptView = !isAdmin || !!selectedDeptId;
+            return (
+              <SubAccountCard
+                key={sub.id}
+                sub={sub}
+                availableUsers={availableUsers}
+                onRefresh={load}
+                onUpdatePrivilege={updates => setSubs(prev => prev.map(s => s.id === sub.id ? { ...s, ...updates } : s))}
+                showParent={isAdmin && !selectedDeptId}
+                isAdmin={isAdmin}
+                canManage={isAdmin || canManage}
+                canSetPrivileges={isAdmin || canSetPrivileges}
+                canReorder={singleDeptView}
+                position={singleDeptView ? idx + 1 : null}
+                isFirst={idx === 0}
+                isLast={idx === subs.length - 1}
+              />
+            );
+          })}
         </div>
       )}
 
