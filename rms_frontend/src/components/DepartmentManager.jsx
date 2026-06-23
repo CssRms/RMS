@@ -462,10 +462,9 @@ const DepartmentManager = ({ onViewChange }) => {
     } finally { setTogglingDeptId(null); }
   };
 
-  const strategic = departments.filter(d => d.type === 'Strategic');
-  const operational = departments.filter(d => d.type === 'Operational');
-  const filteredS = strategic.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  const filteredO = operational.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  // This table manages departments themselves, not individual staff under them —
+  // sub-accounts already have their own dedicated Sub-Accounts page.
+  const mainDepartments = departments.filter(d => !d.isSubAccount);
 
   if (loading) {
     return (
@@ -548,7 +547,7 @@ const DepartmentManager = ({ onViewChange }) => {
               </p>
             </div>
             <div className="flex items-center gap-4">
-               <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{departments.length} Units Synchronized</span>
+               <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{mainDepartments.length} Units Synchronized</span>
             </div>
           </div>
 
@@ -570,7 +569,7 @@ const DepartmentManager = ({ onViewChange }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/20">
-                {departments
+                {mainDepartments
                   .filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()))
                   .map((dept) => {
                     const displayCode = dept.accessCodeLabel || dept.accessCode || null;
@@ -675,7 +674,7 @@ const DepartmentManager = ({ onViewChange }) => {
                   })}
               </tbody>
             </table>
-            {departments.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+            {mainDepartments.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
                <div className="py-20 text-center">
                   <p className="text-sm text-muted-foreground italic">No departments match your search criteria.</p>
                </div>
