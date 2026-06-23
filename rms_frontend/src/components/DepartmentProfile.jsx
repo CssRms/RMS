@@ -3,7 +3,7 @@ import {
   User, Mail, ShieldCheck, AlertCircle,
   Upload, Save, BadgeCheck, Phone, MapPin,
   Loader2, PenTool, CheckCircle2, Lock, Eye, EyeOff,
-  KeyRound, Shield
+  KeyRound, Shield, Hash
 } from 'lucide-react';
 import { reqAPI, deptAPI, authAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -51,7 +51,7 @@ const DeptProfileContent = ({ user: _user }) => {
   const [saving, setSaving]     = useState(false);
   const [uploading, setUploading] = useState(false);
   const [profile, setProfile]   = useState({
-    name: '', headName: '', headEmail: '', headTitle: '',
+    name: '', staffId: '', headName: '', headEmail: '', headTitle: '',
     phone: '', address: '', hasSignature: false
   });
   const [codeForm, setCodeForm] = useState({ current: '', newCode: '', confirm: '' });
@@ -139,25 +139,24 @@ const DeptProfileContent = ({ user: _user }) => {
         <div className="space-y-5">
           <Card title="Department Head Details" subtitle="Official representative of this department" icon={User}>
             <form onSubmit={handleSave} className="space-y-4">
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-700 font-medium leading-relaxed flex items-start gap-2">
+                <Lock size={13} className="shrink-0 mt-0.5" />
+                <span>Staff ID, Full Name, Email, and Phone are locked to your registered identity. To correct any of these, please contact the ICT team.</span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field icon={User} label="Full Name" value={profile.headName}
-                  onChange={v => setProfile(p => ({ ...p, headName: v }))}
-                  placeholder="e.g. Dr. John Doe" required />
-                <Field icon={Mail} label="Email Address" value={profile.headEmail} type="email"
-                  onChange={v => setProfile(p => ({ ...p, headEmail: v }))}
-                  placeholder="head@cssgroup.internal" required />
+                <Field icon={Hash} label="Staff ID" value={profile.staffId || '—'} readOnly />
+                <Field icon={User} label="Full Name" value={profile.headName} readOnly />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field icon={Mail} label="Email Address" value={profile.headEmail} type="email" readOnly />
+                <Field icon={Phone} label="Phone Number" value={profile.phone} readOnly />
               </div>
               <Field icon={BadgeCheck} label="Job Title / Designation" value={profile.headTitle}
                 onChange={v => setProfile(p => ({ ...p, headTitle: v }))}
                 placeholder="e.g. Head of Procurement" required />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field icon={Phone} label="Phone Number" value={profile.phone}
-                  onChange={v => setProfile(p => ({ ...p, phone: v }))}
-                  placeholder="+234 000 0000 000" />
-                <Field icon={MapPin} label="Office Location / Address" value={profile.address}
-                  onChange={v => setProfile(p => ({ ...p, address: v }))}
-                  placeholder="e.g. Block A, Admin Building" />
-              </div>
+              <Field icon={MapPin} label="Office Location / Address" value={profile.address}
+                onChange={v => setProfile(p => ({ ...p, address: v }))}
+                placeholder="e.g. Block A, Admin Building" />
               <div className="flex justify-end pt-2">
                 <button type="submit" disabled={saving}
                   className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm transition-all shadow-md shadow-primary/15 disabled:opacity-50 active:scale-[0.98]">

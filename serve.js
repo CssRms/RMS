@@ -169,6 +169,50 @@ const checkFinalApproveAuthority = (deptName, amount, isMaterial = false) => {
   return null; // Amount outside this department's authorised band
 };
 
+// Lowest authority tier whose band actually covers this amount — used to tell the
+// requester which department needs to re-approve after a price revision.
+const requiredAuthorityTier = (amount, isMaterial = false) => {
+  if (isMaterial) return 'hr'; // material has no cash threshold — any tier already covers it
+  const amt = parseFloat(amount) || 0;
+  if (amt <= 50000) return 'hr';
+  if (amt <= 100000) return 'gm';
+  return 'chairman';
+};
+
+// ── Re-approval escalation ──────────────────────────────────────────────────────
+// Called whenever Audit or ICC saves/changes a verified-amount override. If the new
+// effective amount no longer falls within the band of whoever already gave final
+// approval, the original sign-off no longer covers it — flag the request and block
+// treatment until the correct higher tier (GM/Chairman) confirms. If a later revision
+// brings it back within the original approver's band, the flag clears automatically.
+async function checkAndApplyReapprovalEscalation(requisitionId, newAmount, isMaterial, triggeredByLabel) {
+  const requisition = await prisma.requisition.findUnique({
+    where: { id: requisitionId },
+    include: { finalApprovedByDept: { select: { name: true } } }
+  });
+  if (!requisition?.finalApprovedByDeptId || !requisition.finalApprovedByDept) return null;
+  if (['treated', 'published'].includes(requisition.finalApprovalStatus)) return null; // already settled
+
+  const stillAuthorized = checkFinalApproveAuthority(requisition.finalApprovedByDept.name, newAmount, isMaterial);
+  if (stillAuthorized) {
+    if (requisition.needsReapproval) {
+      await prisma.requisition.update({
+        where: { id: requisitionId },
+        data: { needsReapproval: false, reapprovalAuthority: null, reapprovalReason: null }
+      });
+    }
+    return null;
+  }
+
+  const requiredTier = requiredAuthorityTier(newAmount, isMaterial);
+  const reason = `Revised to ₦${Number(newAmount).toLocaleString()} by ${triggeredByLabel} — exceeds ${requisition.finalApprovedByDept.name}'s approval ceiling. Requires ${requiredTier.toUpperCase()} re-approval before treatment.`;
+  await prisma.requisition.update({
+    where: { id: requisitionId },
+    data: { needsReapproval: true, reapprovalAuthority: requiredTier, reapprovalReason: reason }
+  });
+  return { requiredTier, reason };
+}
+
 // ── Sub-account privilege helpers ─────────────────────────────────────────────
 // Returns the amount that should be compared against privilege limits.
 // Uses audit-overridden amount when Audit has verified the table, otherwise original.
@@ -5348,6 +5392,72 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── Re-approval — confirms a price revision that exceeded the original approver's band ──
+// Only the department whose tier actually covers the current amount (or admin) may clear
+// the flag. Does NOT re-run the full final-approval workflow — it's a one-click
+// acknowledgement that the higher authority has seen and accepts the revised amount.
+app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const parsed = z.object({ note: z.string().optional() }).safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload' });
+    const { note } = parsed.data;
+
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+
+    let deptName = req.user.deptName || req.user.name || '';
+    if (!deptName && userDeptId) {
+      const d = await prisma.department.findUnique({ where: { id: userDeptId }, select: { name: true } });
+      deptName = d?.name || '';
+    }
+    let authorityDeptName = deptName;
+    if (req.user.isSubAccount && req.user.parentDeptId) {
+      const parentDept = await prisma.department.findUnique({
+        where: { id: parseInt(req.user.parentDeptId) }, select: { name: true }
+      });
+      if (parentDept) authorityDeptName = parentDept.name;
+    }
+
+    const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+    if (!requisition.needsReapproval) return res.status(400).json({ error: 'This request is not awaiting re-approval.' });
+
+    const n = authorityDeptName.toLowerCase();
+    const tierMatches = {
+      gm: /general\s*manager|\bgm\b/i.test(n),
+      chairman: /ceo|chairman/i.test(n),
+    };
+    // Chairman authority always satisfies any required tier; GM only satisfies a GM requirement.
+    const satisfies = isAdmin || tierMatches.chairman || (requisition.reapprovalAuthority === 'gm' && tierMatches.gm);
+    if (!satisfies) {
+      return res.status(403).json({ error: `Only ${(requisition.reapprovalAuthority || 'a higher').toUpperCase()} (or Chairman/Admin) can clear this re-approval.` });
+    }
+
+    const updated = await prisma.requisition.update({
+      where: { id: reqId },
+      data: {
+        needsReapproval: false,
+        reapprovedAt: new Date(),
+        reapprovedByDeptId: userDeptId || null,
+        reapprovalReason: note ? `${requisition.reapprovalReason || ''}\nRe-approved by ${deptName}: ${note}`.trim() : requisition.reapprovalReason,
+      }
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'Re-Approved',
+        details: `Req #${reqId} re-approved by ${deptName}.${note ? ` Note: ${note}` : ''}`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'reapproved', fromDept: deptName });
+    pushToTaggedDepts(reqId, { title: 'Requisition Re-Approved', body: `Req #${reqId} has been re-approved and can now be treated.`, url: `/?req=${reqId}` });
+    res.json(updated);
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 // ── Send to Vetting (after final approval) ────────────────────────────────────
 app.post('/api/requisitions/:id/send-to-vetting', authenticateToken, async (req, res) => {
   try {
@@ -5519,6 +5629,15 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
 
     if (!canAct) {
       return res.status(403).json({ error: 'You are not authorized to perform vetting actions for this requisition.' });
+    }
+
+    // Re-approval escalation — a later price revision (Audit/ICC override) pushed the
+    // effective amount past the band of whoever already gave final approval. Block
+    // treatment entirely until the correct higher tier confirms via /reapprove.
+    if (action === 'treated' && requisition.needsReapproval) {
+      return res.status(403).json({
+        error: requisition.reapprovalReason || `This request needs ${(requisition.reapprovalAuthority || 'higher-tier').toUpperCase()} re-approval before it can be treated — the price was revised after final approval.`
+      });
     }
 
     // ICC Vets Protocol — Account and CEO/Chairman cannot treat a Cash/Material request
@@ -5829,7 +5948,7 @@ app.post('/api/requisitions/:id/audit-override', authenticateToken, async (req, 
 
     const requisition = await prisma.requisition.findUnique({
       where: { id: reqId },
-      select: { id: true, title: true, departmentId: true, targetDepartmentId: true, status: true }
+      select: { id: true, title: true, departmentId: true, targetDepartmentId: true, status: true, type: true }
     });
     if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
 
@@ -5837,6 +5956,7 @@ app.post('/api/requisitions/:id/audit-override', authenticateToken, async (req, 
     if (!isAdmin && requisition.targetDepartmentId !== userDeptId) {
       return res.status(403).json({ error: 'Your department does not currently hold this requisition.' });
     }
+    const isMaterialReq = /^material/i.test(requisition.type || '');
 
     const parsed = z.object({
       items: z.array(z.object({
@@ -5887,6 +6007,14 @@ app.post('/api/requisitions/:id/audit-override', authenticateToken, async (req, 
       }
     });
 
+    const escalation = await checkAndApplyReapprovalEscalation(reqId, auditTotal, isMaterialReq, actingDept?.name || 'Audit')
+      .catch(e => { logger.warn('[REAPPROVAL] Escalation check failed:', e.message); return null; });
+    if (escalation) {
+      await prisma.activityLog.create({
+        data: { action: 'Re-Approval Required', details: `Req #${reqId}: ${escalation.reason}` }
+      }).catch(() => {});
+    }
+
     broadcastUpdate(reqId, { action: 'audit_override', fromDept: actingDept?.name || 'Audit' });
     pushToTaggedDepts(reqId, {
       title: 'Audit Verified Amount Set',
@@ -5894,7 +6022,7 @@ app.post('/api/requisitions/:id/audit-override', authenticateToken, async (req, 
       url: `/?req=${reqId}`
     });
 
-    res.json({ success: true, auditAmount: auditTotal });
+    res.json({ success: true, auditAmount: auditTotal, reapprovalRequired: !!escalation });
   } catch (error) { sendError(res, 500, error.message); }
 });
 
@@ -6086,6 +6214,12 @@ app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, 
 
     await prisma.requisition.update({ where: { id: reqId }, data: updateData });
 
+    let escalation = null;
+    if (iccTotal != null) {
+      escalation = await checkAndApplyReapprovalEscalation(reqId, iccTotal, isMaterialOrMemo, actingDept?.name || 'ICC')
+        .catch(e => { logger.warn('[REAPPROVAL] Escalation check failed:', e.message); return null; });
+    }
+
     await prisma.vettingEvent.create({
       data: {
         requisitionId: reqId,
@@ -6104,6 +6238,11 @@ app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, 
         details: `Req #${reqId} returned to ${returnDept.name} by ICC.${iccTotal != null ? ` ICC verified total: ₦${iccTotal.toLocaleString()}.` : ''}`
       }
     });
+    if (escalation) {
+      await prisma.activityLog.create({
+        data: { action: 'Re-Approval Required', details: `Req #${reqId}: ${escalation.reason}` }
+      }).catch(() => {});
+    }
 
     broadcastUpdate(reqId, { action: 'icc_vet_return', fromDept: actingDept?.name || 'ICC', toDept: returnDept.name });
     notifyDepartmentHead({
@@ -6121,7 +6260,7 @@ app.post('/api/requisitions/:id/icc-vet-return', authenticateToken, async (req, 
       url: `/?req=${reqId}`
     });
 
-    res.json({ success: true, iccAmount: iccTotal });
+    res.json({ success: true, iccAmount: iccTotal, reapprovalRequired: !!escalation });
   } catch (error) { sendError(res, 500, error.message); }
 });
 
@@ -6480,10 +6619,13 @@ app.get('/api/department/profile', authenticateToken, async (req, res) => {
 app.put('/api/department/profile', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'department' || !req.user.deptId) return res.status(403).json({ error: 'Forbidden' });
-    const { headName, headEmail, headTitle, phone, address } = req.body;
+    // Name, Email, Phone, and Staff ID are identity fields locked to the registered head/
+    // sub-account — only ICT/Super Admin can change them (via Department Manager or
+    // Sub-Accounts). Self-service here only covers Job Title and Address.
+    const { headTitle, address } = req.body;
     const updated = await prisma.department.update({
       where: { id: req.user.deptId },
-      data: { headName, headEmail, headTitle, phone, address }
+      data: { headTitle, address }
     });
     res.json(updated);
   } catch (error) { sendError(res, 500, error.message); }
@@ -6697,6 +6839,14 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
       `;
       Object.assign(ext, iccVetRows?.[0] || {});
     } catch (_) { /* ICC Vets Protocol columns not yet migrated — default: not cleared */ }
+    // Re-approval escalation fields — separate try/catch so a missing column never breaks anything above
+    try {
+      const reapprovalRows = await prisma.$queryRaw`
+        SELECT "needsReapproval", "reapprovalAuthority", "reapprovalReason", "reapprovedAt", "reapprovedByDeptId"
+        FROM "Requisition" WHERE id = ${parseInt(id)} LIMIT 1
+      `;
+      Object.assign(ext, reapprovalRows?.[0] || {});
+    } catch (_) { /* reapproval columns not yet migrated — default: not flagged */ }
     // ICC freeze fields — separate try/catch so a missing column never breaks access control above
     try {
       const iccRows = await prisma.$queryRaw`
@@ -6782,6 +6932,23 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         orderBy: { createdAt: 'asc' }
       });
     } catch (_) {}
+
+    // Resolve each vetting event's acting department to its head's name/title —
+    // VettingEvent only stores deptId, no relation, so look these up in one batch.
+    const vettingDeptIds = [...new Set(vettingEvents.map(e => e.deptId).filter(Boolean))];
+    const vettingDeptMap = vettingDeptIds.length
+      ? Object.fromEntries((await prisma.department.findMany({
+          where: { id: { in: vettingDeptIds } },
+          select: { id: true, headName: true, headTitle: true }
+        })).map(d => [d.id, d]))
+      : {};
+
+    // "By [Full Name] [Title/Position]" — falls back to just the name if no title is
+    // set, and to the department/actorName string if no head has been registered at all.
+    const formatActorLabel = (headName, headTitle, fallback) => {
+      if (headName) return headTitle ? `${headName} (${headTitle})` : headName;
+      return fallback || 'Department';
+    };
 
     // ── PDF Setup ──────────────────────────────────────
     const pdfDoc = await PDFDocument.create();
@@ -7525,8 +7692,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         textY -= 13;
 
         page.drawText(`Date: ${evtDateStr}`, { x: margin + 30, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
-        if (evt.actorName) {
-          page.drawText(sanitizeText(`By: ${evt.actorName}`), { x: margin + 220, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
+        const fwdActorLabel = formatActorLabel(evt.fromDepartment?.headName, evt.fromDepartment?.headTitle, evt.actorName);
+        if (fwdActorLabel) {
+          page.drawText(sanitizeText(`By: ${fwdActorLabel}`), { x: margin + 220, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
         }
         textY -= 13;
 
@@ -7639,8 +7807,10 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         textY -= 13;
 
         page.drawText(`Date: ${evtDateStr}`, { x: margin + 30, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
-        if (evt.actorName) {
-          page.drawText(sanitizeText(`By: ${evt.actorName}`), { x: margin + 220, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
+        const vDept = vettingDeptMap[evt.deptId];
+        const vetActorLabel = formatActorLabel(vDept?.headName, vDept?.headTitle, evt.actorName || evt.deptName);
+        if (vetActorLabel) {
+          page.drawText(sanitizeText(`By: ${vetActorLabel}`), { x: margin + 220, y: textY, size: 8, font: italicFont, color: rgb(0.4, 0.4, 0.4) });
         }
         textY -= 13;
 

@@ -68,6 +68,7 @@ model Department {
   finalApprovedRequisitions Requisition[] @relation("FinalApprover")
   treatedRequisitions       Requisition[] @relation("TreatedBy")
   currentVettingRequisitions Requisition[] @relation("CurrentVetting")
+  reapprovedRequisitions     Requisition[] @relation("Reapprover")
   canPrint             Boolean          @default(true)
   subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
   storeRecords         StoreRecord[]
@@ -153,6 +154,17 @@ model Requisition {
   amountDisbursed       Float?
   treatmentType         String?
   treatmentReason       String?
+
+  // Re-approval escalation — a later price revision (Audit or ICC override) can push the
+  // effective amount past the band of whoever already gave final approval. Rather than
+  // silently letting Account treat an amount nobody at the right authority signed off on,
+  // the request gets flagged here and treatment is blocked until the correct tier confirms.
+  needsReapproval      Boolean   @default(false)
+  reapprovalAuthority  String?   // 'gm' | 'chairman' — tier required to clear the flag
+  reapprovalReason     String?   @db.Text
+  reapprovedAt         DateTime?
+  reapprovedByDeptId   Int?
+  reapprovedByDept     Department? @relation("Reapprover", fields: [reapprovedByDeptId], references: [id])
   vettingEvents         VettingEvent[]
   tags                  RequisitionTag[]
 

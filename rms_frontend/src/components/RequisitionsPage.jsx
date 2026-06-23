@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, reapproveRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { loadCachedFlag } from '../lib/featureFlag';
 import { useAIFeatures } from '../context/AIFeaturesContext';
@@ -3813,6 +3813,49 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                 </div>
               )}
 
+              {/* Re-approval required — a later price revision pushed the effective amount past
+                  the band of whoever already gave final approval. Blocks treatment server-side
+                  regardless of this banner; the button only appears for whoever can clear it. */}
+              {!!detail?.needsReapproval && !loading && (() => {
+                const requiredTier = detail.reapprovalAuthority;
+                const n = (user?.name || '').toLowerCase();
+                const isAdmin = user?.role === 'global_admin';
+                const isGM = /general\s*manager|\bgm\b/i.test(n);
+                const isChairman = /ceo|chairman/i.test(n);
+                const canClear = isAdmin || isChairman || (requiredTier === 'gm' && isGM);
+                return (
+                  <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 border-2 border-amber-300 rounded-2xl p-4 bg-amber-50/70 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500" />
+                    <div className="flex items-center gap-2 pl-1 mb-1">
+                      <AlertTriangle size={14} className="text-amber-700" />
+                      <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">
+                        Re-Approval Required {requiredTier ? `— ${requiredTier.toUpperCase()}` : ''}
+                      </p>
+                    </div>
+                    <p className="text-xs text-amber-700/85 leading-relaxed pl-1">
+                      {detail.reapprovalReason || 'The verified amount was revised after final approval and now exceeds the original approver\'s authority. Treatment is blocked until the correct tier confirms.'}
+                    </p>
+                    {canClear && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await reapproveRequisition(req.id);
+                            toast.success('Re-approved — Account can now treat this request.');
+                            getRequisitionDetail(req.id).then(d => setDetail(d));
+                            onAction();
+                          } catch (err) {
+                            toast.error(err?.response?.data?.error || 'Could not re-approve.');
+                          }
+                        }}
+                        className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm"
+                      >
+                        <CheckCircle2 size={12} /> Confirm Re-Approval
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Frozen notice for non-ICC depts — action panels below are hidden when frozen */}
               {isFrozen && !isIccUser && !loading && (
                 <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 border-2 border-red-300 rounded-2xl p-4 bg-red-50/70 shadow-sm relative overflow-hidden">
@@ -5365,20 +5408,18 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                                 <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">{pName}</span>
                               ) : null;
                             })()}
-                            {(() => {
-                              // The actual current holder — must reflect ICC vetting hops too, not
-                              // just targetDepartment (which doesn't change during Account → ICC → Account).
-                              const isDone = ['treated', 'published'].includes(r.finalApprovalStatus);
-                              const currentHolderName = isDone
-                                ? (r.treatedByDept?.name || r.targetDepartment?.name)
-                                : (r.currentVettingDept?.name || r.targetDepartment?.name);
-                              return currentHolderName ? (
-                                <>
-                                  <ArrowRight size={9} className="text-muted-foreground/30" />
-                                  <span className="font-black text-primary uppercase tracking-tight">{currentHolderName}</span>
-                                </>
-                              ) : null;
-                            })()}
+                            {r.targetDepartment?.name && (
+                              <>
+                                <ArrowRight size={9} className="text-muted-foreground/30" />
+                                <span className="font-black text-primary uppercase tracking-tight">{r.targetDepartment.name}</span>
+                              </>
+                            )}
+                            {r.treatedByDept?.name && r.treatedByDept.name !== r.targetDepartment?.name && (
+                              <>
+                                <ArrowRight size={9} className="text-muted-foreground/30" />
+                                <span className="font-black text-teal-600 uppercase tracking-tight">{r.treatedByDept.name}</span>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
