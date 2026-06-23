@@ -17,7 +17,7 @@ import {
   Building2, ArrowRight, ArrowLeft, History, Download, AlertTriangle,
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
   CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked, Users,
-  Lock, Unlock, ShieldAlert, MessageCircle, Check
+  Lock, Unlock, ShieldAlert, MessageCircle, Check, Shield
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
 
