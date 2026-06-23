@@ -193,6 +193,13 @@ async function checkAndApplyReapprovalEscalation(requisitionId, newAmount, isMat
   if (!requisition?.finalApprovedByDeptId || !requisition.finalApprovedByDept) return null;
   if (['treated', 'published'].includes(requisition.finalApprovalStatus)) return null; // already settled
 
+  // Already reapproved at this EXACT amount — don't re-flag it. The original approver's
+  // band never covers this figure (that's why it escalated in the first place), so
+  // re-deriving authority from them every time would immediately undo a confirmed
+  // re-approval the next time anyone simply views the request. Only a genuinely NEW
+  // revision (a different amount) should trigger a fresh escalation.
+  if (requisition.reapprovedAt && requisition.reapprovedAmount === newAmount) return null;
+
   const stillAuthorized = checkFinalApproveAuthority(requisition.finalApprovedByDept.name, newAmount, isMaterial);
   if (stillAuthorized) {
     if (requisition.needsReapproval) {
@@ -5501,6 +5508,9 @@ app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) 
     // Route it straight back to whoever forwarded it here, if anyone did — otherwise leave
     // current routing untouched (e.g. it was confirmed without ever being formally forwarded).
     const returnToDeptId = requisition.reapprovalForwardedFromDeptId || null;
+    // Record the exact amount being confirmed — future re-checks compare against this so
+    // confirming doesn't get silently undone the next time anyone views the request.
+    const confirmedAmount = getEffectiveReqAmount(requisition);
 
     const updated = await prisma.requisition.update({
       where: { id: reqId },
@@ -5508,6 +5518,7 @@ app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) 
         needsReapproval: false,
         reapprovedAt: new Date(),
         reapprovedByDeptId: userDeptId || null,
+        reapprovedAmount: confirmedAmount,
         reapprovalReason: note ? `${requisition.reapprovalReason || ''}\nRe-approved by ${deptName}: ${note}`.trim() : requisition.reapprovalReason,
         reapprovalForwardedFromDeptId: null,
         ...(returnToDeptId ? { currentVettingDeptId: returnToDeptId } : {}),

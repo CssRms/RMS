@@ -3233,6 +3233,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const [approveChecked, setApproveChecked] = useState(false);
   const [tagModal, setTagModal]     = useState(false);
   const [auditGate, setAuditGate]   = useState(null); // { authorityLabel } when active, else null
+  const [reapprovalNote, setReapprovalNote] = useState('');
+  const [reapproving, setReapproving] = useState(false);
   const fileInputRef                = React.useRef(null);
   const paymentSectionRef           = React.useRef(null);
   const approvalSectionRef          = React.useRef(null);
@@ -3873,21 +3875,34 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                       {detail.reapprovalReason || 'The verified amount was revised after final approval and now exceeds the original approver\'s authority. Treatment is blocked until the correct tier confirms.'}
                     </p>
                     {canClear && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            await reapproveRequisition(req.id);
-                            toast.success('Re-approved — Account can now treat this request.');
-                            getRequisitionDetail(req.id).then(d => setDetail(d));
-                            onAction();
-                          } catch (err) {
-                            toast.error(err?.response?.data?.error || 'Could not re-approve.');
-                          }
-                        }}
-                        className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm"
-                      >
-                        <CheckCircle2 size={12} /> Confirm Re-Approval
-                      </button>
+                      <div className="mt-3 space-y-2">
+                        <textarea
+                          value={reapprovalNote}
+                          onChange={e => setReapprovalNote(e.target.value)}
+                          rows={2}
+                          placeholder="Optional note for the record (e.g. reason for accepting the revised amount)…"
+                          className="w-full text-xs border border-amber-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 resize-none"
+                        />
+                        <button
+                          onClick={async () => {
+                            setReapproving(true);
+                            try {
+                              await reapproveRequisition(req.id, reapprovalNote.trim());
+                              toast.success('Re-approved — Account can now treat this request.');
+                              setReapprovalNote('');
+                              getRequisitionDetail(req.id).then(d => setDetail(d));
+                              onAction();
+                            } catch (err) {
+                              toast.error(err?.response?.data?.error || 'Could not re-approve.');
+                            } finally { setReapproving(false); }
+                          }}
+                          disabled={reapproving}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+                        >
+                          {reapproving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                          {reapproving ? 'Confirming…' : 'Confirm Re-Approval'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 );

@@ -165,6 +165,10 @@ model Requisition {
   reapprovedAt         DateTime?
   reapprovedByDeptId   Int?
   reapprovedByDept     Department? @relation("Reapprover", fields: [reapprovedByDeptId], references: [id])
+  // The exact effective amount that was reapproved — re-checks compare against THIS, not
+  // just the original approver's band, so confirming doesn't get silently undone the next
+  // time anyone views the request (the amount itself never changes after confirmation).
+  reapprovedAmount     Float?
   // Whoever forwarded the request to the required tier for re-approval — so confirming
   // re-approval can automatically route it straight back to them instead of stranding it.
   reapprovalForwardedFromDeptId Int?
