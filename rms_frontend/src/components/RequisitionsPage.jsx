@@ -2215,6 +2215,11 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   if (finalApprovalStatus === 'treated') return null;
 
   // ── ICC Vets Protocol gate ──────────────────────────────────────────────────
+  // A later price revision pushed the effective amount past the original approver's
+  // authority band — block the entire treat/forward/return panel. The banner above
+  // (rendered by the parent) already shows the reason and, if eligible, a Confirm button.
+  if (detail?.needsReapproval) return null;
+
   // Account and CEO/Chairman cannot treat a Cash/Material request until ICC has vetted
   // and returned it, unless their department has been individually exempted via System
   // Settings. Their only action here is to forward to ICC (or return up the chain as usual).

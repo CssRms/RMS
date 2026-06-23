@@ -5632,12 +5632,18 @@ app.post('/api/requisitions/:id/vetting-action', authenticateToken, upload.singl
     }
 
     // Re-approval escalation — a later price revision (Audit/ICC override) pushed the
-    // effective amount past the band of whoever already gave final approval. Block
-    // treatment entirely until the correct higher tier confirms via /reapprove.
-    if (action === 'treated' && requisition.needsReapproval) {
-      return res.status(403).json({
-        error: requisition.reapprovalReason || `This request needs ${(requisition.reapprovalAuthority || 'higher-tier').toUpperCase()} re-approval before it can be treated — the price was revised after final approval.`
-      });
+    // effective amount past the band of whoever already gave final approval. Re-check
+    // live here (not just trust the stored flag) so records whose override predates this
+    // control, or drifted for any other reason, are still caught before money moves.
+    if (action === 'treated') {
+      const liveEscalation = await checkAndApplyReapprovalEscalation(
+        reqId, getEffectiveReqAmount(requisition), isMaterialReq, 'a prior price revision'
+      ).catch(() => null);
+      if (liveEscalation || requisition.needsReapproval) {
+        return res.status(403).json({
+          error: liveEscalation?.reason || requisition.reapprovalReason || `This request needs ${(liveEscalation?.requiredTier || requisition.reapprovalAuthority || 'higher-tier').toUpperCase()} re-approval before it can be treated — the price was revised after final approval.`
+        });
+      }
     }
 
     // ICC Vets Protocol — Account and CEO/Chairman cannot treat a Cash/Material request
@@ -6847,6 +6853,23 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
       `;
       Object.assign(ext, reapprovalRows?.[0] || {});
     } catch (_) { /* reapproval columns not yet migrated — default: not flagged */ }
+    // Self-healing re-check — catches records whose override was saved before this control
+    // existed (or any other reason the flag drifted from the current effective amount),
+    // without needing a one-off backfill migration. Cheap: only writes when state changes.
+    try {
+      const effectiveAmount = getEffectiveReqAmount({ ...requisition, ...ext });
+      const isMaterialForCheck = /^material/i.test(requisition.type || '');
+      const escalation = await checkAndApplyReapprovalEscalation(parseInt(id), effectiveAmount, isMaterialForCheck, ext.hasIccOverride ? (ext.iccOverrideDeptName || 'ICC') : (ext.auditDeptName || 'Audit'));
+      if (escalation) {
+        ext.needsReapproval = true;
+        ext.reapprovalAuthority = escalation.requiredTier;
+        ext.reapprovalReason = escalation.reason;
+      } else if (ext.needsReapproval) {
+        ext.needsReapproval = false;
+        ext.reapprovalAuthority = null;
+        ext.reapprovalReason = null;
+      }
+    } catch (_) { /* escalation re-check is best-effort — never block viewing the requisition */ }
     // ICC freeze fields — separate try/catch so a missing column never breaks access control above
     try {
       const iccRows = await prisma.$queryRaw`
