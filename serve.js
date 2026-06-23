@@ -4825,7 +4825,7 @@ app.post('/api/admin/hard-reset', authenticateToken, async (req, res) => {
         // Prefer accessCodeLabel (the "original code" store); fall back to the legacy
         // plain-text accessCode column for departments that predate the label column.
         const codeToRestore = d.accessCodeLabel || d.accessCode;
-        const data = { headName: null, headTitle: null, headEmail: null, phone: null, address: null, codeChangedByDept: false };
+        const data = { headName: null, headTitle: null, headEmail: null, phone: null, address: null, staffId: null, codeChangedByDept: false };
         if (codeToRestore) {
           data.accessCodeHash = await bcrypt.hash(codeToRestore, 10);
           // Backfill accessCodeLabel so future resets always work without the fallback
