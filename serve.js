@@ -5444,6 +5444,16 @@ app.post('/api/requisitions/:id/forward-for-reapproval', authenticateToken, asyn
       ? await prisma.department.findUnique({ where: { id: effectiveDeptId }, select: { name: true } })
       : null;
 
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: effectiveDeptId || 0,
+        deptName: actingDept?.name || 'Department',
+        action: 'forwarded_for_reapproval',
+        actorName: req.user?.name || actingDept?.name || 'Department',
+      }
+    });
+
     await prisma.activityLog.create({
       data: {
         userId: getNumericUserId(req.user) || null,
@@ -5522,6 +5532,17 @@ app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) 
         reapprovalReason: note ? `${requisition.reapprovalReason || ''}\nRe-approved by ${deptName}: ${note}`.trim() : requisition.reapprovalReason,
         reapprovalForwardedFromDeptId: null,
         ...(returnToDeptId ? { currentVettingDeptId: returnToDeptId } : {}),
+      }
+    });
+
+    await prisma.vettingEvent.create({
+      data: {
+        requisitionId: reqId,
+        deptId: userDeptId || 0,
+        deptName: deptName || 'Department',
+        action: 'reapproved',
+        comment: note || null,
+        actorName: req.user?.name || deptName || 'Department',
       }
     });
 
@@ -7886,7 +7907,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         if (action === 'treated')          return 'TREATED';
         if (action === 'icc_vet_forward')  return 'FORWARDED TO ICC';
         if (action === 'icc_vet_return')   return 'ICC VETTING COMPLETE';
-        return action.toUpperCase();
+        if (action === 'forwarded_for_reapproval') return 'FORWARDED FOR RE-APPROVAL';
+        if (action === 'reapproved')       return 'RE-APPROVED';
+        return (action || '').toUpperCase().replace(/_/g, ' ');
       };
       const vActionColor = (action) => {
         if (action === 'treated')          return rgb(0.1, 0.5, 0.2);
@@ -7894,6 +7917,8 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
         if (action === 'sent_to_vetting')  return rgb(0.35, 0.1, 0.55);
         if (action === 'icc_vet_forward')  return rgb(0.45, 0.25, 0.75);
         if (action === 'icc_vet_return')   return rgb(0.1, 0.5, 0.2);
+        if (action === 'forwarded_for_reapproval') return rgb(0.8, 0.55, 0);
+        if (action === 'reapproved')       return rgb(0.1, 0.5, 0.2);
         return rgb(0.1, 0.35, 0.7);
       };
 

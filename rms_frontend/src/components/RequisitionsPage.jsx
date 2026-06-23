@@ -4677,6 +4677,20 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                           badgeColor = 'bg-emerald-100 text-emerald-700';
                           iconColor = 'bg-emerald-500';
                           description = 'ICC lifted the freeze — processing resumed.';
+                        } else if (ev.action === 'forwarded_for_reapproval') {
+                          fromLabel = ev.deptName;
+                          toLabel = null;
+                          badgeText = 'Forwarded for Re-Approval';
+                          badgeColor = 'bg-amber-100 text-amber-700';
+                          iconColor = 'bg-amber-500';
+                          description = `${fromLabel} forwarded this requisition for re-approval after a price revision.`;
+                        } else if (ev.action === 'reapproved') {
+                          fromLabel = ev.deptName;
+                          toLabel = null;
+                          badgeText = 'Re-Approved';
+                          badgeColor = 'bg-emerald-100 text-emerald-700';
+                          iconColor = 'bg-emerald-500';
+                          description = `${fromLabel} re-approved the revised amount — treatment can proceed.${ev.comment ? ` Note: "${ev.comment}"` : ''}`;
                         } else {
                           fromLabel = ev.deptName;
                           toLabel = null;
