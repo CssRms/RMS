@@ -5,7 +5,7 @@ import ApprovalActionPanel from './ApprovalActionPanel';
 import ConfirmModal from './ConfirmModal';
 import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
-import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, reapproveRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
+import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, reapproveRequisition, forwardForReapproval, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { loadCachedFlag } from '../lib/featureFlag';
 import { useAIFeatures } from '../context/AIFeaturesContext';
@@ -2132,6 +2132,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const [treatInitiated, setTreatInitiated] = useState(false);
   const [paymentType, setPaymentType]       = useState(''); // 'full' | 'partial'
   const [kivActing, setKivActing]           = useState(false);
+  const [forwardingForReapproval, setForwardingForReapproval] = useState(false);
   // ICC Vets Protocol bypass flags — default null/false (gate applies) until confirmed,
   // since the safe default is to keep the ICC gate enforced.
   const [accountIccBypass, setAccountIccBypass] = useState(null);
@@ -2207,6 +2208,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   const isAudit    = /\baudit\b/i.test(deptName) || _isAuditSub;
   const isAccount  = /\baccount\b/i.test(deptName) || _isAccountSub;
   const isChairman = /ceo|chairman/i.test(deptName);
+  const isGM       = /general\s*manager|\bgm\b/i.test(deptName);
 
   // Only the active vetting dept sees this panel
   if (!isCurrentVetter) return null;
@@ -2214,11 +2216,41 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
   if (!_accountHoldsMaterial && !_accountHoldsAuditReviewed && (!finalApprovalStatus || finalApprovalStatus === 'none')) return null;
   if (finalApprovalStatus === 'treated') return null;
 
-  // ── ICC Vets Protocol gate ──────────────────────────────────────────────────
+  // ── Re-approval gate ─────────────────────────────────────────────────────────
   // A later price revision pushed the effective amount past the original approver's
-  // authority band — block the entire treat/forward/return panel. The banner above
-  // (rendered by the parent) already shows the reason and, if eligible, a Confirm button.
-  if (detail?.needsReapproval) return null;
+  // authority band. The normal treat/forward/return panel is fully blocked — the only
+  // action available is forwarding it to whoever holds the required tier. If the current
+  // viewer's own department already satisfies that tier, the banner above (rendered by
+  // the parent) already gives them the Confirm button directly — nothing to show here.
+  if (detail?.needsReapproval) {
+    const requiredTier = detail.reapprovalAuthority;
+    const alreadyAtRequiredTier = isChairman || (requiredTier === 'gm' && isGM);
+    if (alreadyAtRequiredTier) return null;
+    return (
+      <div className="border-2 border-amber-200 rounded-2xl p-4 bg-amber-50/40 space-y-3">
+        <p className="text-xs text-amber-800 leading-relaxed">
+          This request needs {(requiredTier || 'higher-tier').toUpperCase()} re-approval before it can be treated. Forward it there now so they can confirm.
+        </p>
+        <button
+          onClick={async () => {
+            setForwardingForReapproval(true);
+            try {
+              const res = await forwardForReapproval(req.id);
+              toast.success(`Forwarded to ${res.forwardedTo} for re-approval.`);
+              onDone();
+            } catch (err) {
+              toast.error(err?.response?.data?.error || 'Could not forward for re-approval.');
+            } finally { setForwardingForReapproval(false); }
+          }}
+          disabled={forwardingForReapproval}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+        >
+          {forwardingForReapproval ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+          {forwardingForReapproval ? 'Forwarding…' : `Forward for ${(requiredTier || '').toUpperCase()} Re-Approval`}
+        </button>
+      </div>
+    );
+  }
 
   // Account and CEO/Chairman cannot treat a Cash/Material request until ICC has vetted
   // and returned it, unless their department has been individually exempted via System

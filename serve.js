@@ -261,6 +261,14 @@ function subPrivilegeCoversCash(user, effectiveAmount) {
 // ── ICC helpers ───────────────────────────────────────────────────────────────
 const isIccDept = (name) => /\bicc\b|internal.*control|control.*compliance/i.test(name || '');
 
+// Resolves the department that actually holds a given authority tier — used to route a
+// request to whoever needs to clear a re-approval. Chairman/CEO satisfies any tier.
+async function resolveAuthorityDept(tier) {
+  const allDepts = await prisma.department.findMany({ where: { isSubAccount: false }, select: { id: true, name: true } });
+  if (tier === 'gm') return allDepts.find(d => /general\s*manager|\bgm\b/i.test(d.name)) || allDepts.find(d => /ceo|chairman/i.test(d.name)) || null;
+  return allDepts.find(d => /ceo|chairman/i.test(d.name)) || null;
+}
+
 // ICC is a global observer — it must be notified of every request and every
 // movement/routing event system-wide, not just ones it's directly involved in.
 // Cached briefly since the ICC department record rarely changes.
@@ -5396,6 +5404,62 @@ app.post('/api/requisitions/:id/final-approve', authenticateToken, async (req, r
 // Only the department whose tier actually covers the current amount (or admin) may clear
 // the flag. Does NOT re-run the full final-approval workflow — it's a one-click
 // acknowledgement that the higher authority has seen and accepts the revised amount.
+// ── Forward for re-approval — the only action available while needsReapproval is set ──
+// Routes the request to whoever actually holds the required tier (GM or Chairman), so it
+// lands in their queue instead of requiring them to stumble onto it independently.
+app.post('/api/requisitions/:id/forward-for-reapproval', authenticateToken, async (req, res) => {
+  try {
+    const reqId = parseInt(req.params.id);
+    const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const effectiveDeptId = req.user.isSubAccount ? parseInt(req.user.parentDeptId) : userDeptId;
+
+    const requisition = await prisma.requisition.findUnique({ where: { id: reqId } });
+    if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+    if (!requisition.needsReapproval) return res.status(400).json({ error: 'This request is not awaiting re-approval.' });
+
+    const holdsIt = isAdmin
+      || requisition.currentVettingDeptId === effectiveDeptId
+      || requisition.targetDepartmentId === effectiveDeptId;
+    if (!holdsIt) return res.status(403).json({ error: 'Your department does not currently hold this requisition.' });
+
+    const authorityDept = await resolveAuthorityDept(requisition.reapprovalAuthority);
+    if (!authorityDept) {
+      return res.status(500).json({ error: `No ${(requisition.reapprovalAuthority || 'authority').toUpperCase()} department found in the system.` });
+    }
+
+    await prisma.requisition.update({
+      where: { id: reqId },
+      data: { currentVettingDeptId: authorityDept.id, reapprovalForwardedFromDeptId: effectiveDeptId || null }
+    });
+
+    const actingDept = effectiveDeptId
+      ? await prisma.department.findUnique({ where: { id: effectiveDeptId }, select: { name: true } })
+      : null;
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'Forwarded for Re-Approval',
+        details: `Req #${reqId} forwarded to ${authorityDept.name} for ${(requisition.reapprovalAuthority || '').toUpperCase()} re-approval.`
+      }
+    });
+
+    broadcastUpdate(reqId, { action: 'forwarded_for_reapproval', fromDept: actingDept?.name || 'Department', toDept: authorityDept.name });
+    notifyDepartmentHead({
+      departmentId: authorityDept.id,
+      subject: `Re-Approval Needed — Req #${reqId}`,
+      lines: [
+        `A request requires your re-approval before it can be treated.`,
+        requisition.reapprovalReason || 'The verified amount was revised after final approval.',
+      ].filter(Boolean)
+    }).catch(() => {});
+    pushToTaggedDepts(reqId, { title: 'Re-Approval Needed', body: `Req #${reqId} needs ${authorityDept.name}'s re-approval.`, url: `/?req=${reqId}` });
+
+    res.json({ success: true, forwardedTo: authorityDept.name });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) => {
   try {
     const reqId = parseInt(req.params.id);
@@ -5434,6 +5498,10 @@ app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) 
       return res.status(403).json({ error: `Only ${(requisition.reapprovalAuthority || 'a higher').toUpperCase()} (or Chairman/Admin) can clear this re-approval.` });
     }
 
+    // Route it straight back to whoever forwarded it here, if anyone did — otherwise leave
+    // current routing untouched (e.g. it was confirmed without ever being formally forwarded).
+    const returnToDeptId = requisition.reapprovalForwardedFromDeptId || null;
+
     const updated = await prisma.requisition.update({
       where: { id: reqId },
       data: {
@@ -5441,6 +5509,8 @@ app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) 
         reapprovedAt: new Date(),
         reapprovedByDeptId: userDeptId || null,
         reapprovalReason: note ? `${requisition.reapprovalReason || ''}\nRe-approved by ${deptName}: ${note}`.trim() : requisition.reapprovalReason,
+        reapprovalForwardedFromDeptId: null,
+        ...(returnToDeptId ? { currentVettingDeptId: returnToDeptId } : {}),
       }
     });
 
@@ -5448,11 +5518,18 @@ app.post('/api/requisitions/:id/reapprove', authenticateToken, async (req, res) 
       data: {
         userId: getNumericUserId(req.user) || null,
         action: 'Re-Approved',
-        details: `Req #${reqId} re-approved by ${deptName}.${note ? ` Note: ${note}` : ''}`
+        details: `Req #${reqId} re-approved by ${deptName}.${note ? ` Note: ${note}` : ''}${returnToDeptId ? ' Routed back for treatment.' : ''}`
       }
     });
 
     broadcastUpdate(reqId, { action: 'reapproved', fromDept: deptName });
+    if (returnToDeptId) {
+      notifyDepartmentHead({
+        departmentId: returnToDeptId,
+        subject: `Re-Approved — Req #${reqId}`,
+        lines: [`${deptName} has re-approved this request. You can now treat it.`]
+      }).catch(() => {});
+    }
     pushToTaggedDepts(reqId, { title: 'Requisition Re-Approved', body: `Req #${reqId} has been re-approved and can now be treated.`, url: `/?req=${reqId}` });
     res.json(updated);
   } catch (error) { sendError(res, 500, error.message); }

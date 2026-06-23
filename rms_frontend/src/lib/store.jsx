@@ -737,6 +737,10 @@ export async function reapproveRequisition(reqId, note = '') {
   return vettingAPI.reapprove(reqId, note);
 }
 
+export async function forwardForReapproval(reqId) {
+  return vettingAPI.forwardForReapproval(reqId);
+}
+
 export async function sendToVettingRequisition(reqId, vettingDeptId) {
   try {
     return await vettingAPI.sendToVetting(reqId, vettingDeptId);
