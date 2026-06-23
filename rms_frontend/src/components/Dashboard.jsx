@@ -558,7 +558,7 @@ const Dashboard = ({ onViewChange }) => {
                   <table className="w-full text-left border-separate border-spacing-y-2">
                     <thead>
                       <tr className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
-                        <th className="pb-4 px-6">Reference</th>
+                        <th className="pb-4 px-6">S/N</th>
                         <th className="pb-4 px-6">Module Type</th>
                         <th className="pb-4 px-6">Registry Item</th>
                         <th className="pb-4 px-6">Payload</th>
