@@ -2873,10 +2873,8 @@ const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onTog
 
   const [rows, setRows]                 = useState(initRows);
   const [showTable, setShowTable]       = useState(!isMaterialReq && !!detail?.hasIccOverride);
-  // Only ICC's own prior comment carries over — Audit's comment is intentionally NOT
-  // pre-filled alongside the table figures, since it belongs to a different department's note.
-  const [tableComment, setTableComment] = useState(existingOverride?.comment || '');
-  const [note, setNote]                 = useState('');
+  // Single comment box — pre-fills from ICC's own prior note if they already set an override.
+  const [note, setNote]                 = useState(existingOverride?.comment || '');
   const [acting, setActing]             = useState(false);
 
   const calcLineTotal = (row) => (parseFloat(row.qty) || 0) * (parseFloat(row.amount) || 0);
@@ -2900,7 +2898,8 @@ const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onTog
       await iccVetReturn(req.id, {
         comment: note.trim() || undefined,
         overrideItems,
-        overrideComment: overrideItems ? (tableComment.trim() || undefined) : undefined,
+        // Single comment box now — the Vetting Note doubles as the table's comment too.
+        overrideComment: overrideItems ? (note.trim() || undefined) : undefined,
       });
       toast.success(`Vetting complete — returned to ${forwarderLabel} for treatment.`);
       onDone();
@@ -2926,7 +2925,7 @@ const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onTog
       {expanded && (
       <>
       <p className="text-[11px] text-violet-700/80 leading-relaxed pl-1">
-        {forwarderLabel} has forwarded this request to ICC for vetting before treatment.
+        {forwarderLabel} has forwarded this request to your department for vetting before treatment.
         {isMaterialReq ? ` Review and return it to ${forwarderLabel} when ready.` : ' You may optionally set a verified price table — it will take priority for payment.'}
       </p>
 
@@ -2989,9 +2988,6 @@ const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onTog
               <button onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-bold text-violet-700 hover:text-violet-900 transition-colors pl-1">
                 <Plus size={13} /> Add Row
               </button>
-              <textarea value={tableComment} onChange={e => setTableComment(e.target.value)} rows={2}
-                placeholder="Comment on the verified table (optional)…"
-                className="w-full text-xs border border-border/50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none" />
               {!detail?.hasIccOverride && (
                 <button onClick={() => setShowTable(false)} className="text-[10px] font-bold text-muted-foreground hover:text-foreground">Cancel table</button>
               )}
