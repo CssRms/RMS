@@ -2843,7 +2843,7 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
         sendEmail({ to: updated.headEmail, subject, text, html }).catch(() => {});
         sendSms({
           to: updated.phone,
-          message: `CSS RMS: Your account for ${updated.name} is now active. Staff ID: ${updated.staffId || 'N/A'}. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
+          message: `HELLO ${updated.headName}: You've been assigned to work with ${updated.name} department. Your Staff ID: ${updated.staffId || 'N/A'}. Access Code: ${accessCode}. Use the access code to Login and create your personal password to access your dashboard. BEST REGARDS FROM CSS RMS:`,
         }).catch(() => {});
       } else {
         const subject = 'Your Department Profile Was Updated';
@@ -3141,17 +3141,18 @@ const resolveParentId = (req) => {
   return parseInt(req.user.deptId);
 };
 
-// Pattern: first 2 letters of name (uppercase) + 2 random digits, unique across all dept accessCodeLabels
+// Pattern: first 2 letters of name (uppercase) + 4 random digits (6 chars total), unique
+// across all dept accessCodeLabels
 const generateUniqueAccessCode = async (name) => {
   const prefix = (name || '').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase().padEnd(2, 'X');
   for (let i = 0; i < 50; i++) {
-    const digits = String(Math.floor(Math.random() * 100)).padStart(2, '0');
+    const digits = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
     const code = prefix + digits;
     const clash = await prisma.department.findFirst({ where: { accessCodeLabel: code } });
     if (!clash) return code;
   }
-  // Extremely unlikely fallback if all 100 combos are taken
-  return prefix + String(Math.floor(Math.random() * 9000) + 1000);
+  // Extremely unlikely fallback if all 10,000 combos are taken
+  return prefix + String(Math.floor(Math.random() * 900000) + 100000);
 };
 
 // List ALL sub-accounts across all depts (admin only) OR for a specific parent
@@ -3469,16 +3470,23 @@ app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountM
       const headRow = rows[0];
       subAccountRows = rows.slice(1);
       const headFullName = [headRow.surname, headRow.firstName, headRow.otherName].filter(Boolean).join(' ');
-      const headAccessCode = await generateUniqueAccessCode(parent.name);
-      const headHash = await bcrypt.hash(headAccessCode, 10);
-      const updatedParent = await prisma.department.update({
-        where: { id: parent.id },
-        data: {
-          headName: headFullName, headTitle: headRow.title || null, headEmail: headRow.email,
-          phone: headRow.phone, staffId: headRow.staffId,
-          accessCodeHash: headHash, accessCodeLabel: headAccessCode, accessCode: null,
-        }
-      });
+      // The department already has its own login code from creation (e.g. "AUDIT-2026"),
+      // even though no head's personal details were filled in yet. Batch upload should only
+      // attach the head's identity to that existing code, never silently replace it — only
+      // generate a fresh one if the department truly never had one set.
+      const existingCode = parent.accessCodeLabel || parent.accessCode;
+      let headAccessCode = existingCode;
+      const updateData = {
+        headName: headFullName, headTitle: headRow.title || null, headEmail: headRow.email,
+        phone: headRow.phone, staffId: headRow.staffId,
+      };
+      if (!existingCode) {
+        headAccessCode = await generateUniqueAccessCode(parent.name);
+        updateData.accessCodeHash = await bcrypt.hash(headAccessCode, 10);
+        updateData.accessCodeLabel = headAccessCode;
+        updateData.accessCode = null;
+      }
+      const updatedParent = await prisma.department.update({ where: { id: parent.id }, data: updateData });
       results.headAssigned = { name: headFullName, staffId: headRow.staffId, email: headRow.email, accessCode: headAccessCode };
 
       setImmediate(async () => {
