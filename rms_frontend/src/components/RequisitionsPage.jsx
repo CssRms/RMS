@@ -16,7 +16,7 @@ import {
   ArrowRightCircle, CornerDownLeft, Loader2, Send, Trash2, Printer,
   Building2, ArrowRight, ArrowLeft, History, Download, AlertTriangle,
   ExternalLink, ArrowDownToLine, MessageSquare, RotateCcw, Forward as ForwardIcon,
-  CheckCircle2, Award, ChevronDown, Gavel, Zap, Trash, BookMarked, Users,
+  CheckCircle2, Award, ChevronDown, ChevronUp, Gavel, Zap, Trash, BookMarked, Users,
   Lock, Unlock, ShieldAlert, MessageCircle, Check, Shield
 } from 'lucide-react';
 import { reqAPI, forwardAPI } from '../lib/api';
@@ -1578,7 +1578,7 @@ const VettingSelectionModal = ({ reqId, user, departments, onClose, onDone }) =>
 // ── ICC Observer Panel ────────────────────────────────────────────────────────
 // Shown to ICC on every request EXCEPT ones ICC itself created.
 // Allows: leave a comment (non-blocking) OR freeze the request (blocks all actions).
-const IccObserverPanel = ({ req, detail, onDone }) => {
+const IccObserverPanel = ({ req, detail, onDone, expanded = true, onToggleExpand = null }) => {
   const [comment, setComment] = useState('');
   const [freezeNote, setFreezeNote] = useState('');
   const [kivNote, setKivNote] = useState('');
@@ -1635,7 +1635,10 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
       <div className={`absolute top-0 left-0 w-1 h-full ${frozen ? 'bg-red-500' : 'bg-indigo-500'}`} />
       <div className="p-4 pl-5">
         {/* Header */}
-        <div className="flex items-center justify-between mb-3">
+        <div
+          className={`flex items-center justify-between mb-3 ${onToggleExpand ? 'cursor-pointer' : ''}`}
+          onClick={onToggleExpand || undefined}
+        >
           <div className="flex items-center gap-2">
             <ShieldAlert size={14} className={frozen ? 'text-red-700' : 'text-indigo-700'} />
             <p className={`text-[10px] font-black uppercase tracking-widest ${frozen ? 'text-red-800' : 'text-indigo-800'}`}>
@@ -1647,8 +1650,13 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
               </span>
             )}
           </div>
+          {onToggleExpand && (
+            expanded ? <ChevronUp size={14} className={frozen ? 'text-red-700' : 'text-indigo-700'} /> : <ChevronDown size={14} className={frozen ? 'text-red-700' : 'text-indigo-700'} />
+          )}
         </div>
 
+        {expanded && (
+        <>
         {/* Unfreeze section (shown when frozen) */}
         {frozen && (
           <div className="mb-4 p-3 rounded-xl bg-red-100/70 border border-red-200 space-y-2">
@@ -1811,6 +1819,8 @@ const IccObserverPanel = ({ req, detail, onDone }) => {
               </div>
             </div>
           )
+        )}
+        </>
         )}
       </div>
     </div>
@@ -2830,7 +2840,7 @@ const VettingPanel = ({ req, detail, user, departments, onDone, onTreatInitiated
 // Audit's pre-approval override, just positioned later — and ICC's table takes
 // priority over Audit's per getEffectiveReqAmount). Material requests just get
 // a plain vet + return — no table alteration.
-const IccVetsPanel = ({ req, detail, departments, onDone }) => {
+const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onToggleExpand = null }) => {
   const _fmt = n => `₦${Number(n || 0).toLocaleString()}`;
   const isMaterialReq = /^material/i.test(req?.type || '');
   const forwarderDeptId = detail?.iccForwardedFromDeptId ? parseInt(detail.iccForwardedFromDeptId) : null;
@@ -2900,11 +2910,19 @@ const IccVetsPanel = ({ req, detail, departments, onDone }) => {
   return (
     <div className="space-y-3 border border-violet-200 rounded-2xl p-4 bg-violet-50/50 shadow-sm relative overflow-hidden">
       <div className="absolute top-0 left-0 w-1 h-full bg-violet-500" />
-      <div className="flex items-center gap-2 pl-1 flex-wrap">
+      <div className={`flex items-center gap-2 pl-1 flex-wrap ${onToggleExpand ? 'cursor-pointer' : ''}`} onClick={onToggleExpand || undefined}>
         <Gavel size={14} className="text-violet-700" />
         <p className="text-[10px] font-black text-violet-800 uppercase tracking-widest">ICC Vets Protocol</p>
-        <span className="ml-auto px-2 py-0.5 rounded-full bg-violet-100 border border-violet-300 text-[9px] font-black text-violet-700 uppercase">Awaiting Your Vetting</span>
+        <span className="px-2 py-0.5 rounded-full bg-violet-100 border border-violet-300 text-[9px] font-black text-violet-700 uppercase">Awaiting Your Vetting</span>
+        {onToggleExpand && (
+          <span className="ml-auto">
+            {expanded ? <ChevronUp size={14} className="text-violet-700" /> : <ChevronDown size={14} className="text-violet-700" />}
+          </span>
+        )}
       </div>
+
+      {expanded && (
+      <>
       <p className="text-[11px] text-violet-700/80 leading-relaxed pl-1">
         {forwarderLabel} has forwarded this request to ICC for vetting before treatment.
         {isMaterialReq ? ` Review and return it to ${forwarderLabel} when ready.` : ' You may optionally set a verified price table — it will take priority for payment.'}
@@ -2996,6 +3014,8 @@ const IccVetsPanel = ({ req, detail, departments, onDone }) => {
         {acting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
         Complete Vetting — Return to {forwarderLabel}
       </button>
+      </>
+      )}
     </div>
   );
 };
@@ -3228,6 +3248,9 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
   const paymentSectionRef           = React.useRef(null);
   const approvalSectionRef          = React.useRef(null);
   const [accountPaymentMode, setAccountPaymentMode] = useState(false); // true when Account checks 'Set Payment Amount'
+  // Only one of the two ICC panels (Observer comment/freeze, Vets Protocol) may be open at
+  // once — expanding one collapses the other. null = both collapsed.
+  const [expandedIccPanel, setExpandedIccPanel] = useState(null); // 'observer' | 'vets' | null
 
   useEffect(() => {
     let cancelled = false;
@@ -3828,6 +3851,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                   <IccObserverPanel
                     req={req}
                     detail={detail}
+                    expanded={expandedIccPanel === 'observer'}
+                    onToggleExpand={() => setExpandedIccPanel(p => p === 'observer' ? null : 'observer')}
                     onDone={() => {
                       getRequisitionDetail(req.id).then(d => setDetail(d));
                       onAction();
@@ -3940,6 +3965,8 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
                     req={req}
                     detail={detail}
                     departments={departments}
+                    expanded={expandedIccPanel === 'vets'}
+                    onToggleExpand={() => setExpandedIccPanel(p => p === 'vets' ? null : 'vets')}
                     onDone={() => {
                       getRequisitionDetail(req.id).then(d => setDetail(d));
                       onAction();
