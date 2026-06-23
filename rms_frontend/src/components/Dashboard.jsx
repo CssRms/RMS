@@ -87,13 +87,17 @@ const Dashboard = ({ onViewChange }) => {
     const DONE_STATES = ['treated', 'published'];
     const pendingForMe = all.filter(r => {
       const isDone = DONE_STATES.includes(r.finalApprovalStatus);
+      // Admin gets total oversight regardless of deptId — Super Admin's login is itself
+      // backed by a real Department row ("Super Admin"), so userDeptId is NOT null/falsy
+      // for admin; gating on `!userDeptId` silently fell through to the narrow
+      // per-department filter below and made every admin stat read zero.
       if (isDone) {
-        if (isAdmin && !userDeptId) return true;
+        if (isAdmin) return true;
         if (!userDeptId) return false;
         return Number(r.currentVettingDeptId) === userDeptId ||
                (isExecutive && Number(r.finalApprovedByDeptId) === userDeptId);
       }
-      if (isAdmin && !userDeptId) {
+      if (isAdmin) {
         return r.status === 'pending' || r.finalApprovalStatus === 'vetting' ||
           (r.status === 'approved' && (!r.finalApprovalStatus || r.finalApprovalStatus === 'none'));
       }

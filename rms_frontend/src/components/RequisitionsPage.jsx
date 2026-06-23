@@ -5365,18 +5365,20 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                                 <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">{pName}</span>
                               ) : null;
                             })()}
-                            {r.targetDepartment?.name && (
-                              <>
-                                <ArrowRight size={9} className="text-muted-foreground/30" />
-                                <span className="font-black text-primary uppercase tracking-tight">{r.targetDepartment.name}</span>
-                              </>
-                            )}
-                            {r.treatedByDept?.name && r.treatedByDept.name !== r.targetDepartment?.name && (
-                              <>
-                                <ArrowRight size={9} className="text-muted-foreground/30" />
-                                <span className="font-black text-teal-600 uppercase tracking-tight">{r.treatedByDept.name}</span>
-                              </>
-                            )}
+                            {(() => {
+                              // The actual current holder — must reflect ICC vetting hops too, not
+                              // just targetDepartment (which doesn't change during Account → ICC → Account).
+                              const isDone = ['treated', 'published'].includes(r.finalApprovalStatus);
+                              const currentHolderName = isDone
+                                ? (r.treatedByDept?.name || r.targetDepartment?.name)
+                                : (r.currentVettingDept?.name || r.targetDepartment?.name);
+                              return currentHolderName ? (
+                                <>
+                                  <ArrowRight size={9} className="text-muted-foreground/30" />
+                                  <span className="font-black text-primary uppercase tracking-tight">{currentHolderName}</span>
+                                </>
+                              ) : null;
+                            })()}
                           </div>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">

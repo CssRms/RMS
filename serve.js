@@ -7899,6 +7899,7 @@ app.get('/api/requisitions', authenticateToken, async (req, res) => {
         include: {
           department: { select: { name: true, isSubAccount: true, headName: true, parentId: true, parent: { select: { name: true } } } },
           targetDepartment: { select: { name: true, headEmail: true } },
+          currentVettingDept: { select: { name: true } },
           treatedByDept: { select: { name: true } },
           creator: { select: { name: true } },
           currentStage: true,

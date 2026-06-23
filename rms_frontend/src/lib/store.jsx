@@ -401,7 +401,11 @@ export async function getDashboardStats(user) {
   // "Pending" on dashboard means items still awaiting this dept's action
   const pendingActions = all.filter(r => {
     if (DONE_STATES.includes(r.finalApprovalStatus)) return false; // fully processed
-    if (isAdmin && !userDeptId) {
+    // Admin gets total oversight regardless of deptId — Super Admin's login is itself
+    // backed by a real Department row ("Super Admin"), so userDeptId is NOT null/falsy
+    // for admin; gating this branch on `!userDeptId` silently fell through to the narrow
+    // per-department filter below and made every admin stat read zero.
+    if (isAdmin) {
       return r.status === 'pending' || r.finalApprovalStatus === 'vetting' ||
         (r.status === 'approved' && (!r.finalApprovalStatus || r.finalApprovalStatus === 'none'));
     }

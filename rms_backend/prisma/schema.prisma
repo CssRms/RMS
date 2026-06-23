@@ -67,6 +67,7 @@ model Department {
   forwardEventsTo      ForwardEvent[]   @relation("ForwardTo")
   finalApprovedRequisitions Requisition[] @relation("FinalApprover")
   treatedRequisitions       Requisition[] @relation("TreatedBy")
+  currentVettingRequisitions Requisition[] @relation("CurrentVetting")
   canPrint             Boolean          @default(true)
   subVisibilities      RequisitionSubVisibility[] @relation("SubVisibility")
   storeRecords         StoreRecord[]
@@ -145,6 +146,7 @@ model Requisition {
   finalApprovedAt       DateTime?
   finalApprovedNote     String?
   currentVettingDeptId  Int?
+  currentVettingDept    Department?    @relation("CurrentVetting", fields: [currentVettingDeptId], references: [id])
   treatedByDeptId       Int?
   treatedByDept         Department?    @relation("TreatedBy", fields: [treatedByDeptId], references: [id])
   treatedAt             DateTime?
