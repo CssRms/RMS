@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { settingsAPI } from '../lib/api';
+import { loadFeatureFlag } from '../lib/featureFlag';
 
 const AIFeaturesContext = createContext({ aiEnabled: false, refreshAI: () => {} });
 
@@ -13,14 +13,9 @@ export const AIFeaturesProvider = ({ children }) => {
   const fetchSetting = useCallback(async () => {
     // Skip if not authenticated — avoids 401 → refresh → reload loop on login screen
     if (!localStorage.getItem('rms_user')) return;
-    try {
-      const res = await settingsAPI.get('ai_features_enabled');
-      // Treat null/missing as enabled; only explicitly 'false' disables
-      setAiEnabled(res?.value !== 'false');
-    } catch {
-      // Network error — fail open rather than leaving buttons hidden indefinitely
-      setAiEnabled(prev => prev === null ? true : prev);
-    }
+    // Falls back to the last known good cached value on a network failure, not blindly
+    // to "enabled" — so a feature an admin disabled doesn't get exposed by a network blip.
+    setAiEnabled(await loadFeatureFlag('ai_features_enabled'));
   }, []);
 
   useEffect(() => {

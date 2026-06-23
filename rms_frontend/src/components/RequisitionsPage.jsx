@@ -7,6 +7,7 @@ import VoiceDictation from './VoiceDictation';
 import { useAuth } from '../context/AuthContext';
 import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
+import { loadCachedFlag } from '../lib/featureFlag';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import {
@@ -4877,14 +4878,19 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [data, depts, printAccess] = await Promise.all([
+      const [data, depts, canPrintResolved] = await Promise.all([
         getOperationalRequisitions(),
         getDepartments(),
-        printSettingsAPI.getAccess().catch(() => ({ canPrint: true })),
+        // Falls back to the last known good cached value on a network failure, not blindly
+        // to "enabled" — so a disabled Print button doesn't get exposed by a network blip.
+        loadCachedFlag('canPrint', async () => {
+          const res = await printSettingsAPI.getAccess();
+          return res?.canPrint !== false;
+        }),
       ]);
       setRequisitions(data);
       setDepartments(depts);
-      setCanPrint(printAccess?.canPrint !== false);
+      setCanPrint(canPrintResolved);
       setLastSyncedAt(new Date());
       setSyncStale(false);
       if (!silent) setLoading(false);

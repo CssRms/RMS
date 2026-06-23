@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord, getDepartments } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
+import { loadFeatureFlag } from '../lib/featureFlag';
 import ChatWidget from './ChatWidget';
 
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
@@ -992,36 +993,20 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const [chatDeepLink, setChatDeepLink] = useState(null);
 
   useEffect(() => {
+    // Each flag falls back to its last known good cached value on a network failure —
+    // never blindly to "enabled" — so a feature an admin disabled doesn't get exposed
+    // just because the device went offline or the network hiccuped.
     const loadFeatureFlags = async () => {
-      try {
-        const [hrRes, studioRes, storeRes, iccOversightRes] = await Promise.allSettled([
-          settingsAPI.get('hr_portal_enabled'),
-          settingsAPI.get('document_studio_enabled'),
-          settingsAPI.get('store_records_enabled'),
-          settingsAPI.get('icc_oversight_enabled'),
-        ]);
-        if (hrRes.status === 'fulfilled' && hrRes.value?.value !== undefined)
-          setHrPortalEnabled(hrRes.value.value !== 'false');
-        else
-          setHrPortalEnabled(true); // fail open — don't leave the button permanently hidden over a network blip
-        if (studioRes.status === 'fulfilled' && studioRes.value?.value !== undefined)
-          setStudioEnabled(studioRes.value.value !== 'false');
-        else
-          setStudioEnabled(true);
-        if (storeRes.status === 'fulfilled' && storeRes.value?.value !== undefined)
-          setStoreRecordsEnabled(storeRes.value.value !== 'false');
-        else
-          setStoreRecordsEnabled(true); // default enabled if setting not yet saved
-        if (iccOversightRes.status === 'fulfilled' && iccOversightRes.value?.value !== undefined)
-          setIccOversightEnabled(iccOversightRes.value.value !== 'false');
-        else
-          setIccOversightEnabled(true);
-      } catch {
-        setHrPortalEnabled(true);
-        setStudioEnabled(true);
-        setStoreRecordsEnabled(true);
-        setIccOversightEnabled(true);
-      }
+      const [hr, studio, store, iccOversight] = await Promise.all([
+        loadFeatureFlag('hr_portal_enabled'),
+        loadFeatureFlag('document_studio_enabled'),
+        loadFeatureFlag('store_records_enabled'),
+        loadFeatureFlag('icc_oversight_enabled'),
+      ]);
+      setHrPortalEnabled(hr);
+      setStudioEnabled(studio);
+      setStoreRecordsEnabled(store);
+      setIccOversightEnabled(iccOversight);
     };
     loadFeatureFlags();
   }, []);

@@ -1785,9 +1785,9 @@ app.get('/api/departments', async (req, res) => {
     const departments = await prisma.department.findMany({
       orderBy: { name: 'asc' },
       select: isGlobalAdmin
-        ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
+        ? { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
         : isAuthenticated
-          ? { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true, privilegeAmount: true, approvalLimit: true }
+          ? { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true, privilegeAmount: true, approvalLimit: true }
           : { id: true, name: true, type: true, code: true }
     });
     res.json(departments);
@@ -1813,7 +1813,7 @@ app.get('/api/departments/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const department = await prisma.department.findUnique({
       where: { id: parseInt(id) },
-      select: { id: true, name: true, type: true, code: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
+      select: { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true }
     });
     if (!department) return res.status(404).json({ error: 'Department not found' });
     if (req.user.role === 'department' && req.user.deptId && department.id !== req.user.deptId) {

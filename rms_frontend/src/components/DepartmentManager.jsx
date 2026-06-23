@@ -8,7 +8,8 @@ import {
   Upload, PenTool, AlertTriangle, ShieldAlert, ShieldCheck
 } from 'lucide-react';
 import { getDepartments, addDepartment, deleteDepartment } from '../lib/store';
-import { deptAPI, reqAPI, settingsAPI } from '../lib/api';
+import { deptAPI, reqAPI } from '../lib/api';
+import { loadFeatureFlag } from '../lib/featureFlag';
 import { toast } from 'react-hot-toast';
 import ConfirmModal from './ConfirmModal';
 
@@ -396,9 +397,9 @@ const DepartmentManager = ({ onViewChange }) => {
   useEffect(() => { loadDepts(); }, []);
 
   useEffect(() => {
-    settingsAPI.get('dept_creation_head_details_enabled')
-      .then(res => setDeptCreationHeadDetailsEnabled(res?.value !== 'false'))
-      .catch(() => setDeptCreationHeadDetailsEnabled(true)); // fail open — don't get stuck hidden over a network blip
+    // Falls back to the last known good cached value on a network failure, not blindly
+    // to "enabled" — so a disabled feature doesn't get exposed by a network blip.
+    loadFeatureFlag('dept_creation_head_details_enabled').then(setDeptCreationHeadDetailsEnabled);
   }, []);
 
   const handleAddSubmit = async (e) => {

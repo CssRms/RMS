@@ -5,7 +5,8 @@ import {
   ShieldAlert, Building2, ChevronDown, ChevronUp, ShieldCheck, Award, Trash2,
   FileText, User, Mail, Hash, Clock, Route, Globe, Lock, ArrowUp, ArrowDown, Crown
 } from 'lucide-react';
-import { subAccountAPI, deptAPI, settingsAPI } from '../lib/api';
+import { subAccountAPI, deptAPI } from '../lib/api';
+import { loadFeatureFlag } from '../lib/featureFlag';
 import { toast } from 'react-hot-toast';
 
 // ── tiny helpers ──────────────────────────────────────────────────────────────
@@ -1013,18 +1014,12 @@ const SubAccountsPanel = ({ isAdmin = false }) => {
 
   useEffect(() => {
     if (isAdmin) return; // admin is never gated by these settings
-    Promise.allSettled([
-      settingsAPI.get('heads_can_manage_subaccounts'),
-      settingsAPI.get('heads_can_set_subaccount_privileges'),
-    ]).then(([manageRes, privRes]) => {
-      if (manageRes.status === 'fulfilled' && manageRes.value?.value !== undefined)
-        setCanManage(manageRes.value.value !== 'false');
-      if (privRes.status === 'fulfilled' && privRes.value?.value !== undefined)
-        setCanSetPrivileges(privRes.value.value !== 'false');
-      // Fail open on rejection — don't leave the UI permanently hidden over a network blip
-      if (manageRes.status !== 'fulfilled') setCanManage(true);
-      if (privRes.status !== 'fulfilled') setCanSetPrivileges(true);
-    }).catch(() => { setCanManage(true); setCanSetPrivileges(true); });
+    // Falls back to the last known good cached value on a network failure, not blindly
+    // to "enabled" — so a feature Super Admin disabled doesn't get exposed by a network blip.
+    Promise.all([
+      loadFeatureFlag('heads_can_manage_subaccounts'),
+      loadFeatureFlag('heads_can_set_subaccount_privileges'),
+    ]).then(([manage, priv]) => { setCanManage(manage); setCanSetPrivileges(priv); });
   }, [isAdmin]);
 
   useEffect(() => {
