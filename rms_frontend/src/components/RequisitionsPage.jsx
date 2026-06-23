@@ -2873,7 +2873,9 @@ const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onTog
 
   const [rows, setRows]                 = useState(initRows);
   const [showTable, setShowTable]       = useState(!isMaterialReq && !!detail?.hasIccOverride);
-  const [tableComment, setTableComment] = useState(existingOverride?.comment || auditOverrideForPrefill?.comment || '');
+  // Only ICC's own prior comment carries over — Audit's comment is intentionally NOT
+  // pre-filled alongside the table figures, since it belongs to a different department's note.
+  const [tableComment, setTableComment] = useState(existingOverride?.comment || '');
   const [note, setNote]                 = useState('');
   const [acting, setActing]             = useState(false);
 
@@ -2932,7 +2934,7 @@ const IccVetsPanel = ({ req, detail, departments, onDone, expanded = true, onTog
         <>
           {!showTable ? (
             <button onClick={() => setShowTable(true)} className="text-[10px] font-bold text-violet-700 hover:text-violet-900 hover:bg-violet-50 border border-violet-200 px-2.5 py-1 rounded-lg transition-all">
-              {detail?.hasIccOverride ? 'Edit Verified Table' : 'Set Verified Price Table'}
+              {detail?.hasIccOverride ? 'Edit Verified Table' : 'Alter Table'}
             </button>
           ) : (
             <div className="space-y-3">
