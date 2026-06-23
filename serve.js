@@ -2723,7 +2723,7 @@ app.post('/api/departments', authenticateToken, requireRoles(['global_admin']), 
         sendEmail({ to: dept.headEmail, subject, text, html }).catch(() => {});
         sendSms({
           to: dept.phone,
-          message: `CSS RMS: Your account for ${dept.name} is now active. Staff ID: ${dept.staffId || 'N/A'}. Access Code: ${accessCode}. Log in then create your password to access your dashboard. - RMS Administrator`,
+          message: `HELLO ${dept.headName}: Welcome to RMS portal, ${dept.name} department. Staff ID: ${dept.staffId || 'N/A'}. Access Code: ${accessCode}. Use the access code to login then create your personal password to access your dashboard.`,
         }).catch(() => {});
 
         if (SUPER_ADMIN_EMAIL) {
@@ -2843,7 +2843,7 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
         sendEmail({ to: updated.headEmail, subject, text, html }).catch(() => {});
         sendSms({
           to: updated.phone,
-          message: `HELLO ${updated.headName}: You've been assigned to work with ${updated.name} department. Your Staff ID: ${updated.staffId || 'N/A'}. Access Code: ${accessCode}. Use the access code to Login and create your personal password to access your dashboard. BEST REGARDS FROM CSS RMS:`,
+          message: `HELLO ${updated.headName}: Welcome to RMS portal, ${updated.name} department. Staff ID: ${updated.staffId || 'N/A'}. Access Code: ${accessCode}. Use the access code to login then create your personal password to access your dashboard.`,
         }).catch(() => {});
       } else {
         const subject = 'Your Department Profile Was Updated';
@@ -3505,7 +3505,7 @@ app.post('/api/sub-accounts/batch-upload', authenticateToken, requireSubAccountM
         ];
         const { text, html } = buildEmailContent({ title: 'Account Activated — Welcome to RMS Portal', lines, actionLabel: 'Open RMS Portal' });
         sendEmail({ to: headRow.email, subject: '[RMS] Account Activated — Welcome to RMS Portal', text, html }).catch(() => {});
-        sendSms({ to: headRow.phone, message: `CSS RMS: Your account for ${parent.name} is now active. Staff ID: ${headRow.staffId}. Access Code: ${headAccessCode}. Log in then create your password. - RMS Administrator` }).catch(() => {});
+        sendSms({ to: headRow.phone, message: `HELLO ${headFullName}: Welcome to RMS portal, ${parent.name} department. Staff ID: ${headRow.staffId}. Access Code: ${headAccessCode}. Use the access code to login then create your personal password to access your dashboard.` }).catch(() => {});
       });
     }
 
