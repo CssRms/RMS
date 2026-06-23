@@ -1642,7 +1642,7 @@ const IccObserverPanel = ({ req, detail, onDone, expanded = true, onToggleExpand
           <div className="flex items-center gap-2">
             <ShieldAlert size={14} className={frozen ? 'text-red-700' : 'text-indigo-700'} />
             <p className={`text-[10px] font-black uppercase tracking-widest ${frozen ? 'text-red-800' : 'text-indigo-800'}`}>
-              ICC — Internal Control & Compliance
+              ICC — FREEZE CONTROL
             </p>
             {frozen && (
               <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-100 border border-red-300 text-red-700 uppercase flex items-center gap-1">
