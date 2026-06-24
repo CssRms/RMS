@@ -20,6 +20,7 @@ import {
 import { aiAPI, deptAPI } from '../lib/api';
 import { toast } from 'react-hot-toast';
 import VoiceDictation from './VoiceDictation';
+import ConfirmModal from './ConfirmModal';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 
 import { 
@@ -355,16 +356,24 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
       : tpl.data;
   };
 
+  const [pendingTemplateKey, setPendingTemplateKey] = useState(null);
+
   const applyTemplate = (key) => {
+    if (editorRef.current && editorRef.current.innerText.trim().length > 0) {
+      setPendingTemplateKey(key);
+      return;
+    }
+    doApplyTemplate(key);
+  };
+
+  const doApplyTemplate = (key) => {
     const tpl = templates[key];
     if (!tpl) return;
-    if (editorRef.current && editorRef.current.innerText.trim().length > 0) {
-      if (!window.confirm('This will replace the current content with the selected template. Continue?')) return;
-    }
     const html = renderTemplateHtml(key);
     if (editorRef.current) editorRef.current.innerHTML = DOMPurify.sanitize(html);
     setTitle(tpl.title);
     setTemplatePickerOpen(false);
+    setPendingTemplateKey(null);
     handleInput();
   };
 
@@ -578,6 +587,17 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!pendingTemplateKey}
+        onClose={() => setPendingTemplateKey(null)}
+        onConfirm={() => doApplyTemplate(pendingTemplateKey)}
+        title="Replace Document Content?"
+        message="This will replace the current content with the selected template. This cannot be undone."
+        confirmText="Replace Content"
+        cancelText="Keep Current Content"
+        type="warning"
+      />
     </div>
   );
 };
