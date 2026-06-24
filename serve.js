@@ -1844,10 +1844,10 @@ app.get('/api/departments', async (req, res) => {
     const departments = await prisma.department.findMany({
       orderBy: { name: 'asc' },
       select: isGlobalAdmin
-        ? { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true }
+        ? { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, accessCode: true, accessCodeLabel: true, codeChangedByDept: true, isSubAccount: true }
         : isAuthenticated
-          ? { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true, privilegeAmount: true, approvalLimit: true }
-          : { id: true, name: true, type: true, code: true }
+          ? { id: true, name: true, type: true, code: true, staffId: true, headName: true, headTitle: true, headEmail: true, phone: true, address: true, parentId: true, stamp: true, directRoute: true, allowedRouteDeptIds: true, privilegeAmount: true, approvalLimit: true, isSubAccount: true }
+          : { id: true, name: true, type: true, code: true, isSubAccount: true }
     });
     res.json(departments);
   } catch (error) { sendError(res, 500, error.message); }
