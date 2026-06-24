@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, reapproveRequisition, forwardForReapproval, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { loadCachedFlag } from '../lib/featureFlag';
-import { getEffectiveAmount, getLiveTrailDepartment } from '../lib/requisitionDisplay';
+import { getEffectiveAmount, getLiveTrailDepartment, normalizeReq } from '../lib/requisitionDisplay';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import {
@@ -4931,18 +4931,6 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
   // Normalize a requisition so department/creator are always strings, not nested objects.
   // isFromSubAccount and deptHeadName are already extracted by store.normalizeRequisitionList
   // before the department object is flattened — don't re-derive them here.
-  const normalizeReq = (r) => ({
-    ...r,
-    department:           r.department?.name ?? r.department ?? r.departmentName ?? '',
-    isFromSubAccount:     r.isFromSubAccount ?? (r.department?.isSubAccount === true),
-    deptHeadName:         r.deptHeadName ?? r.department?.headName ?? '',
-    parentDeptName:       r.parentDeptName ?? r.department?.parent?.name ?? '',
-    visibleToSubAccounts: r.visibleToSubAccounts ?? false,
-    creator:              r.creator?.name ?? r.creator ?? r.creatorName ?? '',
-    currentStageName:     r.currentStage?.name ?? '',
-    finalState:           r.finalApprovalStatus ?? 'none',
-  });
-
   // Always fetch fresh data from server — show cached instantly, then replace with live
   const openReqById = async (id, allReqs) => {
     const list = allReqs || requisitions;

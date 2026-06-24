@@ -4,6 +4,25 @@
 // its own bugfix for what was conceptually the same bug. Import from here instead of
 // re-deriving these values inline — if the business rule ever changes, it changes once.
 
+// Flattens a few API-shape fields (department/creator objects → display strings) and
+// derives finalState. This used to be defined separately in RequisitionsPage.jsx and
+// Dashboard.jsx — the two copies had already drifted (RequisitionsPage's had four extra
+// fields Dashboard's lacked). Unified here; the extra fields are harmless additions for
+// any caller that doesn't use them.
+export function normalizeReq(r) {
+  return {
+    ...r,
+    department:           r.department?.name ?? r.department ?? r.departmentName ?? '',
+    isFromSubAccount:     r.isFromSubAccount ?? (r.department?.isSubAccount === true),
+    deptHeadName:         r.deptHeadName ?? r.department?.headName ?? '',
+    parentDeptName:       r.parentDeptName ?? r.department?.parent?.name ?? '',
+    visibleToSubAccounts: r.visibleToSubAccounts ?? false,
+    creator:              r.creator?.name ?? r.creator ?? r.creatorName ?? '',
+    currentStageName:     r.currentStage?.name ?? '',
+    finalState:           r.finalApprovalStatus ?? 'none',
+  };
+}
+
 // ICC's post-approval price verification takes priority over Audit's earlier pre-approval
 // override (ICC acts later in the real-world process), matching the precedence used in
 // the PDF generator (serve.js) and everywhere else this is computed.

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardStats, getRequisitions, isMemoRecord, isOperationalRequisition } from '../lib/store';
 import { reqAPI, settingsAPI, adminAPI } from '../lib/api';
-import { getEffectiveAmount, getLiveTrailDepartment } from '../lib/requisitionDisplay';
+import { getEffectiveAmount, getLiveTrailDepartment, normalizeReq } from '../lib/requisitionDisplay';
 import toast from 'react-hot-toast';
 import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare } from 'lucide-react';
 
@@ -40,14 +40,6 @@ const statusColors = {
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
 
 // Normalize a requisition so department/creator are always strings, not nested objects.
-const normalizeReq = (r) => ({
-  ...r,
-  department:       r.department?.name ?? r.department ?? r.departmentName ?? '',
-  creator:          r.creator?.name    ?? r.creator    ?? r.creatorName    ?? '',
-  currentStageName: r.currentStage?.name ?? '',
-  finalState:       r.finalApprovalStatus ?? 'none',
-});
-
 const urgencyColors = {
   normal:   'text-muted-foreground',
   urgent:   'text-amber-600 font-bold',
