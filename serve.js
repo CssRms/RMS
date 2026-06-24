@@ -155,6 +155,7 @@ async function sendPushNotification(deptIds, { title, body, url }) {
 // getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash) so these pure rules are
 // unit-testable without starting the server or touching a database — see businessRules.test.js.
 const { checkFinalApproveAuthority, requiredAuthorityTier, getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash } = require('./rms_backend/lib/businessRules');
+const { normalizeRole, toIntOrNull, getNumericUserId } = require('./rms_backend/lib/utils');
 
 // ── Re-approval escalation ──────────────────────────────────────────────────────
 // Called whenever Audit or ICC saves/changes a verified-amount override. If the new
@@ -655,12 +656,6 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-const getNumericUserId = (user) => {
-  if (!user) return null;
-  if (typeof user.id === 'number') return user.id;
-  return null;
-};
-
 // Issue a short-lived (30 s) single-use SSE ticket so the JWT never appears in
 // query strings / server logs. The client POSTs here with the normal Bearer
 // token, gets back a ticket, and opens EventSource with ?ticket=<value>.
@@ -694,14 +689,6 @@ app.delete('/api/push/subscribe', authenticateToken, async (req, res) => {
     res.json({ ok: true });
   } catch (err) { sendError(res, 500, err.message); }
 });
-
-const normalizeRole = (role) => (role || '').toLowerCase();
-
-const toIntOrNull = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  const n = Number.parseInt(String(value), 10);
-  return Number.isNaN(n) ? null : n;
-};
 
 async function getDepartmentLinkedRequisitionIds(deptId) {
   const departmentId = toIntOrNull(deptId);
