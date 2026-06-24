@@ -9,72 +9,72 @@ const formatMemoRef = (deptCode, date) => {
 
 const formatMemoDate = (date) => {
   const d = date || new Date();
-  return `${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}.`;
+  return `${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.`;
 };
 
 const buildMemoTemplate = ({ deptCode, fromLabel, toLabel, subjectLabel, headName, headTitle, date }) => {
   const ref = formatMemoRef(deptCode, date);
   const memoDate = formatMemoDate(date);
-  const toText = (toLabel || 'TARGET DEPARTMENT').toUpperCase();
-  const fromText = (fromLabel || '').toUpperCase();
-  const subjectText = subjectLabel || '[ENTER SUBJECT HERE]';
+  const toText = toLabel || 'Target Department';
+  const fromText = fromLabel || '';
+  const subjectText = subjectLabel || '[Enter subject here]';
   const senderName = headName || '';
   const senderTitle = headTitle || '';
 
   return `
-      <div style="font-family: 'Times New Roman', 'Georgia', serif; max-width: 750px; margin: 0 auto; padding: 40px 50px; color: #1a1a1a; background: white; line-height: 1.5;">
-        
-        <!-- CSS Group Logo & Title -->
-        <div style="text-align: center; margin-bottom: 10px;">
-          <img src="/logo.svg" style="width: 70px; height: auto; margin-bottom: 6px; border-radius: 8px;" />
-          <div style="font-size: 18px; font-weight: 800; letter-spacing: 2px; color: #333;">CSS</div>
-          <div style="font-size: 11px; color: #666; letter-spacing: 1px;">Group</div>
+      <div style="font-family: 'Times New Roman', 'Georgia', serif; max-width: 750px; margin: 0 auto; padding: 40px 50px; color: #1a1a1a; background: white; line-height: 1.5; text-align: justify;">
+
+        <!-- CSS Group Logo (centered) immediately followed by the document title -->
+        <div style="text-align: center; margin-bottom: 2px;">
+          <img src="/logo.svg" style="display: block; margin: 0 auto 4px auto; width: 60px; height: auto; border-radius: 8px;" />
+          <div style="font-size: 16px; font-weight: 800; letter-spacing: 2px; color: #333;">CSS</div>
+          <div style="font-size: 10px; color: #666; letter-spacing: 1px;">Group</div>
         </div>
 
-        <div style="text-align: center; margin-bottom: 25px;">
-          <h2 style="font-size: 16px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">INTERNAL MEMO</h2>
+        <div style="text-align: center; margin: 6px 0 22px 0;">
+          <h2 style="font-size: 16px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">Internal Memo</h2>
         </div>
-        
+
         <!-- Header Fields Block -->
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 13px;">
           <tr>
-            <td style="width: 85px; font-weight: 800; padding: 5px 0; vertical-align: top;">REF:</td>
+            <td style="width: 85px; font-weight: 800; padding: 5px 0; vertical-align: top; text-transform: uppercase;">Ref:</td>
             <td style="padding: 5px 0; border-bottom: 1px solid #999;"><span data-memo-ref>${ref}</span></td>
             <td style="width: 60px;"></td>
-            <td style="width: 180px; font-weight: 800; text-align: right; padding: 5px 0; text-transform: uppercase; border-bottom: 1px solid #999;"><span data-memo-date>${memoDate}</span></td>
+            <td style="width: 180px; font-weight: 800; text-align: right; padding: 5px 0; border-bottom: 1px solid #999;"><span data-memo-date>${memoDate}</span></td>
           </tr>
         </table>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 0; font-size: 13px;">
           <tr>
-            <td style="width: 85px; font-weight: 800; padding: 4px 0;">TO:</td>
-            <td style="padding: 4px 0; font-weight: 700; text-transform: uppercase;"><span data-memo-to>${toText}</span></td>
+            <td style="width: 85px; font-weight: 800; padding: 4px 0; text-transform: uppercase;">To:</td>
+            <td style="padding: 4px 0; font-weight: 700;"><span data-memo-to>${toText}</span></td>
           </tr>
           <tr>
-            <td style="width: 85px; font-weight: 800; padding: 4px 0;">FROM:</td>
-            <td style="padding: 4px 0; text-transform: uppercase;"><span data-memo-from>${fromText}</span></td>
+            <td style="width: 85px; font-weight: 800; padding: 4px 0; text-transform: uppercase;">From:</td>
+            <td style="padding: 4px 0;"><span data-memo-from>${fromText}</span></td>
           </tr>
           <tr>
-            <td style="width: 85px; font-weight: 800; padding: 4px 0; vertical-align: top;">SUBJECT:</td>
-            <td style="padding: 4px 0; font-weight: 800; text-transform: uppercase; border-bottom: 2px solid #333;"><span data-memo-subject>${subjectText}</span></td>
+            <td style="width: 85px; font-weight: 800; padding: 4px 0; vertical-align: top; text-transform: uppercase;">Subject:</td>
+            <td style="padding: 4px 0; font-weight: 800; border-bottom: 2px solid #333;"><span data-memo-subject>${subjectText}</span></td>
           </tr>
         </table>
-        
+
         <hr style="border: none; border-top: 1px solid #333; margin: 8px 0 20px 0;" />
-        
+
         <!-- Body Content -->
         <div style="font-size: 13px; line-height: 1.7; min-height: 300px; text-align: justify;">
-          <p style="text-indent: 40px; margin: 0 0 15px 0;">Following the requests received from Prof. Eric Alao and Prof. I.E Ahaneku for Students Industrial Work Experience Scheme (SIWES) placement for:</p>
-          
-          <ol style="padding-left: 25px; margin: 0 0 20px 0;">
+          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">Following the requests received from Prof. Eric Alao and Prof. I.E Ahaneku for Students Industrial Work Experience Scheme (SIWES) placement for:</p>
+
+          <ol style="padding-left: 25px; margin: 0 0 20px 0; text-align: justify;">
             <li style="margin-bottom: 8px;">Alao Danies Omotayo: A 400-level Agricultural & Bio-systems Engineering student from Landmark University.</li>
             <li style="margin-bottom: 8px;">Agomuo George Chidike: An Agricultural and Bio-resources Engineering student from Michael Okpara University of Agriculture, Umudike.</li>
           </ol>
 
-          <p style="text-indent: 40px; margin: 0 0 15px 0;">I hereby write for allocation of one room in the staff lodge for these two students, to enable them resume by second week of April, 2026.</p>
+          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">I hereby write for allocation of one room in the staff lodge for these two students, to enable them resume by second week of April, 2026.</p>
 
-          <p style="text-indent: 40px; margin: 0 0 15px 0;">Attached to this memo are the official letters of introduction and placement reservation requests for your consideration.</p>
+          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">Attached to this memo are the official letters of introduction and placement reservation requests for your consideration.</p>
         </div>
-        
+
         <!-- Sender Signature Block -->
         <div style="margin-top: 50px; font-size: 13px;">
           <p style="font-weight: 800; margin: 0 0 2px 0; font-size: 14px;"><span data-memo-sender-name>${senderName}</span></p>
@@ -94,39 +94,29 @@ const buildMaterialRequestTemplate = ({ deptCode, fromLabel, toLabel, headName, 
   const yyyy = d.getFullYear();
   const refValue = `CSSG/${(deptCode || 'CSS').toUpperCase()}/MR/${dd}/${mm}/${yyyy}/01`;
   const dateValue = `${dd}/${mm}/${yyyy}`;
-  const fromText = fromLabel || 'ORIGIN DEPARTMENT';
-  const toText = toLabel || 'STORE / PROCUREMENT DEPARTMENT';
+  const fromText = fromLabel || 'Origin Department';
+  const toText = toLabel || 'Store / Procurement Department';
   const senderName = headName || '';
   const senderTitle = headTitle || '';
 
   return `
-      <div style="font-family: 'Times New Roman', 'Georgia', serif; max-width: 750px; margin: 0 auto; padding: 30px 40px; color: #1a1a1a; background: white; border: 2px solid #1a3a6e;">
+      <div style="font-family: 'Times New Roman', 'Georgia', serif; max-width: 750px; margin: 0 auto; padding: 30px 40px; color: #1a1a1a; background: white; border: 2px solid #1a3a6e; text-align: justify;">
 
-        <!-- Company Header -->
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
-          <tr>
-            <td style="width: 50%; vertical-align: middle;">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <img src="/logo.svg" style="width: 70px; height: auto; border-radius: 8px;" />
-                <div>
-                  <div style="font-size: 24px; font-weight: 900; color: #1a3a6e; letter-spacing: 1px; line-height: 1;">CSS</div>
-                  <div style="font-size: 10px; font-weight: 700; color: #1a3a6e; letter-spacing: 0.5px;">Group of Companies</div>
-                </div>
-              </div>
-            </td>
-            <td style="width: 50%; vertical-align: middle; text-align: right; font-size: 10px; color: #333; line-height: 1.5; border-left: 2px solid #1a3a6e; padding-left: 15px;">
-              <div><strong>Km 10, Abuja-Keffi Expressway,</strong></div>
-              <div>Salamu Road, Gora, Nasarawa State.</div>
-              <div><strong>Website:</strong> www.cssgroup.com.ng</div>
-              <div><strong>Email:</strong> info@cssgroup.com.ng</div>
-              <div><strong>Tel:</strong> +234 702 603 3333</div>
-            </td>
-          </tr>
-        </table>
+        <!-- Company Logo (centered) immediately followed by the voucher title -->
+        <div style="text-align: center; margin-bottom: 2px;">
+          <img src="/logo.svg" style="display: block; margin: 0 auto 4px auto; width: 60px; height: auto; border-radius: 8px;" />
+          <div style="font-size: 20px; font-weight: 900; color: #1a3a6e; letter-spacing: 1px; line-height: 1;">CSS</div>
+          <div style="font-size: 9px; font-weight: 700; color: #1a3a6e; letter-spacing: 0.5px;">Group of Companies</div>
+        </div>
+
+        <div style="text-align: center; margin: 8px 0 6px 0; font-size: 9px; color: #333; line-height: 1.5;">
+          Km 10, Abuja-Keffi Expressway, Salamu Road, Gora, Nasarawa State &nbsp;|&nbsp;
+          www.cssgroup.com.ng &nbsp;|&nbsp; info@cssgroup.com.ng &nbsp;|&nbsp; +234 702 603 3333
+        </div>
 
         <!-- Voucher Title -->
         <div style="text-align: center; margin: 10px 0 18px 0;">
-          <h2 style="font-size: 18px; font-weight: 900; font-style: italic; text-decoration: underline; letter-spacing: 3px; text-transform: uppercase; margin: 0; color: #1a1a1a;">MATERIAL REQUEST</h2>
+          <h2 style="font-size: 18px; font-weight: 900; font-style: italic; text-decoration: underline; letter-spacing: 3px; text-transform: uppercase; margin: 0; color: #1a1a1a;">Material Request</h2>
         </div>
 
         <!-- Header Fields — match the PDF print record labels exactly -->
@@ -137,15 +127,15 @@ const buildMaterialRequestTemplate = ({ deptCode, fromLabel, toLabel, headName, 
           </tr>
           <tr>
             <td style="width: 130px; font-weight: 800; padding: 4px 0;">From:</td>
-            <td style="padding: 4px 0; text-transform: uppercase; border-bottom: 1px dotted #666;"><span data-memo-from>${fromText}</span></td>
+            <td style="padding: 4px 0; border-bottom: 1px dotted #666;"><span data-memo-from>${fromText}</span></td>
           </tr>
           <tr>
             <td style="width: 130px; font-weight: 800; padding: 4px 0;">To:</td>
-            <td style="padding: 4px 0; text-transform: uppercase; border-bottom: 1px dotted #666;"><span data-memo-to>${toText}</span></td>
+            <td style="padding: 4px 0; border-bottom: 1px dotted #666;"><span data-memo-to>${toText}</span></td>
           </tr>
           <tr>
             <td style="width: 130px; font-weight: 800; padding: 4px 0;">Title:</td>
-            <td style="padding: 4px 0; font-weight: 800; border-bottom: 1px dotted #666;"><span data-memo-subject>[ENTER REQUEST TITLE HERE]</span></td>
+            <td style="padding: 4px 0; font-weight: 800; border-bottom: 1px dotted #666;"><span data-memo-subject>[Enter request title here]</span></td>
           </tr>
           <tr>
             <td style="width: 130px; font-weight: 800; padding: 4px 0;">Type:</td>
