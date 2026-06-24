@@ -1,6 +1,6 @@
 # CSS RMS — Architecture & Operations Guide
 
-> **Who this is for:** anyone touching this codebase for the first time — a new developer, a future AI assistant with no memory of past sessions, or the project owner coming back after months away. Assume zero prior context.
+> **Who this is for:** anyone touching this codebase for the first time — a new developer with no memory of past sessions, or the project owner coming back after months away. Assume zero prior context.
 >
 > **How this file stays useful:** this file is maintained by hand as part of normal development — there is no automated process that rewrites it from code changes. The in-app Documentation page always renders whatever is *currently* in this file (read live from disk, no caching), so once this file is updated and deployed, the change shows up immediately with no extra step. If you make a structural change and don't see it reflected here, it means the person/assistant who made the change forgot to update this file — treat that as a bug in the change, not in the page.
 
