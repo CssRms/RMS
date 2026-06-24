@@ -110,6 +110,14 @@ const Dashboard = ({ onViewChange }) => {
     });
     setRecentPending(pendingForMe.slice(0, 10));
 
+    // Departments list — needed to resolve the live "Currently With" / Authorization Trail
+    // department names (e.g. currentVettingDeptId) wherever they're rendered on this page,
+    // for every role including Global Admin, not just department users.
+    try {
+      const depts = await import('../lib/store').then(m => m.getDepartments());
+      setDepartments(depts);
+    } catch {}
+
     // Partial payment alerts for Account dept
     if (/\baccount\b/i.test(userDeptName) && userDeptId) {
       const partials = all.filter(r =>
@@ -146,12 +154,6 @@ const Dashboard = ({ onViewChange }) => {
       });
       // Show last 10 sorted newest first (include drafts in the list for visibility)
       setMyReqs([...mine].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10));
-
-      // Load departments for "Currently With" display
-      try {
-        const depts = await import('../lib/store').then(m => m.getDepartments());
-        setDepartments(depts);
-      } catch {}
     }
   };
 
