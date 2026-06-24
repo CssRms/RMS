@@ -4500,19 +4500,29 @@ app.delete('/api/requisitions/:id', authenticateToken, async (req, res) => {
       if (lockedStatuses.includes(existing.finalApprovalStatus)) {
         return res.status(400).json({ error: 'This record has been finally processed and can no longer be deleted. Contact the administrator if removal is required.' });
       }
-      // Save a hidden snapshot to the deleted records bin before removing
-      await prisma.deletedRecord.create({
-        data: {
-          originalId:     reqId,
-          recordType:     existing.type || 'Requisition',
-          title:          existing.title,
-          departmentId:   existing.departmentId,
-          departmentName: existing.department?.name || null,
-          deletedByName:  req.user.name || null,
-          snapshot:       JSON.parse(JSON.stringify(existing)),
-        }
-      });
     }
+
+    // Snapshot + audit log every deletion unconditionally, including Global Admin's — a
+    // completed, audited financial transaction should never be erasable with zero trace
+    // just because the actor happens to be an admin.
+    await prisma.deletedRecord.create({
+      data: {
+        originalId:     reqId,
+        recordType:     existing.type || 'Requisition',
+        title:          existing.title,
+        departmentId:   existing.departmentId,
+        departmentName: existing.department?.name || null,
+        deletedByName:  req.user.name || null,
+        snapshot:       JSON.parse(JSON.stringify(existing)),
+      }
+    });
+    await prisma.activityLog.create({
+      data: {
+        action: 'Requisition Deleted',
+        details: `"${existing.title}" (#${reqId}, ${existing.type || 'Requisition'}) deleted by ${req.user.name || 'unknown user'}${isAdmin ? ' (Global Admin)' : ''}`,
+        userId: getNumericUserId(req.user) || null,
+      }
+    });
 
     // Cascade-delete all related records in dependency order so FK constraints are satisfied
     // 1. File access logs (reference Attachments)
@@ -4552,10 +4562,17 @@ app.post('/api/requisitions/bulk-delete', authenticateToken, async (req, res) =>
     const isAdmin = getNumericUserId(req.user) === systemUser?.id;
     const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
 
-    const targetIds = isAdmin ? ids : [];
-    if (!isAdmin) {
+    const targetIds = [];
+    let targetRecords = [];
+    if (isAdmin) {
+      targetRecords = await prisma.requisition.findMany({
+        where: { id: { in: ids } },
+        include: { department: { select: { name: true } } }
+      });
+      targetRecords.forEach(r => targetIds.push(r.id));
+    } else {
       // Departments can bulk-delete their own records — not if finally processed
-      const allowed = await prisma.requisition.findMany({
+      targetRecords = await prisma.requisition.findMany({
         where: {
           id: { in: ids },
           departmentId: userDeptId,
@@ -4563,23 +4580,30 @@ app.post('/api/requisitions/bulk-delete', authenticateToken, async (req, res) =>
         },
         include: { department: { select: { name: true } } }
       });
-      allowed.forEach(r => targetIds.push(r.id));
-      // Save hidden snapshots for each deleted record
-      if (allowed.length > 0) {
-        await prisma.deletedRecord.createMany({
-          data: allowed.map(r => ({
-            originalId:     r.id,
-            recordType:     r.type || 'Requisition',
-            title:          r.title,
-            departmentId:   r.departmentId,
-            departmentName: r.department?.name || null,
-            deletedByName:  req.user.name || null,
-            snapshot:       JSON.parse(JSON.stringify(r)),
-          }))
-        });
-      }
+      targetRecords.forEach(r => targetIds.push(r.id));
     }
     if (targetIds.length === 0) return res.json({ ok: true, message: 'No eligible records to delete.' });
+
+    // Snapshot + audit log every deletion unconditionally, including Global Admin's —
+    // same reasoning as the single-record delete endpoint above.
+    await prisma.deletedRecord.createMany({
+      data: targetRecords.map(r => ({
+        originalId:     r.id,
+        recordType:     r.type || 'Requisition',
+        title:          r.title,
+        departmentId:   r.departmentId,
+        departmentName: r.department?.name || null,
+        deletedByName:  req.user.name || null,
+        snapshot:       JSON.parse(JSON.stringify(r)),
+      }))
+    });
+    await prisma.activityLog.create({
+      data: {
+        action: 'Requisitions Bulk Deleted',
+        details: `${targetRecords.length} record(s) deleted by ${req.user.name || 'unknown user'}${isAdmin ? ' (Global Admin)' : ''}: ${targetRecords.map(r => `#${r.id}`).join(', ')}`,
+        userId: getNumericUserId(req.user) || null,
+      }
+    });
 
     // Cascade manually to avoid FK constraint failures
     const attachments = await prisma.attachment.findMany({ where: { requisitionId: { in: targetIds } }, select: { id: true } });
