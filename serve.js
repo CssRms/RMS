@@ -6998,6 +6998,39 @@ app.get('/api/requisitions/:id', authenticateToken, async (req, res) => {
         SELECT * FROM "VettingEvent" WHERE "requisitionId" = ${parseInt(id)} ORDER BY "createdAt" ASC
       `;
     } catch (_) { /* VettingEvent table not yet created */ }
+
+    // Self-healing backfill — forward-for-reapproval/reapprove used to only log to the
+    // admin-only Activity Log, never to VettingEvent, so requests that already went
+    // through a re-approval cycle before that fix shipped are missing those steps from
+    // their Vetting Chain trail (and therefore the printed PDF too). Reconstruct them
+    // once, the next time anyone views this requisition.
+    if (ext.reapprovedAt && !vettingEvents.some(e => e.action === 'reapproved')) {
+      try {
+        const logs = await prisma.activityLog.findMany({
+          where: { details: { contains: `Req #${id}` }, action: { in: ['Forwarded for Re-Approval', 'Re-Approved'] } },
+          orderBy: { timestamp: 'asc' },
+        });
+        const accountDept = await prisma.department.findFirst({ where: { name: { contains: 'account', mode: 'insensitive' }, isSubAccount: false }, select: { id: true, name: true } });
+        const reapprovedDept = ext.reapprovedByDeptId
+          ? await prisma.department.findUnique({ where: { id: ext.reapprovedByDeptId }, select: { id: true, name: true } })
+          : null;
+        for (const log of logs) {
+          if (log.action === 'Forwarded for Re-Approval' && accountDept) {
+            await prisma.vettingEvent.create({
+              data: { requisitionId: parseInt(id), deptId: accountDept.id, deptName: accountDept.name, action: 'forwarded_for_reapproval', actorName: accountDept.name, createdAt: log.timestamp }
+            }).catch(() => {});
+          } else if (log.action === 'Re-Approved' && reapprovedDept) {
+            const noteMatch = log.details.match(/Note:\s*(.+?)(?:\s*Routed back for treatment\.)?$/i);
+            await prisma.vettingEvent.create({
+              data: { requisitionId: parseInt(id), deptId: reapprovedDept.id, deptName: reapprovedDept.name, action: 'reapproved', comment: noteMatch ? noteMatch[1].trim() : null, actorName: reapprovedDept.name, createdAt: log.timestamp }
+            }).catch(() => {});
+          }
+        }
+        vettingEvents = await prisma.$queryRaw`
+          SELECT * FROM "VettingEvent" WHERE "requisitionId" = ${parseInt(id)} ORDER BY "createdAt" ASC
+        `;
+      } catch (_) { /* backfill is best-effort — never block viewing the requisition */ }
+    }
     // Fetch tags + isTagged
     let tags = [];
     let isTagged = false;
