@@ -386,6 +386,15 @@ export async function downloadDynamicPdf(id, upToEventId = null) {
 // ── Stats Computation ──
 export async function getDashboardStats(user) {
   const all = await getRequisitions({ scope: 'all' });
+  return computeDashboardStats(all, user);
+}
+
+// Pure computation half of getDashboardStats, split out so it's unit-testable with a
+// hand-built fixture list instead of needing to mock the network fetch above. This is
+// also exactly the function that had the "admin dashboard always reads zero" bug — Super
+// Admin's login is backed by a real Department row, so gating on `!userDeptId` to detect
+// "is this admin" was wrong and silently fell through to the narrow per-department branch.
+export function computeDashboardStats(all, user) {
   const emptyStats = { pending: 0, approved: 0, rejected: 0, totalSpent: 0, memos: 0, memoPending: 0, memoPublished: 0 };
   if (!user) return emptyStats;
 
