@@ -1,58 +1,47 @@
-# RMS: Enterprise Requisition Management System
+# CSS RMS — Requisition Management System
 
-A premium, "Zero-Hardcoding" internal workflow platform for CSS Group. This project features a high-fidelity React frontend (Aura Design System) that interfaces with a headless Odoo backend.
+The internal operations portal for CSS Group: Cash/Material requisitions, Memos, an in-browser Document Studio (Word/Excel/PowerPoint-equivalent), HR Portal, and multi-department approval/vetting workflows.
+
+**For full architecture details, see [ARCHITECTURE.md](./ARCHITECTURE.md)** — tech stack, project structure, the domain model, the database migration workflow, and a list of structural gotchas worth knowing before making changes. Read that file first if you're new to this codebase; this README only covers local setup.
 
 ## Project Structure
 
-```bash
-├── rms_frontend/       # Premium React + Vite + Tailwind + Framer Motion
-└── css_rms_custom/     # Custom Odoo 19 Backend Module (Logic & Data)
 ```
-
-## Key Features
-
-- **Auth-Guarded Portal**: Secure Odoo session integration with glassmorphic visuals.
-- **Adaptive Form Engine**: Dynamic requisition forms for Material, Cash, and Memos.
-- **Workflow & Audit**: Multi-stage approval timeline with automated threshold routing.
-- **Admin Governance**:
-  - **Workflow Builder**: Define approval stages and currency limits via UI.
-  - **Department Manager**: Manage the 32-department corporate hierarchy.
-  - **Audit Ledger**: Immutable history of all system activities.
+├── serve.js              # Express backend — every API route
+├── rms_backend/prisma/   # Prisma schema + migrations (PostgreSQL)
+└── rms_frontend/         # React + Vite + Tailwind frontend
+```
 
 ## Development
 
-### Frontend (React)
+### Backend
+```bash
+npm install
+npx prisma generate --schema=rms_backend/prisma/schema.prisma
+node serve.js              # needs a .env with a real DATABASE_URL (see .env.example)
+```
+
+### Frontend
 ```bash
 cd rms_frontend
 npm install
-npm run dev    # For internal development
-npm run build  # For production deployment
+npm run dev      # local development
+npm run build    # production build
 ```
 
-### Backend (Odoo)
-The backend is hosted on Railway: `pro-rms-production.up.railway.app`. Use the `css_rms_custom` module for local reference or future logic updates.
+### Tests
+```bash
+npm test                   # backend (root) — pure business-rule functions, no DB needed
+cd rms_frontend && npm test  # frontend — shared display logic, no DB needed
+```
 
-## Environment Variables (Node API)
-Required for production:
-- `JWT_SECRET` - session signing secret
-- `SIGNING_PRIVATE_KEY` - Ed25519 private key (PEM or base64)
-- `SIGNING_PUBLIC_KEY` - Ed25519 public key (PEM or base64)
-- `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (and optional `S3_ENDPOINT`)
+### Database schema changes
+See [ARCHITECTURE.md §5](./ARCHITECTURE.md#5-database-changes--the-migration-workflow-read-this-before-touching-schemaprisma) — schema changes need a generated migration file (`npx prisma migrate dev`) committed alongside the `schema.prisma` edit, not just a `db push`.
 
-Optional:
-- `CORS_ORIGIN` (comma-separated allowed origins)
-- `NODE_ENV=production`
-- `APP_BASE_URL` (used in email links)
-- `MAIL_FROM` (override from address)
-- `GMAIL_USER` + `GMAIL_APP_PASSWORD` (Gmail app password SMTP)
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE` (generic SMTP)
+## Environment Variables
 
-Cloudflare R2 Storage (S3-compatible):
-- `R2_ACCOUNT_ID` 
-- `R2_ACCESS_KEY_ID` 
-- `R2_SECRET_ACCESS_KEY`
-- `R2_BUCKET_NAME` 
+See `.env.example` for the full list with descriptions. Key ones: `DATABASE_URL`, `JWT_SECRET`, `SUPER_ADMIN_ACCESS_CODE`/`SUPER_ADMIN_MFA_PIN`, signing keys (`SIGNING_PRIVATE_KEY`/`SIGNING_PUBLIC_KEY` or `SIGNING_MASTER_KEY`), Cloudflare R2 storage credentials (`R2_*`), and email (`GMAIL_USER`/`GMAIL_APP_PASSWORD` or generic `SMTP_*`).
 
-If no external storage is configured, files upload locally to `uploads/`.
+## Deployment
 
-
+Hosted on Railway as a single service. `npm start` runs `prisma migrate deploy` then `node serve.js`. The frontend is built into `rms_frontend/dist` and served as static files by the same Express server.
