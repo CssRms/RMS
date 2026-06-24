@@ -24,14 +24,13 @@ const buildMemoTemplate = ({ deptCode, fromLabel, toLabel, subjectLabel, headNam
   return `
       <div style="font-family: 'Times New Roman', 'Georgia', serif; max-width: 750px; margin: 0 auto; padding: 40px 50px; color: #1a1a1a; background: white; line-height: 1.5; text-align: justify;">
 
-        <!-- CSS Group Logo (centered) immediately followed by the document title -->
-        <div style="text-align: center; margin-bottom: 2px;">
-          <img src="/logo.svg" style="display: block; margin: 0 auto 4px auto; width: 60px; height: auto; border-radius: 8px;" />
-          <div style="font-size: 16px; font-weight: 800; letter-spacing: 2px; color: #333;">CSS</div>
-          <div style="font-size: 10px; color: #666; letter-spacing: 1px;">Group</div>
+        <!-- CSS Group Logo (centered) immediately followed by the document title — the
+             logo image already carries the company name, so no redundant text label below it -->
+        <div style="text-align: center;">
+          <img src="/logo.svg" style="display: block; margin: 0 auto; width: 64px; height: auto; border-radius: 8px;" />
         </div>
 
-        <div style="text-align: center; margin: 6px 0 22px 0;">
+        <div style="text-align: center; margin: 8px 0 22px 0;">
           <h2 style="font-size: 16px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">Internal Memo</h2>
         </div>
 
@@ -102,11 +101,10 @@ const buildMaterialRequestTemplate = ({ deptCode, fromLabel, toLabel, headName, 
   return `
       <div style="font-family: 'Times New Roman', 'Georgia', serif; max-width: 750px; margin: 0 auto; padding: 30px 40px; color: #1a1a1a; background: white; border: 2px solid #1a3a6e; text-align: justify;">
 
-        <!-- Company Logo (centered) immediately followed by the voucher title -->
-        <div style="text-align: center; margin-bottom: 2px;">
-          <img src="/logo.svg" style="display: block; margin: 0 auto 4px auto; width: 60px; height: auto; border-radius: 8px;" />
-          <div style="font-size: 20px; font-weight: 900; color: #1a3a6e; letter-spacing: 1px; line-height: 1;">CSS</div>
-          <div style="font-size: 9px; font-weight: 700; color: #1a3a6e; letter-spacing: 0.5px;">Group of Companies</div>
+        <!-- Company Logo (centered) immediately followed by the voucher title — the
+             logo image already carries the company name, so no redundant text label below it -->
+        <div style="text-align: center;">
+          <img src="/logo.svg" style="display: block; margin: 0 auto; width: 64px; height: auto; border-radius: 8px;" />
         </div>
 
         <div style="text-align: center; margin: 8px 0 6px 0; font-size: 9px; color: #333; line-height: 1.5;">
