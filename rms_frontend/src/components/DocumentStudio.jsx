@@ -23,13 +23,13 @@ import VoiceDictation from './VoiceDictation';
 import ConfirmModal from './ConfirmModal';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 
-import { 
-  FileText, Table, Download, Plus, Trash2, Save, 
+import {
+  FileText, Table, Download, Plus, Trash2, Save,
   FileSpreadsheet, FileImage, File, ChevronDown,
-  CloudOff, Cloud, Clock, X, HardDrive, AlertCircle, 
+  CloudOff, Cloud, Clock, X, HardDrive, AlertCircle,
   FolderOpen, Edit3, Presentation, MonitorPlay, ChevronLeft, ChevronRight, Maximize, Send,
-  Paperclip, AlertTriangle, Zap, CheckCircle2, 
-  Image as ImageIcon, Loader2, ArrowLeft
+  Paperclip, AlertTriangle, Zap, CheckCircle2,
+  Image as ImageIcon, Loader2, ArrowLeft, Scissors, Copy, Clipboard
 } from 'lucide-react';
 
 localforage.config({ name: 'CSS_RMS_Offline', storeName: 'drafts' });
@@ -186,6 +186,14 @@ const ExportConfirmModal = ({ open, title, exporting, onConfirm, onClose, childr
     </div>
   );
 };
+
+// ── Toolbar Ribbon Group (mirrors Word's labeled Home-tab sections: Clipboard, Font, Paragraph...) ──
+const ToolbarGroup = ({ label, children }) => (
+  <div className="flex flex-col items-center justify-between gap-1 px-1 shrink-0">
+    <div className="flex-1 flex items-center">{children}</div>
+    <span className="text-[7px] font-black uppercase tracking-wider text-muted-foreground/50 whitespace-nowrap">{label}</span>
+  </div>
+);
 
 // ── Save Indicator ──
 const SaveIndicator = ({ saving, lastSaved, error }) => (
@@ -438,95 +446,109 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
       </div>
 
       <div className="glass bg-slate-100 rounded-2xl shadow-sm relative z-10 flex flex-col border border-border/50 overflow-hidden">
-        {/* Advanced MS Word Style Toolbar */}
-        <div className="bg-white border-b border-border/40 px-3 py-2 flex items-center gap-1.5 overflow-x-auto custom-scrollbar sticky top-0 z-20">
+        {/* Advanced MS Word Style Toolbar — grouped into labeled ribbon sections like Word's Home tab */}
+        <div className="bg-white border-b border-border/40 px-3 py-2 flex items-stretch gap-2.5 overflow-x-auto custom-scrollbar sticky top-0 z-20">
+
+          {/* Clipboard */}
+          <ToolbarGroup label="Clipboard">
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button title="Cut" onClick={() => execCmd('cut')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><Scissors size={14} /></button>
+              <button title="Copy" onClick={() => execCmd('copy')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><Copy size={14} /></button>
+              <button title="Paste" onClick={() => execCmd('paste')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><Clipboard size={14} /></button>
+            </div>
+          </ToolbarGroup>
+
+          <div className="w-px bg-border/40 shrink-0"></div>
+
+          {/* Font */}
+          <ToolbarGroup label="Font">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-1">
+                <select
+                  onChange={(e) => execCmd('fontName', e.target.value)}
+                  className="h-7 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
+                >
+                  {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+                <select
+                  onChange={(e) => execCmd('fontSize', e.target.value)}
+                  className="h-7 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
+                >
+                  <option value="">Size</option>
+                  {FONT_SIZES.map(s => <option key={s} value={s}>{s}pt</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button title="Bold" onClick={() => execCmd('bold')} className="p-1 hover:bg-muted font-black rounded w-7 h-7 flex items-center justify-center text-xs">B</button>
+                <button title="Italic" onClick={() => execCmd('italic')} className="p-1 hover:bg-muted italic rounded w-7 h-7 flex items-center justify-center font-serif text-xs">I</button>
+                <button title="Underline" onClick={() => execCmd('underline')} className="p-1 hover:bg-muted underline rounded w-7 h-7 flex items-center justify-center text-xs">U</button>
+                <button title="Strikethrough" onClick={() => execCmd('strikeThrough')} className="p-1 hover:bg-muted line-through rounded w-7 h-7 flex items-center justify-center text-xs">S</button>
+                <button title="Subscript" onClick={() => execCmd('subscript')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center text-[10px]">X<sub>2</sub></button>
+                <button title="Superscript" onClick={() => execCmd('superscript')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center text-[10px]">X<sup>2</sup></button>
+                <div className="flex flex-col items-center ml-1">
+                  <input title="Text Color" type="color" onChange={(e) => execCmd('foreColor', e.target.value)} className="w-5 h-5 p-0 border-none bg-transparent cursor-pointer" />
+                  <span className="text-[7px] font-black uppercase opacity-60">Text</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <input title="Highlight Color" type="color" onChange={(e) => execCmd('hiliteColor', e.target.value)} className="w-5 h-5 p-0 border-none bg-transparent cursor-pointer" />
+                  <span className="text-[7px] font-black uppercase opacity-60">Highlight</span>
+                </div>
+              </div>
+            </div>
+          </ToolbarGroup>
+
+          <div className="w-px bg-border/40 shrink-0"></div>
+
+          {/* Paragraph */}
+          <ToolbarGroup label="Paragraph">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-0.5">
+                <button title="Bullet List" onClick={() => execCmd('insertUnorderedList')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center text-xs">●</button>
+                <button title="Number List" onClick={() => execCmd('insertOrderedList')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center text-xs">1.</button>
+                <button title="Decrease Indent" onClick={() => execCmd('outdent')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center text-[10px]">⇤</button>
+                <button title="Increase Indent" onClick={() => execCmd('indent')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center text-[10px]">⇥</button>
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button title="Align Left" onClick={() => execCmd('justifyLeft')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center"><i className="text-[10px] font-black">L</i></button>
+                <button title="Align Center" onClick={() => execCmd('justifyCenter')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center"><i className="text-[10px] font-black">C</i></button>
+                <button title="Align Right" onClick={() => execCmd('justifyRight')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center"><i className="text-[10px] font-black">R</i></button>
+                <button title="Justify" onClick={() => execCmd('justifyFull')} className="p-1 hover:bg-muted rounded w-7 h-7 flex items-center justify-center"><i className="text-[10px] font-black">J</i></button>
+              </div>
+            </div>
+          </ToolbarGroup>
+
+          <div className="w-px bg-border/40 shrink-0"></div>
 
           {/* Styles */}
-          <select
-            onChange={(e) => execCmd('formatBlock', e.target.value)}
-            defaultValue="p"
-            className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
-          >
-            {HEADING_STYLES.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
-          </select>
+          <ToolbarGroup label="Styles">
+            <select
+              onChange={(e) => execCmd('formatBlock', e.target.value)}
+              defaultValue="p"
+              className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
+            >
+              {HEADING_STYLES.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
+            </select>
+          </ToolbarGroup>
 
-          {/* Font Controls */}
-          <select
-            onChange={(e) => execCmd('fontName', e.target.value)}
-            className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
-          >
-            {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
-
-          <select
-            onChange={(e) => execCmd('fontSize', e.target.value)}
-            className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
-          >
-            <option value="">Size</option>
-            {FONT_SIZES.map(s => <option key={s} value={s}>{s}pt</option>)}
-          </select>
-
-          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
-
-          {/* Basic Styles */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button title="Bold" onClick={() => execCmd('bold')} className="p-1.5 hover:bg-muted font-black rounded w-8 h-8 flex items-center justify-center">B</button>
-            <button title="Italic" onClick={() => execCmd('italic')} className="p-1.5 hover:bg-muted italic rounded w-8 h-8 flex items-center justify-center font-serif">I</button>
-            <button title="Underline" onClick={() => execCmd('underline')} className="p-1.5 hover:bg-muted underline rounded w-8 h-8 flex items-center justify-center">U</button>
-            <button title="Strikethrough" onClick={() => execCmd('strikeThrough')} className="p-1.5 hover:bg-muted line-through rounded w-8 h-8 flex items-center justify-center">S</button>
-            <button title="Subscript" onClick={() => execCmd('subscript')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">X<sub>2</sub></button>
-            <button title="Superscript" onClick={() => execCmd('superscript')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">X<sup>2</sup></button>
-          </div>
-
-          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
-
-          {/* Color Pickers */}
-          <div className="flex items-center space-x-2 shrink-0 px-1">
-            <div className="flex flex-col items-center">
-              <input type="color" onChange={(e) => execCmd('foreColor', e.target.value)} className="w-5 h-5 p-0 border-none bg-transparent cursor-pointer" />
-              <span className="text-[8px] font-black uppercase opacity-60">Text</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <input type="color" onChange={(e) => execCmd('hiliteColor', e.target.value)} className="w-5 h-5 p-0 border-none bg-transparent cursor-pointer" />
-              <span className="text-[8px] font-black uppercase opacity-60">Highlight</span>
-            </div>
-          </div>
-
-          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
-
-          {/* Alignment */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button onClick={() => execCmd('justifyLeft')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><i className="text-[10px] font-black">L</i></button>
-            <button onClick={() => execCmd('justifyCenter')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><i className="text-[10px] font-black">C</i></button>
-            <button onClick={() => execCmd('justifyRight')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><i className="text-[10px] font-black">R</i></button>
-            <button onClick={() => execCmd('justifyFull')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><i className="text-[10px] font-black">J</i></button>
-          </div>
-
-          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
-
-          {/* Lists & Indent */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button title="Bullet List" onClick={() => execCmd('insertUnorderedList')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">●</button>
-            <button title="Number List" onClick={() => execCmd('insertOrderedList')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">1.</button>
-            <button title="Decrease Indent" onClick={() => execCmd('outdent')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">⇤</button>
-            <button title="Increase Indent" onClick={() => execCmd('indent')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">⇥</button>
-          </div>
-
-          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
+          <div className="w-px bg-border/40 shrink-0"></div>
 
           {/* Insert */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button title="Insert Link" onClick={insertLink} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">🔗</button>
-            <button title="Insert Table" onClick={insertTable} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><Table size={14} /></button>
-          </div>
+          <ToolbarGroup label="Insert">
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button title="Insert Link" onClick={insertLink} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">🔗</button>
+              <button title="Insert Table" onClick={insertTable} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><Table size={14} /></button>
+            </div>
+          </ToolbarGroup>
 
-          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
+          <div className="w-px bg-border/40 shrink-0"></div>
 
-          {/* History */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button title="Undo" onClick={() => execCmd('undo')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">↶</button>
-            <button title="Redo" onClick={() => execCmd('redo')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">↷</button>
-          </div>
+          {/* Editing */}
+          <ToolbarGroup label="Editing">
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button title="Undo" onClick={() => execCmd('undo')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">↶</button>
+              <button title="Redo" onClick={() => execCmd('redo')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">↷</button>
+            </div>
+          </ToolbarGroup>
         </div>
 
         {/* Native HTML Editor - Mobile Optimized */}
