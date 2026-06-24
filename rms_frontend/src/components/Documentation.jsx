@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { BookOpen, History, Clock, RefreshCw, AlertCircle } from 'lucide-react';
 import { adminAPI } from '../lib/api';
 
@@ -53,8 +54,8 @@ const GuideTab = () => {
           <RefreshCw size={12} /> Refresh
         </button>
       </div>
-      <div className="glass bg-white/95 border border-border/50 rounded-3xl p-6 lg:p-10 shadow-sm prose prose-sm lg:prose-base max-w-none prose-headings:font-bold prose-headings:text-foreground prose-a:text-primary prose-table:text-xs prose-th:bg-muted/50 prose-code:text-primary prose-code:bg-muted/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
-        <ReactMarkdown>{doc?.content || ''}</ReactMarkdown>
+      <div className="doc-guide glass bg-white/95 border border-border/50 rounded-3xl p-6 lg:p-10 shadow-sm prose prose-sm lg:prose-base max-w-none prose-headings:font-bold prose-headings:text-foreground prose-a:text-primary prose-table:text-xs prose-th:bg-muted/50">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc?.content || ''}</ReactMarkdown>
       </div>
     </div>
   );

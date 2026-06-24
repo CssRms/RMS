@@ -202,6 +202,26 @@
 }
 .editor-paper a { color: #2563eb; text-decoration: underline; }
 
+/* Documentation guide markdown — style inline `code` spans only, leaving fenced
+   ```code blocks``` (file trees, shell commands) to the typography plugin's own
+   dark-background/light-text styling. Applying the same background to both at once
+   stacks a translucent box over each token inside the block, killing contrast. */
+.doc-guide :not(pre) > code {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--muted) / 0.6);
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+  font-weight: 600;
+}
+.doc-guide pre {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+.doc-guide pre code {
+  color: inherit;
+  background: none;
+}
+
 @media (max-width: 768px) {
   .editor-outer-shell {
     padding: 0 !important;
