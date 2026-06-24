@@ -60,18 +60,19 @@ const buildMemoTemplate = ({ deptCode, fromLabel, toLabel, subjectLabel, headNam
 
         <hr style="border: none; border-top: 1px solid #333; margin: 8px 0 20px 0;" />
 
-        <!-- Body Content -->
+        <!-- Body Content — generic placeholder showing the expected structure: opening
+             statement, supporting points, elaboration, and a closing/next-steps line -->
         <div style="font-size: 13px; line-height: 1.7; min-height: 300px; text-align: justify;">
-          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">Following the requests received from Prof. Eric Alao and Prof. I.E Ahaneku for Students Industrial Work Experience Scheme (SIWES) placement for:</p>
+          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">[Opening statement — state the purpose of this memo clearly in one or two sentences.]</p>
 
           <ol style="padding-left: 25px; margin: 0 0 20px 0; text-align: justify;">
-            <li style="margin-bottom: 8px;">Alao Danies Omotayo: A 400-level Agricultural & Bio-systems Engineering student from Landmark University.</li>
-            <li style="margin-bottom: 8px;">Agomuo George Chidike: An Agricultural and Bio-resources Engineering student from Michael Okpara University of Agriculture, Umudike.</li>
+            <li style="margin-bottom: 8px;">[First supporting point or item relevant to this memo.]</li>
+            <li style="margin-bottom: 8px;">[Second supporting point or item, if applicable.]</li>
           </ol>
 
-          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">I hereby write for allocation of one room in the staff lodge for these two students, to enable them resume by second week of April, 2026.</p>
+          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">[Elaborate on the request, decision, or information being communicated. Keep this section concise and easy to follow.]</p>
 
-          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">Attached to this memo are the official letters of introduction and placement reservation requests for your consideration.</p>
+          <p style="text-indent: 40px; margin: 0 0 15px 0; text-align: justify;">[Closing statement — note any attachments and state the next steps or action required, if any.]</p>
         </div>
 
         <!-- Sender Signature Block -->
