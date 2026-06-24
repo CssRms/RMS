@@ -604,9 +604,36 @@ const Dashboard = ({ onViewChange }) => {
                             </div>
                           </td>
                           <td className="py-4 px-6 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
-                             {isMoneyReq ? (
-                               <span className="text-sm font-black text-foreground font-mono">₦{Number(r.amount || 0).toLocaleString()}</span>
-                             ) : (
+                             {isMoneyReq ? (() => {
+                               // ICC's post-approval override takes priority over Audit's earlier
+                               // pre-approval override (mirrors getEffectiveReqAmount used elsewhere) —
+                               // showing the raw amount here hid that Audit/ICC had since revised it.
+                               const hasIcc = r.hasIccOverride && r.iccOverrideAmount != null;
+                               const hasAudit = r.hasAuditOverride && r.auditAmount != null;
+                               if (hasIcc) {
+                                 return (
+                                   <div className="flex flex-col gap-0.5">
+                                     <span className="text-sm font-black text-teal-700 font-mono">₦{Number(r.iccOverrideAmount).toLocaleString()}</span>
+                                     <div className="flex items-center gap-1">
+                                       <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(hasAudit ? r.auditAmount : r.amount || 0).toLocaleString()}</span>
+                                       <span className="px-1 py-0.5 rounded text-[7px] font-black bg-teal-100 border border-teal-200 text-teal-700 uppercase tracking-wide">ICC</span>
+                                     </div>
+                                   </div>
+                                 );
+                               }
+                               if (hasAudit) {
+                                 return (
+                                   <div className="flex flex-col gap-0.5">
+                                     <span className="text-sm font-black text-purple-700 font-mono">₦{Number(r.auditAmount).toLocaleString()}</span>
+                                     <div className="flex items-center gap-1">
+                                       <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(r.amount || 0).toLocaleString()}</span>
+                                       <span className="px-1 py-0.5 rounded text-[7px] font-black bg-purple-100 border border-purple-200 text-purple-600 uppercase tracking-wide">Audit</span>
+                                     </div>
+                                   </div>
+                                 );
+                               }
+                               return <span className="text-sm font-black text-foreground font-mono">₦{Number(r.amount || 0).toLocaleString()}</span>;
+                             })() : (
                                <span className="text-[10px] text-muted-foreground/50 italic">Non-financial</span>
                              )}
                           </td>
