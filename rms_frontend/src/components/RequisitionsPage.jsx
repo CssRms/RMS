@@ -5474,12 +5474,23 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                                 <span className="px-1.5 py-0.5 rounded-full bg-violet-100 border border-violet-200 text-violet-700 text-[8px] font-black tracking-widest uppercase">{pName}</span>
                               ) : null;
                             })()}
-                            {r.targetDepartment?.name && (
-                              <>
-                                <ArrowRight size={9} className="text-muted-foreground/30" />
-                                <span className="font-black text-primary uppercase tracking-tight">{r.targetDepartment.name}</span>
-                              </>
-                            )}
+                            {(() => {
+                              // During an ICC/Audit vetting detour, currentVettingDeptId tracks the
+                              // request's real live location — targetDepartment stays frozen at whatever
+                              // it was forwarded to before the detour started, so prefer the live spot
+                              // whenever a vetting leg is active and the request hasn't been treated/published yet.
+                              const norm = normalizeReq(r);
+                              const cvId = r.currentVettingDeptId ? parseInt(r.currentVettingDeptId) : null;
+                              const isSettled = norm.finalState === 'treated' || norm.finalState === 'published';
+                              const liveDept = (cvId && !isSettled) ? departments.find(d => d.id === cvId) : null;
+                              const trailName = liveDept?.name || r.targetDepartment?.name;
+                              return trailName ? (
+                                <>
+                                  <ArrowRight size={9} className="text-muted-foreground/30" />
+                                  <span className="font-black text-primary uppercase tracking-tight">{trailName}</span>
+                                </>
+                              ) : null;
+                            })()}
                             {r.treatedByDept?.name && r.treatedByDept.name !== r.targetDepartment?.name && (
                               <>
                                 <ArrowRight size={9} className="text-muted-foreground/30" />
