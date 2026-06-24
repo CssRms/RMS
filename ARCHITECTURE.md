@@ -175,7 +175,7 @@ These are the ones worth knowing before you go looking for a "bug" that's actual
 
 ## 8. Known weak spots (be honest with yourself about these before assuming the code is correct)
 
-- **No automated test suite exists.** Every fix in this project's history has been verified by `node --check` (syntax only), `npm run build` (compiles), and then the user manually finding the next bug in production. Treat anything you haven't personally tested as unverified, no matter how confident a past commit message sounds.
+- **An automated test suite exists, but only covers a thin slice so far.** Vitest is set up in both the root (backend) and `rms_frontend/` (frontend) — run `npm test` in either directory. Currently covered: the pure business-rule functions in `rms_backend/lib/businessRules.js` (authority-tier bands, override precedence — 20 tests) and `rms_frontend/src/lib/requisitionDisplay.js` (effective amount, live trail location — 15 tests). **Not yet covered:** anything touching the database (no integration tests exist yet), the vetting/approval state machine end-to-end, any React component rendering, and the vast majority of `serve.js`'s ~9,000 lines (most of it is still inline route handlers, not extracted into testable pure functions). Before this, every fix in this project's history was verified by `node --check` (syntax only), `npm run build` (compiles), and then the user manually finding the next bug in production — that's still true for anything outside the two files above. Treat anything not covered by an actual test as unverified, no matter how confident a past commit message sounds. **When you extract more business logic out of `serve.js` or a frontend component, write its test in the same commit** — that's how this slice grows instead of staying frozen at "the two files someone happened to touch on one particular day."
 - **Business display logic was duplicated, not shared — now fixed.** "What's the effective amount for this requisition," "where is this requisition right now," and the per-record field-flattening helper (`normalizeReq`) used to be implemented independently across `RequisitionsPage.jsx` (list table + detail modal) and `Dashboard.jsx` (two places) — five separate copies of three rules, each needing its own bugfix, and `normalizeReq`'s two copies had already drifted apart (one had four extra fields the other lacked). All three are now unified into `rms_frontend/src/lib/requisitionDisplay.js` (`getEffectiveAmount`, `getLiveTrailDepartment`, `normalizeReq`) and every call site imports from there instead of re-deriving it. **General rule going forward:** when you fix a display bug involving these two files, grep for the same pattern in the other before assuming you're done — and check `requisitionDisplay.js` first, since the answer to "how do I compute X" may already live there.
 - **`serve.js` (~9,000 lines) and `RequisitionsPage.jsx` (~5,600 lines) are both monolithic files.** No service/repository layering on the backend; routes call Prisma directly. Refactoring these safely requires the test suite that doesn't exist yet — be cautious about large refactors until that exists.
 - **No CI pipeline, no staging environment.** "It builds locally" is currently the only gate before something reaches production.
@@ -203,4 +203,10 @@ npx prisma migrate status --schema=rms_backend/prisma/schema.prisma
 
 # Seed initial data
 npm run seed
+
+# Run backend tests (root) — pure business-rule functions, no DB needed
+npm test
+
+# Run frontend tests (from rms_frontend/) — shared display logic, no DB needed
+npm test
 ```
