@@ -470,12 +470,18 @@ const Dashboard = ({ onViewChange }) => {
                               <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
                                 <div className="flex items-center gap-1 text-[9px]">
                                   <span className="font-bold text-muted-foreground/70 uppercase truncate max-w-[70px]">{norm.department}</span>
-                                  {r.targetDepartment?.name && (
-                                    <>
-                                      <ArrowRight size={8} className="text-muted-foreground/30 shrink-0" />
-                                      <span className="font-black text-primary uppercase truncate max-w-[70px]">{r.targetDepartment.name}</span>
-                                    </>
-                                  )}
+                                  {(() => {
+                                    const cvId = r.currentVettingDeptId ? parseInt(r.currentVettingDeptId) : null;
+                                    const isSettled = norm.finalState === 'treated' || norm.finalState === 'published';
+                                    const liveDept = (cvId && !isSettled) ? departments.find(d => d.id === cvId) : null;
+                                    const trailName = liveDept?.name || r.targetDepartment?.name;
+                                    return trailName ? (
+                                      <>
+                                        <ArrowRight size={8} className="text-muted-foreground/30 shrink-0" />
+                                        <span className="font-black text-primary uppercase truncate max-w-[70px]">{trailName}</span>
+                                      </>
+                                    ) : null;
+                                  })()}
                                 </div>
                               </td>
                               <td className="py-3 px-4 bg-amber-50/50 border-y border-amber-200/40 group-hover:bg-amber-50/80 transition-colors">
@@ -605,12 +611,19 @@ const Dashboard = ({ onViewChange }) => {
                           <td className="py-4 px-6 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                             <div className="flex items-center gap-1.5 text-[10px]">
                               <span className="font-bold text-muted-foreground opacity-60 uppercase">{r.department}</span>
-                              {r.targetDepartment?.name && (
-                                <>
-                                  <ArrowRight size={9} className="text-muted-foreground/30" />
-                                  <span className="font-black text-primary uppercase tracking-tight">{r.targetDepartment.name}</span>
-                                </>
-                              )}
+                              {(() => {
+                                const norm2 = normalizeReq(r);
+                                const cvId = r.currentVettingDeptId ? parseInt(r.currentVettingDeptId) : null;
+                                const isSettled = norm2.finalState === 'treated' || norm2.finalState === 'published';
+                                const liveDept = (cvId && !isSettled) ? departments.find(d => d.id === cvId) : null;
+                                const trailName = liveDept?.name || r.targetDepartment?.name;
+                                return trailName ? (
+                                  <>
+                                    <ArrowRight size={9} className="text-muted-foreground/30" />
+                                    <span className="font-black text-primary uppercase tracking-tight">{trailName}</span>
+                                  </>
+                                ) : null;
+                              })()}
                               {r.treatedByDept?.name && r.treatedByDept.name !== r.targetDepartment?.name && (
                                 <>
                                   <ArrowRight size={9} className="text-muted-foreground/30" />
