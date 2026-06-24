@@ -211,7 +211,7 @@ const SaveIndicator = ({ saving, lastSaved, error }) => (
 // ══════════════════════════════════════════════
 // ── RICH TEXT EDITOR (Docs / Memos) ──────────
 // ══════════════════════════════════════════════
-const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
+const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departments }) => {
   const [title, setTitle] = useState(loadedDraft?.title || 'Untitled Document');
   const [saving, setSaving] = useState(false);
   const editorRef = useRef(null);
@@ -335,6 +335,39 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
     { label: 'Quote', value: 'blockquote' },
   ];
 
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+
+  const renderTemplateHtml = (key) => {
+    const tpl = templates[key];
+    if (!tpl) return '';
+    const deptInfo = (departments || []).find(d => d.id === currentUser?.deptId) || {};
+    const deptCode = resolveDeptCode(deptInfo, currentUser?.department);
+    return typeof tpl.data === 'function'
+      ? tpl.data({
+          deptCode,
+          fromLabel: deptInfo.name || currentUser?.department || '',
+          toLabel: 'TARGET DEPARTMENT',
+          subjectLabel: '[ENTER SUBJECT HERE]',
+          headName: deptInfo.headName || '',
+          headTitle: deptInfo.headTitle || '',
+          date: new Date()
+        })
+      : tpl.data;
+  };
+
+  const applyTemplate = (key) => {
+    const tpl = templates[key];
+    if (!tpl) return;
+    if (editorRef.current && editorRef.current.innerText.trim().length > 0) {
+      if (!window.confirm('This will replace the current content with the selected template. Continue?')) return;
+    }
+    const html = renderTemplateHtml(key);
+    if (editorRef.current) editorRef.current.innerHTML = DOMPurify.sanitize(html);
+    setTitle(tpl.title);
+    setTemplatePickerOpen(false);
+    handleInput();
+  };
+
   const FONT_FAMILIES = [
     { label: 'Standard (Inter)', value: "'Inter', sans-serif" },
     { label: 'Times New Roman', value: "'Times New Roman', serif" },
@@ -370,6 +403,13 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
               }} />
             </div>
           )}
+          <button
+            onClick={() => setTemplatePickerOpen(true)}
+            className="flex items-center justify-center space-x-2 bg-white border border-border/60 hover:border-primary/40 hover:bg-muted/30 text-foreground font-black text-xs lg:text-sm px-5 py-3.5 rounded-2xl transition-all shadow-sm"
+          >
+            <FileText size={18} className="text-primary" />
+            <span className="uppercase tracking-widest">Templates</span>
+          </button>
           <button
             onClick={onSend}
             className="flex-1 lg:flex-none flex items-center justify-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs lg:text-sm px-6 py-3.5 rounded-2xl transition-all shadow-xl shadow-amber-600/20"
@@ -504,6 +544,40 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
           dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(editorRef.current?.innerHTML || '') }}
         />
       </ExportConfirmModal>
+
+      {templatePickerOpen && (
+        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between shrink-0">
+              <h3 className="font-black text-lg text-foreground">Choose a Template</h3>
+              <button onClick={() => setTemplatePickerOpen(false)} className="p-1.5 hover:bg-muted rounded-lg"><X size={18} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 bg-muted/20 custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {Object.entries(templates).map(([key, tpl]) => (
+                  <button
+                    key={key}
+                    onClick={() => applyTemplate(key)}
+                    className="text-left bg-white border border-border/50 hover:border-primary/50 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all group"
+                  >
+                    <div className="h-64 overflow-hidden bg-muted/30 border-b border-border/40 relative">
+                      <div
+                        className="origin-top-left scale-[0.42] w-[238%] pointer-events-none p-2"
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderTemplateHtml(key)) }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-white/90 via-transparent to-transparent" />
+                    </div>
+                    <div className="p-4">
+                      <p className="font-black text-sm text-foreground group-hover:text-primary transition-colors">{tpl.title}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{tpl.sample}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1419,15 +1493,15 @@ const DocumentStudio = ({ user, onViewChange }) => {
                 <span className="font-bold text-sm">Internal Memo</span>
               </button>
 
-              {/* Requisition Template */}
-              <button 
-                onClick={() => initiateNewDraft('doc', 'requisition')} 
+              {/* Material Request Template */}
+              <button
+                onClick={() => initiateNewDraft('doc', 'materialRequest')}
                 className="flex flex-col items-center justify-center p-6 bg-white border border-border/60 hover:border-primary/40 hover:bg-white rounded-2xl shadow-sm transition-all hover:scale-[1.02] group"
               >
                 <div className="w-12 h-12 bg-primary/5 rounded-xl flex items-center justify-center mb-4 group-hover:bg-primary/10 transition-colors text-primary">
                   <Save size={24} />
                 </div>
-                <span className="font-bold text-sm">Requisition</span>
+                <span className="font-bold text-sm">Material Request</span>
               </button>
 
               {/* More Types */}
@@ -1457,11 +1531,13 @@ const DocumentStudio = ({ user, onViewChange }) => {
 
             {/* Active Editor */}
           {currentDraftId && activeTab === 'doc' && currentActiveDraft && (
-          <RichTextEditor 
+          <RichTextEditor
             key={currentDraftId}
-            loadedDraft={currentActiveDraft} 
-            onAutosave={handleAutosave} 
+            loadedDraft={currentActiveDraft}
+            onAutosave={handleAutosave}
             onSend={() => setIsSendModalOpen(true)}
+            currentUser={user}
+            departments={availableDepartments}
           />
         )}
         {currentDraftId && activeTab === 'sheet' && currentActiveDraft && (
