@@ -317,7 +317,7 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
   useEffect(() => {
     if (!editor) return;
     const clean = DOMPurify.sanitize(loadedDraft?.data || '');
-    if (editor.getHTML() !== clean) editor.commands.setContent(clean, false);
+    if (editor.getHTML() !== clean) editor.commands.setContent(clean, { emitUpdate: false });
     setTitle(loadedDraft?.title || 'Untitled Document');
   }, [loadedDraft, editor]);
 
