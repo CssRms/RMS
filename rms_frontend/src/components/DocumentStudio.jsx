@@ -3,6 +3,8 @@ import DOMPurify from 'dompurify';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import PptxGenJS from 'pptxgenjs';
 import localforage from 'localforage';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
@@ -34,6 +36,45 @@ const MAX_STORAGE_BYTES = 5 * 1024 * 1024; // 5MB max offline storage per depart
 
 const getObjectSize = (obj) => {
   try { return new Blob([JSON.stringify(obj)]).size; } catch(e) { return 0; }
+};
+
+// Fortune-sheet stores cells as a sparse {r, c, v} list; flatten each sheet into a 2D array.
+const fortuneSheetToAOA = (celldata = []) => {
+  let maxR = -1, maxC = -1;
+  celldata.forEach(cell => { maxR = Math.max(maxR, cell.r); maxC = Math.max(maxC, cell.c); });
+  if (maxR < 0 || maxC < 0) return [['']];
+  const aoa = Array.from({ length: maxR + 1 }, () => Array.from({ length: maxC + 1 }, () => ''));
+  celldata.forEach(cell => {
+    const v = cell.v;
+    let value = '';
+    if (v !== null && typeof v === 'object') {
+      value = v.v !== undefined && v.v !== null ? v.v : (v.m || '');
+    } else if (v !== null && v !== undefined) {
+      value = v;
+    }
+    aoa[cell.r][cell.c] = value;
+  });
+  return aoa;
+};
+
+// Word opens HTML wrapped with these MS Office namespaces natively when given a .doc extension —
+// this preserves full rich-text formatting without needing a heavyweight OOXML-generation library.
+const buildWordDoc = (title, contentHtml) => {
+  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset="utf-8"><title>${title}</title>
+<style>body{font-family:Calibri,Arial,sans-serif;}</style>
+</head><body>${contentHtml}</body></html>`;
+  return new Blob(['﻿', html], { type: 'application/msword' });
+};
+
+const sheetsToWorkbook = (sheets) => {
+  const wb = XLSX.utils.book_new();
+  (sheets || []).forEach((sheet, idx) => {
+    const aoa = fortuneSheetToAOA(sheet.celldata);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, (sheet.name || `Sheet${idx + 1}`).slice(0, 31));
+  });
+  return wb;
 };
 
 const applyMemoFields = (html, fields) => {
@@ -114,6 +155,33 @@ const ExportMenu = ({ onExport, formats }) => {
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Export Confirm/Preview Modal ──
+const ExportConfirmModal = ({ open, title, exporting, onConfirm, onClose, children }) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between shrink-0">
+          <h3 className="font-black text-lg text-foreground">{title}</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-lg"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 bg-muted/20 custom-scrollbar">{children}</div>
+        <div className="px-6 py-4 border-t border-border/50 flex justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border/60 font-bold text-sm hover:bg-muted">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={exporting}
+            className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm flex items-center gap-2 disabled:opacity-60"
+          >
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            <span>{exporting ? 'Preparing File...' : 'Confirm & Download'}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -199,22 +267,73 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
     }, 1500);
   }, [title]);
 
-  const handleExport = useCallback(async (type) => {
+  const [exportType, setExportType] = useState(null);
+  const [exporting, setExporting] = useState(false);
+
+  const buildExportHtml = useCallback(() => {
     const contentHtml = editorRef.current?.innerHTML || '';
-    if (type === 'html') {
-      const blob = new Blob([`<html><head><title>${title}</title><meta charset="utf-8"></head><body style="padding:20px;">${contentHtml}</body></html>`], { type: 'text/html' });
-      const link = document.createElement('a');
-      link.download = `${title}.html`;
-      link.href = URL.createObjectURL(blob);
-      link.click();
-    }
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:Calibri,Arial,sans-serif;padding:20px;">${contentHtml}</body></html>`;
   }, [title]);
+
+  const handleConfirmExport = useCallback(async () => {
+    if (!exportType) return;
+    setExporting(true);
+    try {
+      if (exportType === 'html') {
+        const blob = new Blob([buildExportHtml()], { type: 'text/html' });
+        saveAs(blob, `${title}.html`);
+      } else if (exportType === 'docx') {
+        const blob = buildWordDoc(title, editorRef.current?.innerHTML || '');
+        saveAs(blob, `${title}.doc`);
+      } else if (exportType === 'pdf') {
+        const canvas = await html2canvas(editorRef.current, { scale: 2, backgroundColor: '#ffffff' });
+        const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const imgHeight = (canvas.height * pageWidth) / canvas.width;
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidth, imgHeight);
+        pdf.save(`${title}.pdf`);
+      }
+      toast.success('Document exported and saved locally.');
+      setExportType(null);
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast.error('Export failed. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }, [exportType, title, buildExportHtml]);
 
   const execCmd = (cmd, arg = null) => {
     document.execCommand(cmd, false, arg);
     editorRef.current.focus();
     handleInput();
   };
+
+  const insertLink = () => {
+    const url = window.prompt('Enter URL:');
+    if (url) execCmd('createLink', url);
+  };
+
+  const insertTable = () => {
+    const rows = parseInt(window.prompt('Number of rows:', '3'), 10) || 3;
+    const cols = parseInt(window.prompt('Number of columns:', '3'), 10) || 3;
+    let html = '<table style="border-collapse:collapse;width:100%;margin:8px 0;">';
+    for (let r = 0; r < rows; r++) {
+      html += '<tr>';
+      for (let c = 0; c < cols; c++) html += '<td style="border:1px solid #999;padding:6px;min-width:40px;">&nbsp;</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    execCmd('insertHTML', html);
+  };
+
+  const HEADING_STYLES = [
+    { label: 'Normal', value: 'p' },
+    { label: 'Heading 1', value: 'h1' },
+    { label: 'Heading 2', value: 'h2' },
+    { label: 'Heading 3', value: 'h3' },
+    { label: 'Quote', value: 'blockquote' },
+  ];
 
   const FONT_FAMILIES = [
     { label: 'Standard (Inter)', value: "'Inter', sans-serif" },
@@ -258,23 +377,39 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
             <Send size={18} />
             <span className="uppercase tracking-widest">Send to Workflow</span>
           </button>
-          <ExportMenu onExport={handleExport} formats={[{ type: 'html', label: 'Export as HTML', icon: FileText }]} />
+          <ExportMenu
+            onExport={(type) => setExportType(type)}
+            formats={[
+              { type: 'docx', label: 'Export as Word (.doc)', icon: FileText },
+              { type: 'pdf', label: 'Export as PDF', icon: File },
+              { type: 'html', label: 'Export as HTML', icon: FileText },
+            ]}
+          />
         </div>
       </div>
 
       <div className="glass bg-slate-100 rounded-2xl shadow-sm relative z-10 flex flex-col border border-border/50 overflow-hidden">
         {/* Advanced MS Word Style Toolbar */}
         <div className="bg-white border-b border-border/40 px-3 py-2 flex items-center gap-1.5 overflow-x-auto custom-scrollbar sticky top-0 z-20">
-          
+
+          {/* Styles */}
+          <select
+            onChange={(e) => execCmd('formatBlock', e.target.value)}
+            defaultValue="p"
+            className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
+          >
+            {HEADING_STYLES.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
+          </select>
+
           {/* Font Controls */}
-          <select 
+          <select
             onChange={(e) => execCmd('fontName', e.target.value)}
             className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
           >
             {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
 
-          <select 
+          <select
             onChange={(e) => execCmd('fontSize', e.target.value)}
             className="h-8 bg-muted/50 border border-border/40 rounded px-1.5 text-[10px] font-bold outline-none hover:bg-muted"
           >
@@ -289,6 +424,9 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
             <button title="Bold" onClick={() => execCmd('bold')} className="p-1.5 hover:bg-muted font-black rounded w-8 h-8 flex items-center justify-center">B</button>
             <button title="Italic" onClick={() => execCmd('italic')} className="p-1.5 hover:bg-muted italic rounded w-8 h-8 flex items-center justify-center font-serif">I</button>
             <button title="Underline" onClick={() => execCmd('underline')} className="p-1.5 hover:bg-muted underline rounded w-8 h-8 flex items-center justify-center">U</button>
+            <button title="Strikethrough" onClick={() => execCmd('strikeThrough')} className="p-1.5 hover:bg-muted line-through rounded w-8 h-8 flex items-center justify-center">S</button>
+            <button title="Subscript" onClick={() => execCmd('subscript')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">X<sub>2</sub></button>
+            <button title="Superscript" onClick={() => execCmd('superscript')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">X<sup>2</sup></button>
           </div>
 
           <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
@@ -317,10 +455,20 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
 
           <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
 
-          {/* Lists */}
+          {/* Lists & Indent */}
           <div className="flex items-center gap-0.5 shrink-0">
             <button title="Bullet List" onClick={() => execCmd('insertUnorderedList')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">●</button>
             <button title="Number List" onClick={() => execCmd('insertOrderedList')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">1.</button>
+            <button title="Decrease Indent" onClick={() => execCmd('outdent')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">⇤</button>
+            <button title="Increase Indent" onClick={() => execCmd('indent')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">⇥</button>
+          </div>
+
+          <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
+
+          {/* Insert */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button title="Insert Link" onClick={insertLink} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center text-xs">🔗</button>
+            <button title="Insert Table" onClick={insertTable} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"><Table size={14} /></button>
           </div>
 
           <div className="w-px h-6 bg-border/40 mx-1 shrink-0"></div>
@@ -331,10 +479,10 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
             <button title="Redo" onClick={() => execCmd('redo')} className="p-1.5 hover:bg-muted rounded w-8 h-8 flex items-center justify-center">↷</button>
           </div>
         </div>
-        
+
         {/* Native HTML Editor - Mobile Optimized */}
         <div className="editor-outer-shell">
-          <div 
+          <div
             ref={editorRef}
             contentEditable={true}
             onInput={handleInput}
@@ -343,6 +491,19 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
           />
         </div>
       </div>
+
+      <ExportConfirmModal
+        open={!!exportType}
+        title={`Export "${title}" as ${exportType === 'docx' ? 'Word (.doc)' : exportType === 'pdf' ? 'PDF' : 'HTML'}`}
+        exporting={exporting}
+        onConfirm={handleConfirmExport}
+        onClose={() => setExportType(null)}
+      >
+        <div
+          className="bg-white border border-border/40 rounded-xl shadow-sm p-8 max-h-[55vh] overflow-y-auto custom-scrollbar"
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(editorRef.current?.innerHTML || '') }}
+        />
+      </ExportConfirmModal>
     </div>
   );
 };
@@ -385,8 +546,36 @@ const SpreadsheetEditor = ({ loadedDraft, onAutosave }) => {
     }, 1500);
   }, [title]);
 
+  const [exportType, setExportType] = useState(null);
+  const [exporting, setExporting] = useState(false);
+
+  const previewAoa = exportType ? fortuneSheetToAOA(sheetData.current?.[0]?.celldata) : null;
+
+  const handleConfirmExport = useCallback(async () => {
+    if (!exportType) return;
+    setExporting(true);
+    try {
+      const wb = sheetsToWorkbook(sheetData.current);
+      if (exportType === 'xlsx') {
+        XLSX.writeFile(wb, `${title}.xlsx`);
+      } else if (exportType === 'csv') {
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        saveAs(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), `${title}.csv`);
+      }
+      toast.success('Spreadsheet exported and saved locally.');
+      setExportType(null);
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast.error('Export failed. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }, [exportType, title]);
+
   const exportFormats = [
-    { type: 'xlsx', label: 'Export as Excel (Not Implemented)', icon: FileSpreadsheet }
+    { type: 'xlsx', label: 'Export as Excel (.xlsx)', icon: FileSpreadsheet },
+    { type: 'csv', label: 'Export as CSV', icon: FileText },
   ];
 
   return (
@@ -401,12 +590,35 @@ const SpreadsheetEditor = ({ loadedDraft, onAutosave }) => {
           />
           <SaveIndicator saving={saving} />
         </div>
-        <ExportMenu onExport={() => alert('Excel export coming soon!')} formats={exportFormats} />
+        <ExportMenu onExport={(type) => setExportType(type)} formats={exportFormats} />
       </div>
 
       <div className="glass bg-white/70 border border-border/50 rounded-2xl overflow-hidden shadow-sm h-[600px] w-full relative">
         <Workbook data={sheetData.current} onChange={handleSheetChange} />
       </div>
+
+      <ExportConfirmModal
+        open={!!exportType}
+        title={`Export "${title}" as ${exportType === 'xlsx' ? 'Excel (.xlsx)' : 'CSV'}`}
+        exporting={exporting}
+        onConfirm={handleConfirmExport}
+        onClose={() => setExportType(null)}
+      >
+        <div className="bg-white border border-border/40 rounded-xl shadow-sm overflow-auto max-h-[55vh]">
+          <table className="text-xs border-collapse w-full">
+            <tbody>
+              {(previewAoa || []).slice(0, 30).map((row, r) => (
+                <tr key={r}>
+                  {row.slice(0, 20).map((cell, c) => (
+                    <td key={c} className="border border-border/30 px-2 py-1 whitespace-nowrap">{String(cell)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-[10px] text-muted-foreground p-2">Preview of "{sheetData.current?.[0]?.name || 'Sheet1'}" — additional sheets/rows are included in the downloaded file.</p>
+        </div>
+      </ExportConfirmModal>
     </div>
   );
 };
@@ -435,9 +647,12 @@ const PresentationEditor = ({ loadedDraft, onAutosave }) => {
       modules: {
         toolbar: [
           [{ 'font': [] }, { 'size': ['small', false, 'large', 'huge'] }],
-          ['bold', 'italic', 'underline'],
+          ['bold', 'italic', 'underline', 'strike'],
           [{ 'color': [] }, { 'background': [] }],
           [{ 'align': [] }],
+          [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+          [{ 'indent': '-1' }, { 'indent': '+1' }],
+          ['blockquote', 'link'],
           ['image', 'video'],
           ['clean']
         ]
@@ -512,6 +727,65 @@ const PresentationEditor = ({ loadedDraft, onAutosave }) => {
     };
   }, [presenting, slides.length]);
 
+  const [exportType, setExportType] = useState(null);
+  const [exporting, setExporting] = useState(false);
+
+  // Renders each slide's HTML off-screen at fixed 16:9 dimensions and captures it as an image,
+  // since only the active slide is mounted in the live Quill editor at any given time.
+  const captureSlideImages = useCallback(async () => {
+    const images = [];
+    for (const slide of slides) {
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '960px';
+      container.style.height = '540px';
+      container.style.background = '#ffffff';
+      container.style.padding = '48px';
+      container.style.boxSizing = 'border-box';
+      container.className = 'ql-editor';
+      container.innerHTML = DOMPurify.sanitize(slide.html || '');
+      document.body.appendChild(container);
+      const canvas = await html2canvas(container, { scale: 2, backgroundColor: '#ffffff' });
+      images.push(canvas.toDataURL('image/png'));
+      document.body.removeChild(container);
+    }
+    return images;
+  }, [slides]);
+
+  const handleConfirmExport = useCallback(async () => {
+    if (!exportType) return;
+    setExporting(true);
+    try {
+      const images = await captureSlideImages();
+      if (exportType === 'pptx') {
+        const pptx = new PptxGenJS();
+        pptx.defineLayout({ name: 'RMS_16x9', width: 10, height: 5.63 });
+        pptx.layout = 'RMS_16x9';
+        images.forEach(imgData => {
+          const s = pptx.addSlide();
+          s.addImage({ data: imgData, x: 0, y: 0, w: 10, h: 5.63 });
+        });
+        await pptx.writeFile({ fileName: `${title}.pptx` });
+      } else if (exportType === 'pdf') {
+        const pdf = new jsPDF({ unit: 'pt', format: [960, 540], orientation: 'landscape' });
+        images.forEach((imgData, idx) => {
+          if (idx > 0) pdf.addPage([960, 540], 'landscape');
+          pdf.addImage(imgData, 'PNG', 0, 0, 960, 540);
+        });
+        pdf.save(`${title}.pdf`);
+      }
+      toast.success('Presentation exported and saved locally.');
+      setExportType(null);
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast.error('Export failed. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }, [exportType, title, captureSlideImages]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -524,10 +798,19 @@ const PresentationEditor = ({ loadedDraft, onAutosave }) => {
           />
           <SaveIndicator saving={saving} />
         </div>
-        <button onClick={startPresentation} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all shadow-lg shadow-emerald-600/20">
-          <MonitorPlay size={16} />
-          <span>Present</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={startPresentation} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-5 py-3 rounded-xl transition-all shadow-lg shadow-emerald-600/20">
+            <MonitorPlay size={16} />
+            <span>Present</span>
+          </button>
+          <ExportMenu
+            onExport={(type) => setExportType(type)}
+            formats={[
+              { type: 'pptx', label: 'Export as PowerPoint (.pptx)', icon: Presentation },
+              { type: 'pdf', label: 'Export as PDF', icon: File },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="glass bg-white/70 border border-border/50 rounded-2xl flex overflow-hidden shadow-sm h-[600px] relative">
@@ -586,6 +869,24 @@ const PresentationEditor = ({ loadedDraft, onAutosave }) => {
           </div>
         </div>
       </div>
+
+      <ExportConfirmModal
+        open={!!exportType}
+        title={`Export "${title}" as ${exportType === 'pptx' ? 'PowerPoint (.pptx)' : 'PDF'}`}
+        exporting={exporting}
+        onConfirm={handleConfirmExport}
+        onClose={() => setExportType(null)}
+      >
+        <div className="grid grid-cols-3 gap-3">
+          {slides.map((s, idx) => (
+            <div key={s.id} className="border border-border/40 rounded-lg bg-white aspect-[16/9] overflow-hidden relative">
+              <span className="absolute top-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded">{idx + 1}</span>
+              <div className="scale-[0.3] origin-top-left w-[333%] h-[333%] pointer-events-none p-2" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(s.html || '') }} />
+            </div>
+          ))}
+        </div>
+        {exporting && <p className="text-xs text-muted-foreground mt-3">Rendering {slides.length} slide{slides.length > 1 ? 's' : ''}...</p>}
+      </ExportConfirmModal>
     </div>
   );
 };

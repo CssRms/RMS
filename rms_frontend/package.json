@@ -22,6 +22,7 @@
     "localforage": "^1.10.0",
     "lucide-react": "^0.479.0",
     "papaparse": "^5.5.3",
+    "pptxgenjs": "^4.0.1",
     "quill": "^2.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
