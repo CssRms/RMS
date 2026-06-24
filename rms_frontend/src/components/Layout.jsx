@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Menu, Inbox, Clock, WifiOff, RefreshCcw,
   Building2, ShieldAlert, Users, CalendarDays, DollarSign, UserPlus,
   HeartHandshake, Loader2, CheckCircle2, XCircle, X, FilePen, Trash2, GitBranch,
-  Package, AlertTriangle, ScanEye
+  Package, AlertTriangle, ScanEye, BookOpen
 } from 'lucide-react';
 import { getNotifications, getSyncQueueStatus, flushSyncQueue, markNotificationRead, markAllNotificationsRead, clearNotifications, getRequisitions, isMemoRecord, getDepartments } from '../lib/store';
 import { reqAPI, settingsAPI, authAPI } from '../lib/api';
@@ -413,6 +413,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
                           currentView === 'workflow_builder' ? 'Workflow Architecture' :
                             currentView === 'department_manager' ? 'Tenant Control' :
                               currentView === 'audit_logs' ? 'Security Audit' :
+                                currentView === 'documentation' ? 'System Documentation' :
                               currentView === 'sub_accounts' ? 'Sub-Accounts & Units' :
                                 currentView === 'hr_dashboard' ? 'HR Overview' :
                                   currentView === 'hr_employees' ? 'Employee Directory' :
@@ -1158,6 +1159,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
                 <SidebarItem icon={Settings} label="System Settings" active={currentView === 'workflow_builder'} onClick={() => onViewChange('workflow_builder')} isCollapsed={isCollapsed} />
                 <SidebarItem icon={Briefcase} label="Departments" active={currentView === 'department_manager'} onClick={() => onViewChange('department_manager')} isCollapsed={isCollapsed} />
                 <SidebarItem icon={Activity} label="System Audit" active={currentView === 'audit_logs'} onClick={() => onViewChange('audit_logs')} isCollapsed={isCollapsed} />
+                <SidebarItem icon={BookOpen} label="Documentation" active={currentView === 'documentation'} onClick={() => onViewChange('documentation')} isCollapsed={isCollapsed} />
               </div>
             )}
           </div>
@@ -1225,6 +1227,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               <SidebarItem icon={Settings} label="System" active={currentView === 'workflow_builder'} onClick={() => onViewChange('workflow_builder')} mobile />
               <SidebarItem icon={Briefcase} label="Depts" active={currentView === 'department_manager'} onClick={() => onViewChange('department_manager')} mobile />
               <SidebarItem icon={Activity} label="Audit" active={currentView === 'audit_logs'} onClick={() => onViewChange('audit_logs')} mobile />
+              <SidebarItem icon={BookOpen} label="Docs" active={currentView === 'documentation'} onClick={() => onViewChange('documentation')} mobile />
             </>
           )}
         </nav>

@@ -53,6 +53,7 @@ const Dashboard = React.lazy(() => import('./components/Dashboard'))
 const WorkflowBuilder = React.lazy(() => import('./components/WorkflowBuilder'))
 const DepartmentManager = React.lazy(() => import('./components/DepartmentManager'))
 const AuditLogs = React.lazy(() => import('./components/AuditLogs'))
+const Documentation = React.lazy(() => import('./components/Documentation'))
 const DocumentStudio = React.lazy(() => import('./components/DocumentStudio'))
 const RequisitionsPage = React.lazy(() => import('./components/RequisitionsPage'))
 const MemoManagement = React.lazy(() => import('./components/MemoManagement'))
@@ -196,7 +197,7 @@ const NetworkProvider = ({ children }) => {
 // Valid view names — used to validate hash on load and popstate
 const VALID_VIEWS = [
   'dashboard', 'requisitions', 'memos', 'activity',
-  'workflow_builder', 'department_manager', 'audit_logs',
+  'workflow_builder', 'department_manager', 'audit_logs', 'documentation',
   'document_studio', 'dept_profile', 'sub_accounts',
   // HR Portal views
   'hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment',
@@ -308,7 +309,7 @@ const AppContent = () => {
 
   if (!user) return loginStyle === 'premium' ? <LoginPagePremium /> : <Login />;
 
-  const isAdminView = ['workflow_builder', 'department_manager', 'audit_logs'].includes(currentView);
+  const isAdminView = ['workflow_builder', 'department_manager', 'audit_logs', 'documentation'].includes(currentView);
   const isHRView = ['hr_dashboard', 'hr_employees', 'hr_leaves', 'hr_attendance', 'hr_payroll', 'hr_recruitment'].includes(currentView);
   // HR department users log in with role='department' — detect them by name
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
@@ -332,6 +333,7 @@ const AppContent = () => {
     workflow_builder: <WorkflowBuilder onViewChange={navigate} />,
     department_manager: <DepartmentManager onViewChange={navigate} />,
     audit_logs: <AuditLogs onViewChange={navigate} />,
+    documentation: <Documentation onViewChange={navigate} />,
     document_studio: <DocumentStudio user={user} onViewChange={navigate} />,
     dept_profile: <DepartmentProfile user={user} onViewChange={navigate} />,
     sub_accounts: (

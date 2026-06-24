@@ -362,6 +362,8 @@ export const adminAPI = {
   savePrintSettings: (canPrintIds, showStamp, showSignature, requireGovernance) => api.post('/admin/print-settings', { canPrintIds, showStamp, showSignature, requireGovernance }),
   hardReset: (options) => api.post('/admin/hard-reset', options),
   getSmsBalance: () => api.get('/admin/sms-balance'),
+  getArchitectureDoc: () => api.get('/admin/architecture-doc'),
+  getMigrationsLogbook: () => api.get('/admin/migrations'),
 };
 
 export const kivAPI = {

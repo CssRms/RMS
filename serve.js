@@ -4630,6 +4630,38 @@ app.post('/api/requisitions/bulk-delete', authenticateToken, async (req, res) =>
 
 
 // ── Deleted Records Bin (super admin only — invisible to department users) ──────
+// ── Admin Documentation: live architecture guide + read-only migration logbook ──
+// The guide is read straight off disk on every request (no caching) so editing
+// ARCHITECTURE.md and deploying is the only step needed to update what admins see —
+// there is no build step or database write involved in keeping this page current.
+app.get('/api/admin/architecture-doc', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
+  try {
+    const docPath = path.join(__dirname, 'ARCHITECTURE.md');
+    const content = fs.readFileSync(docPath, 'utf8');
+    const stats = fs.statSync(docPath);
+    res.json({ content, updatedAt: stats.mtime });
+  } catch (err) {
+    logger.error('[ARCHITECTURE DOC GET]', err.message);
+    res.status(500).json({ error: 'Failed to load architecture guide.' });
+  }
+});
+
+// Reads Prisma's own migration history table directly — this list is always accurate
+// with zero manual upkeep, since it's exactly what the database itself recorded.
+app.get('/api/admin/migrations', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT migration_name, started_at, finished_at, applied_steps_count, logs
+      FROM "_prisma_migrations"
+      ORDER BY started_at DESC
+    `;
+    res.json(rows);
+  } catch (err) {
+    logger.error('[MIGRATIONS LOGBOOK GET]', err.message);
+    res.status(500).json({ error: 'Failed to load migration history.' });
+  }
+});
+
 app.get('/api/admin/deleted-records', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
   try {
     const records = await prisma.deletedRecord.findMany({
