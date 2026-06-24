@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=rms_backend/prisma/schema.prisma
+
+      - name: Backend syntax check
+        run: node --check serve.js
+
+      - name: Run backend tests
+        run: npm test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rms_frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: rms_frontend
+        run: npm ci --legacy-peer-deps
+
+      - name: Run frontend tests
+        working-directory: rms_frontend
+        run: npm test
+
+      - name: Build frontend
+        working-directory: rms_frontend
+        run: npm run build
