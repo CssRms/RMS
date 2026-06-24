@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardStats, getRequisitions, isMemoRecord, isOperationalRequisition } from '../lib/store';
 import { reqAPI, settingsAPI, adminAPI } from '../lib/api';
+import { getEffectiveAmount, getLiveTrailDepartment } from '../lib/requisitionDisplay';
 import toast from 'react-hot-toast';
 import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare } from 'lucide-react';
 
@@ -473,14 +474,11 @@ const Dashboard = ({ onViewChange }) => {
                                 <div className="flex items-center gap-1 text-[9px]">
                                   <span className="font-bold text-muted-foreground/70 uppercase truncate max-w-[70px]">{norm.department}</span>
                                   {(() => {
-                                    const cvId = r.currentVettingDeptId ? parseInt(r.currentVettingDeptId) : null;
-                                    const isSettled = norm.finalState === 'treated' || norm.finalState === 'published';
-                                    const liveDept = (cvId && !isSettled) ? departments.find(d => d.id === cvId) : null;
-                                    const trailName = liveDept?.name || r.targetDepartment?.name;
-                                    return trailName ? (
+                                    const trailDept = getLiveTrailDepartment(r, departments);
+                                    return trailDept?.name ? (
                                       <>
                                         <ArrowRight size={8} className="text-muted-foreground/30 shrink-0" />
-                                        <span className="font-black text-primary uppercase truncate max-w-[70px]">{trailName}</span>
+                                        <span className="font-black text-primary uppercase truncate max-w-[70px]">{trailDept.name}</span>
                                       </>
                                     ) : null;
                                   })()}
@@ -605,34 +603,30 @@ const Dashboard = ({ onViewChange }) => {
                           </td>
                           <td className="py-4 px-6 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                              {isMoneyReq ? (() => {
-                               // ICC's post-approval override takes priority over Audit's earlier
-                               // pre-approval override (mirrors getEffectiveReqAmount used elsewhere) —
-                               // showing the raw amount here hid that Audit/ICC had since revised it.
-                               const hasIcc = r.hasIccOverride && r.iccOverrideAmount != null;
-                               const hasAudit = r.hasAuditOverride && r.auditAmount != null;
-                               if (hasIcc) {
+                               const eff = getEffectiveAmount(r);
+                               if (eff.source === 'icc') {
                                  return (
                                    <div className="flex flex-col gap-0.5">
-                                     <span className="text-sm font-black text-teal-700 font-mono">₦{Number(r.iccOverrideAmount).toLocaleString()}</span>
+                                     <span className="text-sm font-black text-teal-700 font-mono">₦{eff.amount.toLocaleString()}</span>
                                      <div className="flex items-center gap-1">
-                                       <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(hasAudit ? r.auditAmount : r.amount || 0).toLocaleString()}</span>
+                                       <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{eff.supersededAmount.toLocaleString()}</span>
                                        <span className="px-1 py-0.5 rounded text-[7px] font-black bg-teal-100 border border-teal-200 text-teal-700 uppercase tracking-wide">ICC</span>
                                      </div>
                                    </div>
                                  );
                                }
-                               if (hasAudit) {
+                               if (eff.source === 'audit') {
                                  return (
                                    <div className="flex flex-col gap-0.5">
-                                     <span className="text-sm font-black text-purple-700 font-mono">₦{Number(r.auditAmount).toLocaleString()}</span>
+                                     <span className="text-sm font-black text-purple-700 font-mono">₦{eff.amount.toLocaleString()}</span>
                                      <div className="flex items-center gap-1">
-                                       <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(r.amount || 0).toLocaleString()}</span>
+                                       <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{eff.supersededAmount.toLocaleString()}</span>
                                        <span className="px-1 py-0.5 rounded text-[7px] font-black bg-purple-100 border border-purple-200 text-purple-600 uppercase tracking-wide">Audit</span>
                                      </div>
                                    </div>
                                  );
                                }
-                               return <span className="text-sm font-black text-foreground font-mono">₦{Number(r.amount || 0).toLocaleString()}</span>;
+                               return <span className="text-sm font-black text-foreground font-mono">₦{eff.amount.toLocaleString()}</span>;
                              })() : (
                                <span className="text-[10px] text-muted-foreground/50 italic">Non-financial</span>
                              )}
@@ -641,15 +635,11 @@ const Dashboard = ({ onViewChange }) => {
                             <div className="flex items-center gap-1.5 text-[10px]">
                               <span className="font-bold text-muted-foreground opacity-60 uppercase">{r.department}</span>
                               {(() => {
-                                const norm2 = normalizeReq(r);
-                                const cvId = r.currentVettingDeptId ? parseInt(r.currentVettingDeptId) : null;
-                                const isSettled = norm2.finalState === 'treated' || norm2.finalState === 'published';
-                                const liveDept = (cvId && !isSettled) ? departments.find(d => d.id === cvId) : null;
-                                const trailName = liveDept?.name || r.targetDepartment?.name;
-                                return trailName ? (
+                                const trailDept = getLiveTrailDepartment(r, departments);
+                                return trailDept?.name ? (
                                   <>
                                     <ArrowRight size={9} className="text-muted-foreground/30" />
-                                    <span className="font-black text-primary uppercase tracking-tight">{trailName}</span>
+                                    <span className="font-black text-primary uppercase tracking-tight">{trailDept.name}</span>
                                   </>
                                 ) : null;
                               })()}

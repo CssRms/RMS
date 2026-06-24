@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { getOperationalRequisitions, getRequisitionDetail, updateRequisitionStatus, downloadSignedPdf, downloadDynamicPdf, getDepartments, forwardRequisition, finalApproveRequisition, sendToVettingRequisition, reapproveRequisition, forwardForReapproval, vettingActionRequisition, uploadAttachments, isMemoRecord, kivRequisition, unKivRequisition, saveAuditOverride, clearAuditOverride, iccComment, iccFreeze, iccUnfreeze, iccVetForward, iccVetReturn } from '../lib/store'; // kivRequisition/unKivRequisition reused in IccObserverPanel
 import { aiAPI, settingsAPI, printSettingsAPI } from '../lib/api';
 import { loadCachedFlag } from '../lib/featureFlag';
+import { getEffectiveAmount, getLiveTrailDepartment } from '../lib/requisitionDisplay';
 import { useAIFeatures } from '../context/AIFeaturesContext';
 import { toast } from 'react-hot-toast';
 import {
@@ -3679,24 +3680,22 @@ const RequisitionDetailModal = ({ req, user, departments, onClose, onAction, onE
           </div>
           
           {isFinancial && (() => {
-            // ICC's override (if set) is the effective amount; otherwise Audit's; otherwise the original.
-            const hasOverride = _hasIccOverride || _hasAuditOverride;
-            const effAmt = _hasIccOverride ? detail?.iccOverrideAmount : (_hasAuditOverride ? detail?.auditAmount : req.amount);
-            const label = _hasIccOverride ? 'ICC Verified Amount' : (_hasAuditOverride ? 'Audit Verified Amount' : 'Total Amount');
-            const palette = _hasIccOverride
+            const eff = getEffectiveAmount({ ...detail, amount: detail?.amount ?? req.amount });
+            const hasOverride = eff.source != null;
+            const palette = eff.source === 'icc'
               ? { box: 'bg-violet-50 border-violet-200', text: 'text-violet-700', amt: 'text-violet-900' }
               : hasOverride
                 ? { box: 'bg-purple-50 border-purple-200', text: 'text-purple-700', amt: 'text-purple-900' }
                 : { box: 'bg-white border-border/40', text: 'text-muted-foreground', amt: 'text-foreground' };
             return (
               <div className={`sm:text-right border p-4 rounded-xl shadow-sm min-w-[200px] ${palette.box}`}>
-                <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${palette.text}`}>{label}</p>
+                <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${palette.text}`}>{eff.label}</p>
                 <p className={`text-2xl font-mono font-black ${palette.amt}`}>
-                  ₦{Number(hasOverride ? (effAmt ?? req.amount) : req.amount || 0).toLocaleString()}
+                  ₦{eff.amount.toLocaleString()}
                 </p>
                 {hasOverride && (
                   <p className="text-[9px] text-muted-foreground mt-0.5 line-through">
-                    Originally: ₦{Number(req.amount || 0).toLocaleString()}
+                    Originally: ₦{eff.originalAmount.toLocaleString()}
                   </p>
                 )}
               </div>
@@ -5448,35 +5447,31 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                         </td>
                         <td className="py-3 px-4 bg-white/50 border-y border-border/30 group-hover:bg-white transition-colors">
                           {isMoneyReq ? (() => {
-                            // ICC's post-approval override takes priority over Audit's earlier pre-approval
-                            // override (mirrors getEffectiveReqAmount / the detail modal's same precedence) —
-                            // showing only the Audit badge here hid the fact that ICC had since revised it further.
-                            const hasIcc = r.hasIccOverride && r.iccOverrideAmount != null;
-                            const hasAudit = r.hasAuditOverride && r.auditAmount != null;
-                            if (hasIcc) {
+                            const eff = getEffectiveAmount(r);
+                            if (eff.source === 'icc') {
                               return (
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="text-[12px] font-black text-teal-700 font-mono">₦{Number(r.iccOverrideAmount).toLocaleString()}</span>
+                                  <span className="text-[12px] font-black text-teal-700 font-mono">₦{eff.amount.toLocaleString()}</span>
                                   <div className="flex items-center gap-1">
-                                    <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(hasAudit ? r.auditAmount : r.amount || 0).toLocaleString()}</span>
+                                    <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{eff.supersededAmount.toLocaleString()}</span>
                                     <span className="px-1 py-0.5 rounded text-[7px] font-black bg-teal-100 border border-teal-200 text-teal-700 uppercase tracking-wide">ICC</span>
                                   </div>
                                 </div>
                               );
                             }
-                            if (hasAudit) {
+                            if (eff.source === 'audit') {
                               return (
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="text-[12px] font-black text-purple-700 font-mono">₦{Number(r.auditAmount).toLocaleString()}</span>
+                                  <span className="text-[12px] font-black text-purple-700 font-mono">₦{eff.amount.toLocaleString()}</span>
                                   <div className="flex items-center gap-1">
-                                    <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{Number(r.amount || 0).toLocaleString()}</span>
+                                    <span className="text-[9px] text-muted-foreground/50 font-mono line-through">₦{eff.supersededAmount.toLocaleString()}</span>
                                     <span className="px-1 py-0.5 rounded text-[7px] font-black bg-purple-100 border border-purple-200 text-purple-600 uppercase tracking-wide">Audit</span>
                                   </div>
                                 </div>
                               );
                             }
                             return (
-                              <span className={`text-[12px] font-black text-foreground font-mono ${search && String(r.amount || '').includes(search) ? 'bg-yellow-200 text-yellow-900 rounded-sm px-0.5' : ''}`}>₦{Number(r.amount || 0).toLocaleString()}</span>
+                              <span className={`text-[12px] font-black text-foreground font-mono ${search && String(r.amount || '').includes(search) ? 'bg-yellow-200 text-yellow-900 rounded-sm px-0.5' : ''}`}>₦{eff.amount.toLocaleString()}</span>
                             );
                           })() : (
                             <span className="text-[10px] text-muted-foreground/50 italic">Non-financial</span>
@@ -5494,19 +5489,11 @@ const RequisitionsPage = ({ onViewChange, initialReqId, onDeepLinkConsumed }) =>
                               ) : null;
                             })()}
                             {(() => {
-                              // During an ICC/Audit vetting detour, currentVettingDeptId tracks the
-                              // request's real live location — targetDepartment stays frozen at whatever
-                              // it was forwarded to before the detour started, so prefer the live spot
-                              // whenever a vetting leg is active and the request hasn't been treated/published yet.
-                              const norm = normalizeReq(r);
-                              const cvId = r.currentVettingDeptId ? parseInt(r.currentVettingDeptId) : null;
-                              const isSettled = norm.finalState === 'treated' || norm.finalState === 'published';
-                              const liveDept = (cvId && !isSettled) ? departments.find(d => d.id === cvId) : null;
-                              const trailName = liveDept?.name || r.targetDepartment?.name;
-                              return trailName ? (
+                              const trailDept = getLiveTrailDepartment(r, departments);
+                              return trailDept?.name ? (
                                 <>
                                   <ArrowRight size={9} className="text-muted-foreground/30" />
-                                  <span className="font-black text-primary uppercase tracking-tight">{trailName}</span>
+                                  <span className="font-black text-primary uppercase tracking-tight">{trailDept.name}</span>
                                 </>
                               ) : null;
                             })()}
