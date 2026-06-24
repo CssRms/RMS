@@ -7,7 +7,8 @@
     "build": "prisma generate --schema=rms_backend/prisma/schema.prisma && npm run frontend:install && npm --prefix rms_frontend run build",
     "start": "prisma migrate deploy --schema=rms_backend/prisma/schema.prisma && node serve.js",
     "seed": "node rms_backend/prisma/seed.js",
-    "deploy-sync": "prisma migrate deploy --schema=rms_backend/prisma/schema.prisma && node rms_backend/prisma/seed.js"
+    "deploy-sync": "prisma migrate deploy --schema=rms_backend/prisma/schema.prisma && node rms_backend/prisma/seed.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.886.0",
@@ -36,5 +37,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.9"
   }
 }

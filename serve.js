@@ -47,20 +47,26 @@ const {
 const { sendEmail } = require('./lib/mailer');
 const webpush = require('web-push');
 
-// Apply any pending schema migrations before the server starts.
+// Apply any pending, version-controlled migrations before the server starts.
 // Must run at runtime (not build time) because the DB is only reachable from
 // Railway's runtime network, not from the isolated build container.
+// This used to run `prisma db push --accept-data-loss`, which silently force-matches
+// the live database to schema.prisma with no history and no warning on every single
+// boot — it was duplicating (and undoing) the same fix already made to the `start`
+// script in package.json. `migrate deploy` only ever applies new, explicit,
+// version-controlled migration files and fails loudly instead of guessing.
 {
   const { execSync } = require('child_process');
   try {
-    logger.info('[startup] Running prisma db push…');
+    logger.info('[startup] Applying pending Prisma migrations…');
     execSync(
-      'npx prisma db push --schema=rms_backend/prisma/schema.prisma --accept-data-loss',
+      'npx prisma migrate deploy --schema=rms_backend/prisma/schema.prisma',
       { stdio: 'inherit' }
     );
-    logger.info('[startup] prisma db push completed.');
+    logger.info('[startup] Prisma migrations up to date.');
   } catch (e) {
-    logger.warn('[startup] prisma db push failed (schema may already be in sync): ' + e.message);
+    logger.error('[startup] prisma migrate deploy failed: ' + e.message);
+    throw e; // a failed migration must stop the server from starting, not be swallowed
   }
 }
 
@@ -145,39 +151,10 @@ async function sendPushNotification(deptIds, { title, body, url }) {
 //   HR        → ≤ 50,000
 //   GM        → 50,001 – 100,000
 //   Chairman  → > 100,000 (full authority at any amount)
-const checkFinalApproveAuthority = (deptName, amount, isMaterial = false) => {
-  const n = (deptName || '').toLowerCase();
-  const amt = parseFloat(amount) || 0;
-  const isChairman = /ceo|chairman/i.test(n);
-  const isGM = /general\s*manager|\bgm\b/i.test(n);
-  const isHR = /\bhr\b|human\s*resource/i.test(n);
-
-  // Material requests have no cash threshold — any authority tier can approve
-  if (isMaterial) {
-    if (isChairman) return 'chairman';
-    if (isGM)       return 'gm';
-    if (isHR)       return 'hr';
-    return null;
-  }
-
-  // Chairman: full authority over all amount levels
-  if (isChairman) return 'chairman';
-  // GM band: 50,001 – 100,000
-  if (isGM && amt > 50000 && amt <= 100000) return 'gm';
-  // HR band: ≤ 50,000
-  if (isHR && amt <= 50000) return 'hr';
-  return null; // Amount outside this department's authorised band
-};
-
-// Lowest authority tier whose band actually covers this amount — used to tell the
-// requester which department needs to re-approve after a price revision.
-const requiredAuthorityTier = (amount, isMaterial = false) => {
-  if (isMaterial) return 'hr'; // material has no cash threshold — any tier already covers it
-  const amt = parseFloat(amount) || 0;
-  if (amt <= 50000) return 'hr';
-  if (amt <= 100000) return 'gm';
-  return 'chairman';
-};
+// Extracted to rms_backend/lib/businessRules.js (with checkFinalApproveAuthority,
+// getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash) so these pure rules are
+// unit-testable without starting the server or touching a database — see businessRules.test.js.
+const { checkFinalApproveAuthority, requiredAuthorityTier, getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash } = require('./rms_backend/lib/businessRules');
 
 // ── Re-approval escalation ──────────────────────────────────────────────────────
 // Called whenever Audit or ICC saves/changes a verified-amount override. If the new
@@ -221,15 +198,7 @@ async function checkAndApplyReapprovalEscalation(requisitionId, newAmount, isMat
 }
 
 // ── Sub-account privilege helpers ─────────────────────────────────────────────
-// Returns the amount that should be compared against privilege limits.
-// Uses audit-overridden amount when Audit has verified the table, otherwise original.
-// Priority: ICC's post-approval override (reviewed last, closest to payment) beats
-// Audit's pre-approval override, which beats the creator's original estimate.
-const getEffectiveReqAmount = (req) => {
-  if (req?.hasIccOverride && req?.iccOverrideAmount != null) return parseFloat(req.iccOverrideAmount);
-  if (req?.hasAuditOverride && req?.auditAmount != null) return parseFloat(req.auditAmount);
-  return parseFloat(req?.amount || 0);
-};
+// getEffectiveReqAmount now lives in rms_backend/lib/businessRules.js (required above).
 
 // Fetch a sub-account's privilege settings from DB (raw SQL — columns may predate Prisma client regen)
 async function getSubPrivilege(deptId) {
@@ -258,15 +227,8 @@ async function getSubPrivilegeAmount(deptId) {
   return (await getSubPrivilege(deptId)).privilegeAmount;
 }
 
-// Returns true if the sub-account's JWT privilege covers the effective amount
-function subPrivilegeCoversCash(user, effectiveAmount) {
-  if (!user?.isSubAccount) return false;
-  const limit = parseFloat(user.privilegeAmount);
-  return !isNaN(limit) && effectiveAmount <= limit;
-}
-
 // ── ICC helpers ───────────────────────────────────────────────────────────────
-const isIccDept = (name) => /\bicc\b|internal.*control|control.*compliance/i.test(name || '');
+// subPrivilegeCoversCash and isIccDept now live in rms_backend/lib/businessRules.js (required above).
 
 // Resolves the department that actually holds a given authority tier — used to route a
 // request to whoever needs to clear a re-approval. Chairman/CEO satisfies any tier.
