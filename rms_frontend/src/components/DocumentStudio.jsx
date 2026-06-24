@@ -147,11 +147,11 @@ const ExportMenu = ({ onExport, formats }) => {
     <div className="relative z-50">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center space-x-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm px-5 py-3 rounded-xl transition-all shadow-lg shadow-primary/20"
+        className="flex items-center justify-center gap-1.5 w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-[11px] lg:text-sm px-2 lg:px-5 py-3 rounded-xl transition-all shadow-lg shadow-primary/20"
       >
-        <Download size={16} />
-        <span>Export</span>
-        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        <Download size={16} className="shrink-0" />
+        <span className="truncate">Export</span>
+        <ChevronDown size={14} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="absolute right-0 mt-2 w-56 glass bg-white/90 border border-border/50 rounded-2xl p-2 z-50 shadow-xl">
@@ -491,36 +491,38 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
           />
           <SaveIndicator saving={saving} />
         </div>
-        <div className="flex items-center space-x-2 lg:space-x-4">
+        <div className="w-full lg:w-auto">
           {aiEnabled && (
-            <div className="hidden lg:block">
+            <div className="hidden lg:block lg:mb-0 lg:inline-block lg:mr-4">
               <VoiceDictation onTranscript={(text) => {
                 if (editor) editor.chain().focus().insertContent(` ${text}`).run();
               }} />
             </div>
           )}
-          <button
-            onClick={() => setTemplatePickerOpen(true)}
-            className="flex items-center justify-center space-x-2 bg-white border border-border/60 hover:border-primary/40 hover:bg-muted/30 text-foreground font-black text-xs lg:text-sm px-5 py-3.5 rounded-2xl transition-all shadow-sm"
-          >
-            <FileText size={18} className="text-primary" />
-            <span className="uppercase tracking-widest">Templates</span>
-          </button>
-          <button
-            onClick={onSend}
-            className="flex-1 lg:flex-none flex items-center justify-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs lg:text-sm px-6 py-3.5 rounded-2xl transition-all shadow-xl shadow-amber-600/20"
-          >
-            <Send size={18} />
-            <span className="uppercase tracking-widest">Send to Workflow</span>
-          </button>
-          <ExportMenu
-            onExport={(type) => setExportType(type)}
-            formats={[
-              { type: 'docx', label: 'Export as Word (.doc)', icon: FileText },
-              { type: 'pdf', label: 'Export as PDF', icon: File },
-              { type: 'html', label: 'Export as HTML', icon: FileText },
-            ]}
-          />
+          <div className="grid grid-cols-3 gap-2 w-full lg:flex lg:items-center lg:gap-4 lg:w-auto">
+            <button
+              onClick={() => setTemplatePickerOpen(true)}
+              className="flex items-center justify-center gap-1.5 bg-white border border-border/60 hover:border-primary/40 hover:bg-muted/30 text-foreground font-black text-[11px] lg:text-sm px-2 lg:px-5 py-3 lg:py-3.5 rounded-xl lg:rounded-2xl transition-all shadow-sm"
+            >
+              <FileText size={16} className="text-primary shrink-0" />
+              <span className="uppercase tracking-widest truncate">Templates</span>
+            </button>
+            <button
+              onClick={onSend}
+              className="flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] lg:text-sm px-2 lg:px-6 py-3 lg:py-3.5 rounded-xl lg:rounded-2xl transition-all shadow-xl shadow-amber-600/20"
+            >
+              <Send size={16} className="shrink-0" />
+              <span className="uppercase tracking-widest truncate"><span className="lg:hidden">Send</span><span className="hidden lg:inline">Send to Workflow</span></span>
+            </button>
+            <ExportMenu
+              onExport={(type) => setExportType(type)}
+              formats={[
+                { type: 'docx', label: 'Export as Word (.doc)', icon: FileText },
+                { type: 'pdf', label: 'Export as PDF', icon: File },
+                { type: 'html', label: 'Export as HTML', icon: FileText },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
