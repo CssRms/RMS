@@ -1,11 +1,12 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, AlertTriangle, X } from 'lucide-react';
 
-const ConfirmModal = ({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  title = "Confirm Deletion", 
+const ConfirmModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title = "Confirm Deletion",
   message = "Are you sure you want to proceed? This action cannot be undone.",
   confirmText = "Delete Permanently",
   cancelText = "Cancel",
@@ -14,11 +15,15 @@ const ConfirmModal = ({
 }) => {
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-end sm:justify-center p-4 sm:pt-[5vh] overflow-y-auto safe-p-top">
-      <div 
-        className="fixed inset-0 bg-background/80 backdrop-blur-md animate-in fade-in duration-300" 
-        onClick={!isProcessing ? onClose : undefined} 
+  // Rendered via portal directly to document.body — modals nested deep inside scrollable
+  // page content (e.g. Document Studio) can otherwise end up visually trapped behind the
+  // floating mobile bottom nav (z-[100]) if any ancestor becomes a containing block for
+  // position:fixed descendants; a portal sidesteps that class of bug entirely.
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-end sm:justify-center p-4 pb-28 sm:pb-4 sm:pt-[5vh] overflow-y-auto safe-p-top">
+      <div
+        className="fixed inset-0 bg-background/80 backdrop-blur-md animate-in fade-in duration-300"
+        onClick={!isProcessing ? onClose : undefined}
       />
       <div className="glass bg-white/95 w-full max-w-sm mt-auto sm:my-auto rounded-[2rem] border border-border/50 shadow-2xl relative overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
         <div className="p-6 text-center space-y-4">
@@ -67,7 +72,8 @@ const ConfirmModal = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

@@ -672,7 +672,7 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
 
         {/* TipTap-managed contentEditable surface */}
         <div className="editor-outer-shell">
-          <EditorContent editor={editor} />
+          <EditorContent editor={editor} className="h-full" />
         </div>
       </div>
 
