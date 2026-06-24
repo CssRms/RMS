@@ -1432,9 +1432,9 @@ const DocumentStudio = ({ user, onViewChange }) => {
   const currentActiveDraft = allDrafts.find(d => d.id === currentDraftId);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-20 relative">
-        
-        <div className="space-y-4 max-w-7xl mx-auto px-2 lg:px-4">
+    <div className="max-w-full space-y-8 pb-20 relative">
+
+        <div className="space-y-4 w-full px-2 lg:px-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-3 md:space-y-0">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-foreground tracking-tight flex items-center space-x-3">
@@ -1466,11 +1466,11 @@ const DocumentStudio = ({ user, onViewChange }) => {
 
         {/* Tab Switcher */}
         {!currentDraftId ? (
-          <div className="glass bg-white/50 border border-primary/20 rounded-3xl p-6 lg:p-10 text-center flex flex-col items-center justify-center min-h-[300px] w-full max-w-4xl mx-auto">
+          <div className="glass bg-white/50 border border-primary/20 rounded-3xl p-6 lg:p-10 text-center flex flex-col items-center justify-center min-h-[300px] w-full">
             <h2 className="text-lg lg:text-xl font-bold text-foreground mb-1">Start a New Document</h2>
             <p className="text-xs lg:text-sm text-muted-foreground mb-8 max-w-sm">Launch a new rich text document, spreadsheet, or presentation workspace.</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full px-4">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full px-4 lg:px-8">
               {/* Blank Document */}
               <button 
                 onClick={() => initiateNewDraft('doc')} 
