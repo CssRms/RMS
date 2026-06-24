@@ -147,7 +147,14 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
   const [title, setTitle] = useState(loadedDraft?.title || 'Untitled Document');
   const [saving, setSaving] = useState(false);
   const editorRef = useRef(null);
+  const autoSaveTimerRef = useRef(null);
+  const titleTimerRef = useRef(null);
   const { aiEnabled } = useAIFeatures();
+
+  useEffect(() => () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const id = 'doc-studio-fonts';
@@ -174,17 +181,17 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend }) => {
 
   const handleInput = () => {
     setSaving(true);
-    if (window.docAutoSaveTimer) clearTimeout(window.docAutoSaveTimer);
-    window.docAutoSaveTimer = setTimeout(() => {
-      onAutosave({ title, data: editorRef.current.innerHTML });
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      if (editorRef.current) onAutosave({ title, data: editorRef.current.innerHTML });
       setSaving(false);
     }, 1500);
   };
 
   useEffect(() => {
     setSaving(true);
-    if (window.docTitleTimer) clearTimeout(window.docTitleTimer);
-    window.docTitleTimer = setTimeout(() => {
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
+    titleTimerRef.current = setTimeout(() => {
       if (editorRef.current) {
         onAutosave({ title, data: editorRef.current.innerHTML });
       }
@@ -350,12 +357,19 @@ const SpreadsheetEditor = ({ loadedDraft, onAutosave }) => {
   const sheetData = useRef(Array.isArray(rawSheetData) && rawSheetData.length > 0
     ? rawSheetData
     : [{ name: "Sheet1", celldata: [] }]);
+  const autoSaveTimerRef = useRef(null);
+  const titleTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
+  }, []);
 
   const handleSheetChange = (data) => {
     sheetData.current = data;
     setSaving(true);
-    if (window.sheetAutoSaveTimer) clearTimeout(window.sheetAutoSaveTimer);
-    window.sheetAutoSaveTimer = setTimeout(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
       onAutosave({ title, data: sheetData.current });
       setSaving(false);
     }, 1500);
@@ -364,8 +378,8 @@ const SpreadsheetEditor = ({ loadedDraft, onAutosave }) => {
   useEffect(() => {
     // Hook up title change autosave
     setSaving(true);
-    if (window.sheetTitleTimer) clearTimeout(window.sheetTitleTimer);
-    window.sheetTitleTimer = setTimeout(() => {
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
+    titleTimerRef.current = setTimeout(() => {
       onAutosave({ title, data: sheetData.current });
       setSaving(false);
     }, 1500);
@@ -987,16 +1001,19 @@ const DocumentStudio = ({ user, onViewChange }) => {
   };
 
   const handleAutosave = async ({ title, data }) => {
-    if (!currentDraftId) {
-      setCurrentDraftId(`draft_${Date.now()}`);
-      return; // The next render will pick up the currentDraftId and autosave properly
-    }
+    // Resolve the ID and persist the draft in the SAME call — never split this into
+    // "set the ID now, save it on the next call." If no further keystroke ever arrives
+    // (or the editor unmounts/remounts before one does), that "next call" never happens,
+    // currentDraftId points at an ID with no matching entry in allDrafts, and the editor
+    // permanently blanks out since its render condition requires a matching draft to exist.
+    const draftId = currentDraftId || `draft_${Date.now()}`;
+    if (!currentDraftId) setCurrentDraftId(draftId);
 
     const currentDrafts = Array.isArray(allDrafts) ? [...allDrafts] : [];
-    const draftIndex = currentDrafts.findIndex(d => d.id === currentDraftId);
-    
+    const draftIndex = currentDrafts.findIndex(d => d.id === draftId);
+
     const draftObj = {
-      id: currentDraftId,
+      id: draftId,
       type: activeTab,
       title,
       data,
