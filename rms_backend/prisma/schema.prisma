@@ -42,6 +42,7 @@ model Department {
   accessCodeHash      String? // Bcrypt hash for departmental login
   accessCodeLabel     String? // Admin-visible login code label (original as set by admin)
   codeChangedByDept   Boolean @default(false) // True when dept self-changed their code
+  tokenVersion        Int     @default(0) // Bumped on a security reset to instantly invalidate every JWT issued to this department/sub-account, on every device, without tracking individual tokens
   headName        String?
   headTitle       String?
   headEmail       String?

@@ -169,6 +169,12 @@ export const deptAPI = {
   async resetAccessCode(deptId, accessCode) {
     return api.put(`/departments/${deptId}/access-code`, { accessCode });
   },
+  // One-click security reset: regenerates the access code, force-logs-out every active
+  // session on every device, and notifies the department by SMS + email — distinct from
+  // resetAccessCode above, which requires typing a code and does none of that.
+  async securityReset(deptId) {
+    return api.post(`/departments/${deptId}/security-reset`);
+  },
   async changeDeptAccessCode(currentCode, newCode, confirmCode) {
     return api.put('/department/access-code', { currentCode, newCode, confirmCode });
   },

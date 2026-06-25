@@ -637,7 +637,7 @@ const cookieOptions = {
   path: '/'
 };
 
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   // Prefer HttpOnly cookie; fall back to Authorization header (offline / API clients)
   const token = req.cookies?.rms_token
     || (req.headers['authorization']?.startsWith('Bearer ') ? req.headers['authorization'].slice(7) : null);
@@ -648,12 +648,31 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Token has been revoked. Please log in again.' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(401).json({ error: 'Your session is invalid or has expired. Please log in again.' });
-    req.user = user;
-    req.token = token; // Stash for logout
-    next();
-  });
+  let user;
+  try {
+    user = jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return res.status(401).json({ error: 'Your session is invalid or has expired. Please log in again.' });
+  }
+
+  // Department/sub-account JWTs carry a tokenVersion snapshot from login time. A security
+  // reset bumps that department's tokenVersion in the DB, which instantly invalidates every
+  // JWT issued before that point — on every device — without needing to track individual
+  // tokens. Fail OPEN on a transient DB error here so a brief connectivity blip doesn't lock
+  // out every department session at once; this is a defense-in-depth check, not the primary
+  // auth guarantee (the JWT signature itself still has to be valid to get this far).
+  if (user.role === 'department' && user.deptId) {
+    try {
+      const dept = await prisma.department.findUnique({ where: { id: user.deptId }, select: { tokenVersion: true } });
+      if (dept && (user.tokenVersion || 0) !== (dept.tokenVersion || 0)) {
+        return res.status(401).json({ error: 'Your session was ended by an administrator for security reasons. Please log in again.' });
+      }
+    } catch (_) { /* fail open on transient DB errors */ }
+  }
+
+  req.user = user;
+  req.token = token; // Stash for logout
+  next();
 };
 
 // Issue a short-lived (30 s) single-use SSE ticket so the JWT never appears in
@@ -1455,8 +1474,9 @@ app.post('/api/auth/refresh', authenticateToken, (req, res) => {
     // Revoke old token
     if (req.token) tokenBlacklist.add(req.token);
 
-    // Issue new 12h token
-    const userData = { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, deptId: user.deptId };
+    // Issue new 12h token — carry tokenVersion forward unchanged (it's only ever bumped by
+    // a security reset, which should invalidate refreshes too, not just direct logins).
+    const userData = { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, deptId: user.deptId, ...(user.tokenVersion != null ? { tokenVersion: user.tokenVersion } : {}) };
     const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
     res.cookie('rms_token', newToken, cookieOptions);
     res.json({ token: newToken, user: userData });
@@ -1589,6 +1609,7 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       name: resolved.name,
       role: isSuperAdmin ? 'global_admin' : 'department',
       deptId: resolved.id,
+      tokenVersion: resolved.tokenVersion || 0,
       email: `${resolved.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
       ...(matchedSubAccount ? {
         isSubAccount: true,
@@ -1646,6 +1667,7 @@ app.post('/api/departments/activate', async (req, res) => {
         name: updated.name,
         role: 'department',
         deptId: updated.id,
+        tokenVersion: updated.tokenVersion || 0,
         email: updated.headEmail || `${updated.name.toLowerCase().replace(/\s/g, '')}@cssgroup.local`,
         isSubAccount: true,
         parentDeptId: payload.parentDeptId,
@@ -1682,6 +1704,7 @@ app.post('/api/departments/activate', async (req, res) => {
       name: updated.name,
       role: 'department',
       deptId: updated.id,
+      tokenVersion: updated.tokenVersion || 0,
       email: updated.headEmail,
     };
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '12h' });
@@ -3039,6 +3062,64 @@ app.put('/api/departments/:id/access-code', authenticateToken, requireRoles(['gl
         details: `Access code reset for department: ${updated.name}`
       }
     });
+    res.json({ success: true, department: updated.name });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
+// Full Security Reset (Admin only) — distinct from the manual access-code reset above:
+// auto-generates a fresh access code (admin doesn't type one), force-logs-out every active
+// session on every device via a tokenVersion bump, and notifies the department by SMS +
+// email with the new code. Intended for "this account may be compromised" situations.
+app.post('/api/departments/:id/security-reset', authenticateToken, requireRoles(['global_admin']), async (req, res) => {
+  try {
+    const deptId = parseInt(req.params.id);
+    const dept = await prisma.department.findUnique({ where: { id: deptId } });
+    if (!dept) return res.status(404).json({ error: 'Department not found.' });
+
+    const newCode = await generateUniqueAccessCode(dept.name);
+    const accessCodeHash = await bcrypt.hash(newCode, 10);
+
+    const updated = await prisma.department.update({
+      where: { id: deptId },
+      data: {
+        accessCodeHash,
+        accessCodeLabel: newCode,
+        codeChangedByDept: false,
+        tokenVersion: { increment: 1 },
+      }
+    });
+
+    const subject = `[RMS] Security Reset — ${updated.name}`;
+    const lines = [
+      `Your CSS RMS account password has been reset by the system administrator for security reasons.`,
+      `You have been logged out of every device you were signed in on.`,
+      ``,
+      `Your new access code: ${newCode}`,
+      ``,
+      `Use this access code to log in, then create a new personal password.`,
+      ``,
+      `If you did not expect this reset, contact the ICT Department immediately.`
+    ];
+    const { text, html } = buildEmailContent({ title: subject, lines, actionLabel: 'Open RMS Portal' });
+
+    if (updated.headEmail) {
+      sendEmail({ to: updated.headEmail, subject, text, html }).catch(() => {});
+    }
+    if (updated.phone) {
+      sendSms({
+        to: updated.phone,
+        message: `CSS RMS SECURITY ALERT: Your account password was reset by the administrator and you've been logged out on all devices. New access code: ${newCode}. Use it to log in, then set a new password.`
+      }).catch(() => {});
+    }
+
+    await prisma.activityLog.create({
+      data: {
+        userId: getNumericUserId(req.user) || null,
+        action: 'Department Security Reset',
+        details: `Security reset performed on ${updated.name} by ${req.user.name || 'admin'}: password reset, access code reactivated, all sessions force-logged-out, notified by SMS/email.`
+      }
+    });
+
     res.json({ success: true, department: updated.name });
   } catch (error) { sendError(res, 500, error.message); }
 });

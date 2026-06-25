@@ -181,10 +181,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
     headEmail: dept.headEmail || '',
     phone: dept.phone || '',
   });
-  const [newCode, setNewCode] = useState('');
-  const [showCode, setShowCode] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [resettingCode, setResettingCode] = useState(false);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -204,22 +201,6 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to update department.');
     } finally { setSaving(false); }
-  };
-
-  const handleResetCode = async () => {
-    if (!newCode.trim() || newCode.trim().length < 4) {
-      toast.error('New password must be at least 4 characters.');
-      return;
-    }
-    setResettingCode(true);
-    try {
-      await deptAPI.resetAccessCode(dept.id, newCode.trim());
-      toast.success(`Password reset for ${dept.name}. The department will need to log in with the new password.`);
-      setNewCode('');
-      onSaved();
-    } catch (err) {
-      toast.error(err?.response?.data?.error || 'Failed to reset password.');
-    } finally { setResettingCode(false); }
   };
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
@@ -295,53 +276,6 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
             {saving ? 'Saving…' : 'Save Department'}
           </button>
         </form>
-
-        {/* Access Code Reset */}
-        <div className="px-6 pb-6">
-          <div className="border-t border-border/30 pt-6 space-y-4">
-            <div className="flex items-center gap-2">
-              <KeyRound size={14} className="text-amber-500" />
-              <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-[0.25em]">Reset Password</p>
-              {dept.codeChangedByDept && (
-                <span className="text-[9px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                  Dept-modified
-                </span>
-              )}
-            </div>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[10px] text-amber-700 font-medium leading-relaxed flex items-start gap-2">
-              <Info size={12} className="shrink-0 mt-0.5" />
-              <span>
-                {dept.codeChangedByDept
-                  ? `This department has changed their password from the original. Resetting here will override their custom password.`
-                  : `Enter a new password to replace the current one. The department will use this new password on their next login.`}
-              </span>
-            </div>
-            <div className="flex gap-3">
-              <div className="flex-1 flex items-center border border-border/50 rounded-xl focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/10 bg-white">
-                <KeyRound size={14} className="text-muted-foreground ml-3 shrink-0" />
-                <input
-                  value={newCode}
-                  onChange={e => setNewCode(e.target.value)}
-                  type={showCode ? 'text' : 'password'}
-                  placeholder="New password (min 4 chars)"
-                  className="flex-1 px-3 py-3 text-sm font-mono bg-transparent outline-none"
-                />
-                <button type="button" onClick={() => setShowCode(v => !v)} className="px-3 text-muted-foreground hover:text-foreground">
-                  {showCode ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleResetCode}
-                disabled={resettingCode || !newCode.trim()}
-                className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-40 shrink-0 shadow-md shadow-amber-500/20"
-              >
-                {resettingCode ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-                Reset
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -446,6 +380,25 @@ const DepartmentManager = ({ onViewChange }) => {
     setIsDeleteModalOpen(false);
     toast.error(`${pendingDept.name} Department removed`);
     setPendingDept(null);
+  };
+
+  const [isSecurityResetModalOpen, setIsSecurityResetModalOpen] = useState(false);
+  const [pendingSecurityResetDept, setPendingSecurityResetDept] = useState(null);
+  const [securityResetting, setSecurityResetting] = useState(false);
+
+  const confirmSecurityReset = async () => {
+    if (!pendingSecurityResetDept) return;
+    setSecurityResetting(true);
+    try {
+      await deptAPI.securityReset(pendingSecurityResetDept.id);
+      toast.success(`${pendingSecurityResetDept.name}: password reset, access code reactivated, logged out everywhere — notified by SMS and email.`);
+      setIsSecurityResetModalOpen(false);
+      setPendingSecurityResetDept(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Security reset failed.');
+    } finally {
+      setSecurityResetting(false);
+    }
   };
 
   const [togglingDeptId, setTogglingDeptId] = useState(null);
@@ -664,6 +617,13 @@ const DepartmentManager = ({ onViewChange }) => {
                             >
                               {togglingDeptId === dept.id ? <Loader2 size={14} className="animate-spin" /> : dept.isDisabled ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
                             </button>
+                            <button
+                              onClick={() => { setPendingSecurityResetDept(dept); setIsSecurityResetModalOpen(true); }}
+                              className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                              title="Security Reset: resets password, reactivates access code, force-logs-out every device, and notifies the department by SMS + email"
+                            >
+                              <KeyRound size={14} />
+                            </button>
                             <button onClick={() => { setPendingDept(dept); setIsDeleteModalOpen(true); }} className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-all" title="Delete Unit">
                               <Trash2 size={14} />
                             </button>
@@ -843,6 +803,11 @@ const DepartmentManager = ({ onViewChange }) => {
       <ConfirmModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={confirmDelete}
         isProcessing={isProcessing} title="Delete Department"
         message={`Are you sure you want to permanently delete "${pendingDept?.name}"? This action cannot be undone.`} />
+
+      <ConfirmModal isOpen={isSecurityResetModalOpen} onClose={() => setIsSecurityResetModalOpen(false)} onConfirm={confirmSecurityReset}
+        isProcessing={securityResetting} title="Security Reset" type="warning"
+        confirmText="Reset & Force Logout"
+        message={`This will immediately: reset ${pendingSecurityResetDept?.name || 'this department'}'s current password, generate a fresh access code, log them out of every device they're currently signed in on, and send the new access code by SMS and email to the phone number and address on file. They will need to log in with the new code and set a new password. Continue?`} />
 
     </>
   );
