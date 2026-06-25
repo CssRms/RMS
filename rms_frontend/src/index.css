@@ -202,6 +202,16 @@
 }
 .editor-paper a { color: #2563eb; text-decoration: underline; }
 
+/* TipTap's Image node only preserves src/alt/title/width/height attributes — any inline
+   style (display, margin) set in the source HTML gets stripped when the document is
+   parsed into the schema, same lesson as the table-border issue above. Center every
+   image at the CSS level instead of relying on inline styles surviving the round-trip. */
+.editor-paper img {
+  display: block;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
 /* Documentation guide markdown — style inline `code` spans only, leaving fenced
    ```code blocks``` (file trees, shell commands) to the typography plugin's own
    dark-background/light-text styling. Applying the same background to both at once

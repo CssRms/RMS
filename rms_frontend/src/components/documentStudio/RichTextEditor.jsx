@@ -13,6 +13,7 @@ import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import Link from '@tiptap/extension-link';
 import { Table as TiptapTable, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
+import Image from '@tiptap/extension-image';
 import { FindReplace } from '../../lib/tiptapFindReplace';
 import { templates } from '../../lib/templates';
 import { toast } from 'react-hot-toast';
@@ -101,6 +102,7 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
       TableCell,
       FontFamily,
       FontSize,
+      Image,
       FindReplace,
     ],
     content: DOMPurify.sanitize(loadedDraft?.data || ''),

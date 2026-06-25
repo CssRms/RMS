@@ -27,7 +27,7 @@ const buildMemoTemplate = ({ deptCode, fromLabel, toLabel, subjectLabel, headNam
         <!-- CSS Group Logo (centered) immediately followed by the document title — the
              logo image already carries the company name, so no redundant text label below it -->
         <div style="text-align: center;">
-          <img src="/logo.svg" style="display: block; margin: 0 auto; width: 64px; height: auto; border-radius: 8px;" />
+          <img src="/logo.svg" width="64" height="64" alt="CSS Group" />
         </div>
 
         <div style="text-align: center; margin: 8px 0 22px 0;">
@@ -103,7 +103,7 @@ const buildMaterialRequestTemplate = ({ deptCode, fromLabel, toLabel, headName, 
         <!-- Company Logo (centered) immediately followed by the voucher title — the
              logo image already carries the company name, so no redundant text label below it -->
         <div style="text-align: center;">
-          <img src="/logo.svg" style="display: block; margin: 0 auto; width: 64px; height: auto; border-radius: 8px;" />
+          <img src="/logo.svg" width="64" height="64" alt="CSS Group" />
         </div>
 
         <div style="text-align: center; margin: 8px 0 6px 0; font-size: 9px; color: #333; line-height: 1.5;">
