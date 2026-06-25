@@ -9156,10 +9156,8 @@ const server = app.listen(PORT, async () => {
       logger.info('[BOOT] Skipping DB sync as requested');
       isSystemReady = true;
     } else {
-      logger.info('[BOOT] Synchronizing database schema...');
-      // Note: --accept-data-loss is used for rapid UAT iteration; usually avoided in rigid production
-      await runSetup('npx prisma db push --schema=rms_backend/prisma/schema.prisma --accept-data-loss');
-
+      // Schema migrations already ran via `prisma migrate deploy` in the `npm start`
+      // script, before this process even launched - nothing left to sync here.
       logger.info('[BOOT] Seeding core authority records...');
       await runSetup('node rms_backend/prisma/seed.js');
 
