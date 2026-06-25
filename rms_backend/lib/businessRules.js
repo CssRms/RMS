@@ -53,6 +53,20 @@ function getEffectiveReqAmount(req) {
 
 const isIccDept = (name) => /\bicc\b|internal.*control|control.*compliance/i.test(name || '');
 
+// Four departments (GM, CEO/Chairman, ICC, Audit) have a fixed, env-configurable
+// access code instead of a randomly generated one. Security Reset restores this
+// fixed code for them; every other department gets a freshly generated random one.
+// `env` is injected (rather than read from process.env internally) so this stays a
+// pure, easily-testable function.
+function getFixedDefaultAccessCode(deptName, env = {}) {
+  const n = deptName || '';
+  if (/general\s*manager|\bgm\b/i.test(n)) return env.GM_ACCESS_CODE || 'GM-2026';
+  if (/ceo|chairman/i.test(n)) return env.CEO_ACCESS_CODE || 'CEO-2026';
+  if (isIccDept(n)) return env.ICC_ACCESS_CODE || 'ICC-2026';
+  if (/\baudit\b/i.test(n)) return env.AUDIT_ACCESS_CODE || 'AUDIT-2026';
+  return null;
+}
+
 // True if the sub-account's JWT-carried privilege limit covers the effective amount.
 function subPrivilegeCoversCash(user, effectiveAmount) {
   if (!user?.isSubAccount) return false;
@@ -66,4 +80,5 @@ module.exports = {
   getEffectiveReqAmount,
   isIccDept,
   subPrivilegeCoversCash,
+  getFixedDefaultAccessCode,
 };

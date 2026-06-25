@@ -5,6 +5,7 @@ import {
   getEffectiveReqAmount,
   isIccDept,
   subPrivilegeCoversCash,
+  getFixedDefaultAccessCode,
 } from './businessRules.js';
 
 describe('checkFinalApproveAuthority', () => {
@@ -119,5 +120,25 @@ describe('subPrivilegeCoversCash', () => {
   it('an invalid/missing privilegeAmount never covers anything', () => {
     expect(subPrivilegeCoversCash({ isSubAccount: true, privilegeAmount: null }, 1)).toBe(false);
     expect(subPrivilegeCoversCash({ isSubAccount: true }, 1)).toBe(false);
+  });
+});
+
+describe('getFixedDefaultAccessCode', () => {
+  it('falls back to the hardcoded default when the env var is unset', () => {
+    expect(getFixedDefaultAccessCode('General Manager (GM)', {})).toBe('GM-2026');
+    expect(getFixedDefaultAccessCode('CEO (Chairman)', {})).toBe('CEO-2026');
+    expect(getFixedDefaultAccessCode('Internal consult and control (ICC)', {})).toBe('ICC-2026');
+    expect(getFixedDefaultAccessCode('Audit', {})).toBe('AUDIT-2026');
+  });
+
+  it('prefers the env var over the hardcoded default when set', () => {
+    expect(getFixedDefaultAccessCode('Audit', { AUDIT_ACCESS_CODE: 'CUSTOM-1' })).toBe('CUSTOM-1');
+    expect(getFixedDefaultAccessCode('General Manager (GM)', { GM_ACCESS_CODE: 'CUSTOM-2' })).toBe('CUSTOM-2');
+  });
+
+  it('returns null for departments with no fixed default, so they get a random code instead', () => {
+    expect(getFixedDefaultAccessCode('Hydroponics', {})).toBeNull();
+    expect(getFixedDefaultAccessCode('ICT', {})).toBeNull();
+    expect(getFixedDefaultAccessCode('', {})).toBeNull();
   });
 });

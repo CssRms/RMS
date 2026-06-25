@@ -154,7 +154,7 @@ async function sendPushNotification(deptIds, { title, body, url }) {
 // Extracted to rms_backend/lib/businessRules.js (with checkFinalApproveAuthority,
 // getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash) so these pure rules are
 // unit-testable without starting the server or touching a database — see businessRules.test.js.
-const { checkFinalApproveAuthority, requiredAuthorityTier, getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash } = require('./rms_backend/lib/businessRules');
+const { checkFinalApproveAuthority, requiredAuthorityTier, getEffectiveReqAmount, isIccDept, subPrivilegeCoversCash, getFixedDefaultAccessCode } = require('./rms_backend/lib/businessRules');
 const { normalizeRole, toIntOrNull, getNumericUserId } = require('./rms_backend/lib/utils');
 
 // ── Re-approval escalation ──────────────────────────────────────────────────────
@@ -3077,7 +3077,14 @@ app.post('/api/departments/:id/security-reset', authenticateToken, requireRoles(
     const dept = await prisma.department.findUnique({ where: { id: deptId } });
     if (!dept) return res.status(404).json({ error: 'Department not found.' });
 
-    const newCode = await generateUniqueAccessCode(dept.name);
+    // Restore the department's original/default code rather than inventing a new one.
+    // Priority: accessCodeLabel (the original admin-set code, preserved through the
+    // dept head's own activation — see the same pattern used by the bulk hard-reset
+    // above) > legacy plain-text accessCode (predates the label column) > the four
+    // departments with a fixed env-configured default (GM/CEO/ICC/Audit) as a last-
+    // resort safety net > a freshly generated random code if none of the above exist.
+    const restoredCode = dept.accessCodeLabel || dept.accessCode || getFixedDefaultAccessCode(dept.name, process.env);
+    const newCode = restoredCode || await generateUniqueAccessCode(dept.name);
     const accessCodeHash = await bcrypt.hash(newCode, 10);
 
     const updated = await prisma.department.update({
@@ -3095,7 +3102,7 @@ app.post('/api/departments/:id/security-reset', authenticateToken, requireRoles(
       `Your CSS RMS account password has been reset by the system administrator for security reasons.`,
       `You have been logged out of every device you were signed in on.`,
       ``,
-      `Your new access code: ${newCode}`,
+      restoredCode ? `Your access code has been restored: ${newCode}` : `Your new access code: ${newCode}`,
       ``,
       `Use this access code to log in, then create a new personal password.`,
       ``,
@@ -3109,7 +3116,7 @@ app.post('/api/departments/:id/security-reset', authenticateToken, requireRoles(
     if (updated.phone) {
       sendSms({
         to: updated.phone,
-        message: `CSS RMS SECURITY ALERT: Your account password was reset by the administrator and you've been logged out on all devices. New access code: ${newCode}. Use it to log in, then set a new password.`
+        message: `CSS RMS SECURITY ALERT: Your account password was reset by the administrator and you've been logged out on all devices. ${restoredCode ? `Access code restored: ${newCode}` : `New access code: ${newCode}`}. Use it to log in, then set a new password.`
       }).catch(() => {});
     }
 
