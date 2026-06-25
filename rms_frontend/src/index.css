@@ -60,6 +60,18 @@
     @apply border-border;
   }
   
+  html, body {
+    /* Without this, a single too-wide descendant anywhere on the page (a toolbar row,
+       a fixed-width table, etc.) makes the ENTIRE page horizontally scrollable instead
+       of just that one element — every other "centered"/"fixed" thing then renders
+       relative to a viewport wider than the screen, which is what makes a page look
+       scattered/shifted on mobile rather than just showing one element with a local
+       scrollbar. Elements that genuinely need horizontal scroll (e.g. the Document
+       Studio toolbar) keep their own local `overflow-x: auto` regardless of this. */
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     background-image:
@@ -210,6 +222,16 @@
   display: block;
   margin: 0 auto;
   border-radius: 8px;
+}
+
+/* Defensive: a flex child's default min-width is "auto" (its content's intrinsic
+   width), which lets long unbroken text force its flex row wider than the page instead
+   of wrapping — the classic flexbox overflow trap. The templates' field rows (Ref/To/
+   From/Subject etc.) are plain flex divs for exactly this reason; this makes sure long
+   values wrap instead of pushing the row past the viewport on mobile. */
+.editor-paper div[style*="display: flex"] > span {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 /* Documentation guide markdown — style inline `code` spans only, leaving fenced

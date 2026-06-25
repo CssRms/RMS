@@ -333,7 +333,7 @@ const RichTextEditor = ({ loadedDraft, onAutosave, onSend, currentUser, departme
 
       <div className="glass bg-slate-100 rounded-2xl shadow-sm relative z-10 flex flex-col border border-border/50 overflow-hidden">
         {/* Advanced MS Word Style Toolbar — grouped into labeled ribbon sections like Word's Home tab */}
-        <div className="bg-white border-b border-border/40 px-3 py-2 flex items-stretch gap-2.5 overflow-x-auto custom-scrollbar sticky top-0 z-20">
+        <div className="bg-white border-b border-border/40 px-3 py-2 flex items-stretch gap-2.5 overflow-x-auto custom-scrollbar sticky top-0 z-20 max-w-full">
 
           {/* Clipboard — cut/copy/paste are OS clipboard interactions with no document-model
               equivalent in TipTap/ProseMirror, so execCommand is the correct tool here, not a shortcut. */}
