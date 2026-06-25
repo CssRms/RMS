@@ -189,6 +189,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
     if (!form.headStaffId.trim()) { toast.error('Staff ID is required.'); return; }
     if (!form.headSurname.trim()) { toast.error('Surname is required.'); return; }
     if (!form.headFirstName.trim()) { toast.error('First name is required.'); return; }
+    if (!form.headTitle.trim()) { toast.error('Designation / Title is required — the dashboard treats a profile without one as incomplete and will keep asking the department to set it.'); return; }
     if (!form.headEmail.trim()) { toast.error('Official email is required.'); return; }
     if (!form.phone.trim()) { toast.error('Contact phone is required — used to SMS the access code.'); return; }
     const combinedName = [form.headSurname, form.headFirstName, form.headOtherName].map(s => s.trim()).filter(Boolean).join(' ');
@@ -253,7 +254,7 @@ const EditDeptModal = ({ dept, onClose, onSaved }) => {
               { key: 'headSurname',   label: 'Surname',          icon: User,       placeholder: 'e.g. Musa', required: true },
               { key: 'headFirstName', label: 'First Name',        icon: User,       placeholder: 'e.g. Chindo', required: true },
               { key: 'headOtherName', label: 'Other Name',        icon: User,       placeholder: 'e.g. James (optional)' },
-              { key: 'headTitle',     label: 'Designation / Title', icon: BadgeCheck, placeholder: 'General Manager' },
+              { key: 'headTitle',     label: 'Designation / Title', icon: BadgeCheck, placeholder: 'General Manager', required: true },
               { key: 'headEmail',     label: 'Official Email',    icon: Mail,       placeholder: 'head@cssgroup.internal', type: 'email', required: true },
               { key: 'phone',         label: 'Contact Phone',     icon: Phone,      placeholder: '+234 800 000 0000', required: true },
             ].map(({ key, label, icon: Icon, placeholder, type, required }) => (

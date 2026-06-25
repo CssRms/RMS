@@ -2786,6 +2786,7 @@ app.put('/api/departments/:id', authenticateToken, requireRoles(['global_admin']
     if (!name?.trim()) return sendError(res, 400, 'Department name is required.');
     if (!staffId?.trim()) return sendError(res, 400, 'Staff ID is required.');
     if (!headName?.trim()) return sendError(res, 400, 'Head official name is required.');
+    if (!headTitle?.trim()) return sendError(res, 400, 'Head official designation/title is required — the dashboard treats a profile without one as incomplete and will keep prompting the department to set it.');
     if (!headEmail?.trim()) return sendError(res, 400, 'Head official email is required.');
     if (!phone?.trim()) return sendError(res, 400, 'Contact phone is required — used to SMS the access code.');
 
