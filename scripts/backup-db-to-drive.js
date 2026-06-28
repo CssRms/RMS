@@ -5,14 +5,22 @@
 // only off-Railway copy of the database. Runs as its own job, independent of the R2
 // backup job, so each one still succeeds even if the other fails.
 //
+// Talks to Google's APIs entirely via the plain `https` module rather than the
+// `googleapis` package's own request transport (which uses Node's built-in fetch
+// internally). That fetch path failed twice in this CI environment, on two different
+// endpoints (the OAuth token endpoint, then the Drive files.list endpoint), with the
+// identical 'Premature close' error both times - a reproducible transport bug, not
+// transient flakiness. The manual https calls below proved reliable for the token
+// exchange, so the same approach is used for every Drive call here too.
+//
 // Restore: node scripts/decrypt-backup.js <downloaded-file> <output-file>.dump
 //          then pg_restore --clean --no-owner -d <target-db-url> <output-file>.dump
 const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const https = require('https');
-const { google } = require('googleapis');
 const { encryptBuffer } = require('./backup-crypto');
 
 const RETENTION_COUNT = 30;
@@ -27,10 +35,6 @@ function run(cmd, args) {
   });
 }
 
-// Google's token endpoint occasionally drops the connection mid-response in CI
-// containers ('Invalid response body ... Premature close') - a transient network
-// blip, not a logic error. This job runs unattended on a schedule, so retry rather
-// than let one flaky request fail the whole backup.
 async function withRetry(label, fn, attempts = 3) {
   for (let i = 1; i <= attempts; i++) {
     try {
@@ -44,12 +48,21 @@ async function withRetry(label, fn, attempts = 3) {
   }
 }
 
-// google-auth-library's automatic token refresh uses Node's built-in fetch, which has a
-// reproducible 'Premature close' bug talking to oauth2.googleapis.com in this CI
-// environment (confirmed: failed identically on 3 separate attempts, so it's not transient
-// flakiness - it's this specific fetch implementation). Bypass it entirely by exchanging
-// the refresh token for an access token ourselves with the plain https module, then hand
-// that access token to the Drive client directly instead of letting the library refresh it.
+// Generic raw HTTPS request - used for everything (token exchange, Drive list/delete/
+// upload) so nothing in this script depends on googleapis's own fetch-based transport.
+function request({ hostname, path: reqPath, method, headers, body }) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path: reqPath, method, headers }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
 function getAccessToken() {
   const body = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID,
@@ -58,30 +71,66 @@ function getAccessToken() {
     grant_type: 'refresh_token',
   }).toString();
 
-  return new Promise((resolve, reject) => {
-    const req = https.request(
-      {
-        hostname: 'oauth2.googleapis.com',
-        path: '/token',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          if (res.statusCode !== 200) return reject(new Error(`Token refresh failed (${res.statusCode}): ${data}`));
-          try {
-            resolve(JSON.parse(data).access_token);
-          } catch (e) {
-            reject(new Error(`Token refresh returned unparseable response: ${data}`));
-          }
-        });
-      }
-    );
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+  return request({
+    hostname: 'oauth2.googleapis.com',
+    path: '/token',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
+    body,
+  }).then(({ statusCode, body: respBody }) => {
+    if (statusCode !== 200) throw new Error(`Token refresh failed (${statusCode}): ${respBody.toString()}`);
+    return JSON.parse(respBody.toString()).access_token;
+  });
+}
+
+function listBackupFiles(accessToken, folderId) {
+  const q = `name contains '${BACKUP_NAME_PREFIX}'` + (folderId ? ` and '${folderId}' in parents` : '');
+  const params = new URLSearchParams({ q, fields: 'files(id, name)', orderBy: 'name', pageSize: '1000' });
+  return request({
+    hostname: 'www.googleapis.com',
+    path: `/drive/v3/files?${params.toString()}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }).then(({ statusCode, body }) => {
+    if (statusCode !== 200) throw new Error(`List failed (${statusCode}): ${body.toString()}`);
+    return JSON.parse(body.toString()).files || [];
+  });
+}
+
+function deleteFile(accessToken, fileId) {
+  return request({
+    hostname: 'www.googleapis.com',
+    path: `/drive/v3/files/${fileId}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }).then(({ statusCode, body }) => {
+    if (statusCode !== 204) throw new Error(`Delete failed (${statusCode}): ${body.toString()}`);
+  });
+}
+
+function uploadFile(accessToken, { name, parents, mimeType, data }) {
+  const boundary = `backup_${crypto.randomBytes(16).toString('hex')}`;
+  const metadata = JSON.stringify({ name, parents });
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--`);
+  const body = Buffer.concat([head, data, tail]);
+
+  return request({
+    hostname: 'www.googleapis.com',
+    path: '/upload/drive/v3/files?uploadType=multipart',
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'Content-Length': body.length,
+    },
+    body,
+  }).then(({ statusCode, body: respBody }) => {
+    if (statusCode !== 200) throw new Error(`Upload failed (${statusCode}): ${respBody.toString()}`);
+    return JSON.parse(respBody.toString());
   });
 }
 
@@ -107,34 +156,22 @@ async function main() {
   console.log('[drive-backup] Refreshing access token...');
   const accessToken = await withRetry('Token refresh', getAccessToken);
 
-  const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-  oauth2Client.setCredentials({ access_token: accessToken });
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || undefined;
 
   console.log(`[drive-backup] Uploading ${encryptedName} to Google Drive...`);
-  const encPath = path.join(os.tmpdir(), encryptedName);
-  fs.writeFileSync(encPath, encrypted);
-  await withRetry('Upload', () => drive.files.create({
-    requestBody: { name: encryptedName, parents: folderId ? [folderId] : undefined },
-    media: { mimeType: 'application/octet-stream', body: fs.createReadStream(encPath) },
+  await withRetry('Upload', () => uploadFile(accessToken, {
+    name: encryptedName,
+    parents: folderId ? [folderId] : undefined,
+    mimeType: 'application/octet-stream',
+    data: encrypted,
   }));
-  fs.unlinkSync(encPath);
   console.log('[drive-backup] Upload complete.');
 
   console.log('[drive-backup] Pruning old backups beyond retention...');
-  const listQuery = `name contains '${BACKUP_NAME_PREFIX}'` + (folderId ? ` and '${folderId}' in parents` : '');
-  const list = await withRetry('List', () => drive.files.list({
-    q: listQuery,
-    fields: 'files(id, name, createdTime)',
-    orderBy: 'name', // names are date-stamped, so name order == chronological order
-    pageSize: 1000,
-  }));
-  const files = list.data.files || [];
+  const files = await withRetry('List', () => listBackupFiles(accessToken, folderId));
   const toDelete = files.slice(0, Math.max(0, files.length - RETENTION_COUNT));
   for (const file of toDelete) {
-    await withRetry(`Delete ${file.name}`, () => drive.files.delete({ fileId: file.id }));
+    await withRetry(`Delete ${file.name}`, () => deleteFile(accessToken, file.id));
     console.log(`[drive-backup] Deleted old backup: ${file.name}`);
   }
 
