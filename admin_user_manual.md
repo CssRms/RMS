@@ -159,3 +159,70 @@ Where `<target-database-url>` is the connection string for wherever the database
 - Anywhere else Postgres can run.
 
 This is the detail that makes the system genuinely portable, not just "recoverable on Railway": the application code already lives in GitHub, the uploaded files already live in R2, and now the database can be rebuilt from either backup copy onto any new host - nothing permanently ties this system to Railway specifically.
+
+## Full command reference - every script, what it does, and when to use it
+
+All of these are run from PowerShell, inside the project folder (`cd "C:\Users\USER\Downloads\Pro-RMS"` first). None of them need to be run regularly - the daily backup itself is fully automatic via GitHub Actions; everything below is for setup, testing, or an actual recovery.
+
+| Command | What it does | When you'd run it |
+|---|---|---|
+| `node scripts/generate-backup-key.js` | Prints a brand-new random 256-bit encryption key. | Once, during initial setup. Only run again if you intend to **rotate** the key (see below) - running it does not change anything by itself, it just prints a new value; nothing uses it until you save it as the `BACKUP_ENCRYPTION_KEY` GitHub secret. |
+| `$env:GOOGLE_CLIENT_ID="..."` then `$env:GOOGLE_CLIENT_SECRET="..."` then `node scripts/get-google-refresh-token.js` | Opens a Google sign-in screen in your browser, then prints a `GOOGLE_REFRESH_TOKEN` once you approve access. | Once, during initial setup, or if the existing refresh token ever stops working (Google revokes tokens that go unused for a long time, or if access is manually revoked at [myaccount.google.com/permissions](https://myaccount.google.com/permissions)). |
+| `node scripts/backup-db.js` | Dumps the live database and uploads the plain copy to R2. This is exactly what the scheduled job runs. | Only to test locally - normally this runs automatically. Needs `DATABASE_URL` and the `R2_*` variables set as env vars first if run by hand. |
+| `node scripts/backup-db-to-drive.js` | Dumps the live database, encrypts it, uploads to Google Drive. This is exactly what the scheduled job runs. | Same as above - only for local testing. Needs `DATABASE_URL`, `BACKUP_ENCRYPTION_KEY`, and the `GOOGLE_*` variables set first. |
+| `node scripts/decrypt-backup.js <input.dump.enc> <output.dump>` | Decrypts a `.dump.enc` file from Drive back into a plain `.dump` file. | Whenever you need to read or restore a Drive backup. Requires `BACKUP_ENCRYPTION_KEY` to be set first. |
+| `node scripts/encrypt-backup.js <input> <output.enc>` | The reverse: encrypts any file with the same scheme. | Rarely needed - mainly if you've manually inspected/edited a restored dump and want to re-encrypt it before storing or moving it elsewhere. The automated job already does its own encryption; you don't need this for the normal daily flow. Requires `BACKUP_ENCRYPTION_KEY` to be set first. |
+| `pg_restore -l restored.dump` | Lists the *contents* of a dump file (table names, sizes) **without** actually restoring anything - a safe way to peek inside and confirm it looks like a real, complete backup. | Right after decrypting, as a sanity check, before committing to a full restore. |
+| `pg_restore --clean --no-owner -d <target-database-url> restored.dump` | Actually restores the dump into a live, working Postgres database - the real recovery step. | Only when actually recovering from data loss, or deliberately rolling back / migrating to a new host. `--clean` drops existing objects first so the restore isn't blocked by leftover tables; `--no-owner` avoids failing on role/ownership mismatches between the original and target database. |
+
+### Example: the full local round trip, start to finish
+
+```powershell
+cd "C:\Users\USER\Downloads\Pro-RMS"
+
+# 1. Set the key (from wherever you saved it - a password manager, not memory)
+$env:BACKUP_ENCRYPTION_KEY="<your saved key>"
+
+# 2. Decrypt a file downloaded from Drive
+node scripts/decrypt-backup.js "C:\Users\USER\Downloads\css-rms-db-2026-06-28.dump.enc" restored.dump
+
+# 3. Peek inside without restoring anything, as a sanity check
+pg_restore -l restored.dump
+
+# 4. Only if you actually need to restore it somewhere:
+pg_restore --clean --no-owner -d "postgresql://user:pass@host:port/dbname" restored.dump
+
+# 5. Clean up the plain decrypted file when done - don't leave it lying around
+Remove-Item restored.dump
+```
+
+## Viewing what's actually inside a backup
+
+A `.dump` file (PostgreSQL's "custom format") is **binary**, not plain text - opening it in Notepad or VS Code shows unreadable characters, that's normal and not a sign of corruption. There are two levels of "viewing":
+
+**Just checking what tables/data exist, without restoring anything:**
+```powershell
+pg_restore -l restored.dump
+```
+This prints a table of contents (every table, sequence, and constraint in the dump) instantly, with no database needed at all.
+
+**Actually browsing the real data (rows, values, etc.):** this requires restoring the dump into a real Postgres database first (see Stage 2 above - even a temporary, throwaway one works fine for just looking), then connecting to that database with a proper database browser. Recommended tools, easiest first:
+
+- **Prisma Studio** (already part of this project, zero extra installation): from the project folder, run
+  ```powershell
+  npx prisma studio --schema=rms_backend/prisma/schema.prisma
+  ```
+  with `DATABASE_URL` pointed at the restored database. Opens a clean web UI in your browser showing every table with familiar names (Requisition, Department, User, etc.) - this is the easiest option since it already understands this exact project's schema.
+- **pgAdmin** (free, official PostgreSQL tool) - a full desktop GUI for browsing/querying any Postgres database, useful if you want to run custom SQL queries against the restored data, not just browse tables.
+- **DBeaver** (free, works with many database types) - similar to pgAdmin, a good alternative if you ever need to work with other database types too, not just Postgres.
+
+For routine "did the backup work, does it look complete" checks, `pg_restore -l` is enough and needs nothing extra installed. Reach for Prisma Studio or pgAdmin only when actually investigating specific data after a real restore.
+
+## Rotating credentials - what changes, what breaks
+
+If the encryption key or Google refresh token are ever regenerated (security precaution, suspected compromise, or just routine hygiene), be clear about what happens to old backups:
+
+- **Rotating `BACKUP_ENCRYPTION_KEY`**: every *future* backup will be encrypted with the new key. Every backup already sitting in Drive, encrypted with the *old* key, becomes permanently unreadable unless you **keep the old key archived somewhere** (e.g., labelled "RMS backup key - retired 2026-06-28" in your password manager) alongside the new one. Don't just discard the old key the moment you generate a new one if any old backups are still worth keeping access to.
+- **Rotating `GOOGLE_REFRESH_TOKEN`**: this only affects *future* uploads (whether the backup job can still log in to Drive). It has no effect on files already uploaded - those aren't touched, and don't need re-uploading just because the token changed.
+- **After rotating either one**, update the corresponding GitHub secret (Settings → Secrets and variables → Actions) immediately - until you do, the scheduled job is still using the *old* value, not the one you just generated. Generating a new key or token locally does nothing on its own; it only takes effect once it's saved as the GitHub secret.
+- **A simple way to confirm a rotation actually took effect**: go to Actions → Database Backup → Run workflow manually right after updating the secret, and check that `backup-to-drive` still succeeds.
