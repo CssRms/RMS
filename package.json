@@ -8,7 +8,8 @@
     "start": "prisma migrate deploy --schema=rms_backend/prisma/schema.prisma && node serve.js",
     "seed": "node rms_backend/prisma/seed.js",
     "deploy-sync": "prisma migrate deploy --schema=rms_backend/prisma/schema.prisma && node rms_backend/prisma/seed.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "backup:db": "node scripts/backup-db.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.886.0",
