@@ -199,7 +199,7 @@ Both run via `.github/workflows/db-backup.yml`, daily at 02:00 UTC, on GitHub's 
 
 - `scripts/backup-db.js` — dumps + uploads the plain copy to R2.
 - `scripts/backup-db-to-drive.js` — dumps, encrypts (`scripts/backup-crypto.js`, AES-256-GCM), uploads to Drive. Talks to Google's REST APIs directly over plain `https` rather than through the `googleapis` package's own request layer — that layer's internal use of Node's built-in `fetch` produced a reproducible `Premature close` error on two different Google endpoints when run inside GitHub Actions' containers (not transient flakiness — it failed identically every time on the affected endpoint). Confirmed fix: bypass that transport entirely.
-- `scripts/decrypt-backup.js`, `scripts/generate-backup-key.js`, `scripts/get-google-refresh-token.js` — restore and one-time setup helpers, not part of the daily run.
+- `scripts/decrypt-backup.js`, `scripts/encrypt-backup.js`, `scripts/generate-backup-key.js`, `scripts/get-google-refresh-token.js` — restore and one-time setup helpers, not part of the daily run.
 
 **Full setup instructions, the architecture diagram, and exact restore commands for both destinations are in `admin_user_manual.md`** (the "Database Backups & Disaster Recovery" section) — written for a new admin with zero prior context.
 
