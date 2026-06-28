@@ -186,7 +186,28 @@ These are the ones worth knowing before you go looking for a "bug" that's actual
 
 ---
 
-## 9. Quick reference — common commands
+## 9. Backup & disaster recovery
+
+The database and uploaded files live on Railway and Cloudflare respectively — neither is under this project's own control. If either had an outage, locked the account, or simply disappeared, anything that only lived there would be gone. Files are already safe from this (they're on Cloudflare R2, not Railway's disk — see §2/§3), but the database had no independent copy anywhere until this was added.
+
+**Two independent, automated daily backups**, neither depending on the other or on Railway:
+
+1. **Cloudflare R2** (`backups/db/` in the same bucket files already use) — a plain `pg_dump` snapshot.
+2. **The super admin's personal Google Drive** — the same snapshot, but AES-256 encrypted first, so it's unreadable to anyone (including Google) without the encryption key.
+
+Both run via `.github/workflows/db-backup.yml`, daily at 02:00 UTC, on GitHub's own infrastructure — deliberately independent of Railway, so the backup still runs even if Railway itself is the thing that's down. Either destination alone is enough to fully reconstruct the database from scratch on any fresh Postgres instance, anywhere — that's what makes this a real disaster-recovery story rather than just "Railway has its own snapshot feature."
+
+- `scripts/backup-db.js` — dumps + uploads the plain copy to R2.
+- `scripts/backup-db-to-drive.js` — dumps, encrypts (`scripts/backup-crypto.js`, AES-256-GCM), uploads to Drive. Talks to Google's REST APIs directly over plain `https` rather than through the `googleapis` package's own request layer — that layer's internal use of Node's built-in `fetch` produced a reproducible `Premature close` error on two different Google endpoints when run inside GitHub Actions' containers (not transient flakiness — it failed identically every time on the affected endpoint). Confirmed fix: bypass that transport entirely.
+- `scripts/decrypt-backup.js`, `scripts/generate-backup-key.js`, `scripts/get-google-refresh-token.js` — restore and one-time setup helpers, not part of the daily run.
+
+**Full setup instructions, the architecture diagram, and exact restore commands for both destinations are in `admin_user_manual.md`** (the "Database Backups & Disaster Recovery" section) — written for a new admin with zero prior context.
+
+One gotcha if this is ever touched again: GitHub Actions runs *outside* Railway's private network, so its `DATABASE_URL` secret must be the external `ballast.proxy.rlwy.net` proxy address — `postgres.railway.internal` only resolves from inside Railway's own network and will silently fail to connect from anywhere else (including GitHub Actions or a local machine).
+
+---
+
+## 10. Quick reference — common commands
 
 ```bash
 # Install everything (run from repo root)
