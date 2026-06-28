@@ -11,6 +11,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const https = require('https');
 const { google } = require('googleapis');
 const { encryptBuffer } = require('./backup-crypto');
 
@@ -43,6 +44,47 @@ async function withRetry(label, fn, attempts = 3) {
   }
 }
 
+// google-auth-library's automatic token refresh uses Node's built-in fetch, which has a
+// reproducible 'Premature close' bug talking to oauth2.googleapis.com in this CI
+// environment (confirmed: failed identically on 3 separate attempts, so it's not transient
+// flakiness - it's this specific fetch implementation). Bypass it entirely by exchanging
+// the refresh token for an access token ourselves with the plain https module, then hand
+// that access token to the Drive client directly instead of letting the library refresh it.
+function getAccessToken() {
+  const body = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    client_secret: process.env.GOOGLE_CLIENT_SECRET,
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    grant_type: 'refresh_token',
+  }).toString();
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'oauth2.googleapis.com',
+        path: '/token',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          if (res.statusCode !== 200) return reject(new Error(`Token refresh failed (${res.statusCode}): ${data}`));
+          try {
+            resolve(JSON.parse(data).access_token);
+          } catch (e) {
+            reject(new Error(`Token refresh returned unparseable response: ${data}`));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 async function main() {
   const required = ['DATABASE_URL', 'BACKUP_ENCRYPTION_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'];
   for (const name of required) {
@@ -62,8 +104,11 @@ async function main() {
   fs.unlinkSync(dumpPath);
   console.log(`[drive-backup] Encrypted size: ${(encrypted.length / 1024 / 1024).toFixed(1)} MB.`);
 
+  console.log('[drive-backup] Refreshing access token...');
+  const accessToken = await withRetry('Token refresh', getAccessToken);
+
   const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  oauth2Client.setCredentials({ access_token: accessToken });
   const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || undefined;
