@@ -55,10 +55,9 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install backup dependencies
-        run: npm install googleapis@^144.0.0 --no-save
-
       - name: Install postgresql-client 18 (for pg_dump)
+        # No npm dependencies needed here - backup-db-to-drive.js talks to Google's
+        # APIs via the plain https module, not the googleapis package.
         run: |
           sudo apt-get install -y wget gnupg lsb-release
           wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
