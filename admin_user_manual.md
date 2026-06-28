@@ -98,15 +98,64 @@ A new admin would never normally need to redo this, but here is what's required 
 
 Go to the repository's **Actions** tab → **Database Backup**. Each run shows two jobs, `backup-to-r2` and `backup-to-drive` - both should show a green checkmark. You can also click **Run workflow** at any time to trigger an immediate backup rather than waiting for the daily 02:00 UTC schedule.
 
-## Restoring from a backup
+## Finding a backup in Cloudflare R2
 
-**From R2** (plain dump):
-1. Download the relevant `.dump` file from the `backups/db/` folder in the R2 bucket.
-2. Run: `pg_restore --clean --no-owner -d <target-database-url> <downloaded-file>.dump`
+Cloudflare's R2 dashboard works like a simple file browser - this walks through finding a specific day's backup.
 
-**From Google Drive** (encrypted dump):
-1. Download the relevant `.dump.enc` file from Drive.
-2. Decrypt it first: `BACKUP_ENCRYPTION_KEY=<the saved key> node scripts/decrypt-backup.js <downloaded-file>.dump.enc <output-file>.dump`
-3. Then restore exactly as above: `pg_restore --clean --no-owner -d <target-database-url> <output-file>.dump`
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) and log in.
+2. In the left sidebar, click **R2 Object Storage** (under "Storage" - if you don't see it immediately, it may be under a "More" or "Storage" submenu depending on the current dashboard layout).
+3. Click the bucket named **`genius-files`** - this is the single bucket used for everything: uploaded attachments, signatures, stamps, AND database backups, all organized into different folders inside it.
+4. Click into the **`backups`** folder, then the **`db`** folder. You'll see one file per day it ran, named like `css-rms-db-2026-06-28.dump` - the date in the filename tells you which day's snapshot it is.
+5. Click on the specific file you want, then click **Download** (top right, or in the file's detail panel). It downloads as a plain `.dump` file - this one is NOT encrypted, so it's ready to restore directly, no decryption step needed.
+6. Only the most recent 30 days are kept - older ones are automatically deleted by the backup job itself to avoid the bucket growing forever. If you need something older than 30 days and it's not there anymore, check Google Drive instead (see below) - it keeps its own separate rolling 30, so the two don't necessarily expire on exactly the same files.
 
-`<target-database-url>` can be any fresh Postgres instance - on Railway, on a different host entirely, anywhere. This is what makes the system genuinely portable rather than only "recoverable on Railway": the code already lives in GitHub, the files already live in R2, and now the database can be rebuilt from either backup on any new host, with nothing tying the system permanently to Railway.
+## Finding a backup in Google Drive
+
+1. Go to [drive.google.com](https://drive.google.com) and sign in with the Google account that was used as the backup owner (the one you approved access for during setup).
+2. Look in **My Drive** (or inside a specific folder, if `GOOGLE_DRIVE_FOLDER_ID` was set up to point one) for files named like `css-rms-db-2026-06-28.dump.enc` - the `.enc` at the end means this one IS encrypted, unlike the R2 copy.
+3. Google Drive cannot preview or open this file - if you click it, you'll see "No preview available." **This is expected and correct** - it's proof the file is genuinely encrypted gibberish to anyone without the key, not a sign something is broken.
+4. Click **Download** (or right-click → Download) to save it to your computer.
+5. Same 30-day retention as R2 - older ones get cleaned up automatically by the backup job.
+
+## Restoring from a backup, step by step
+
+There are two stages: **decrypting** (only needed for the Google Drive copy, since the R2 copy was never encrypted in the first place), and **restoring** (turning the dump file back into a live, working database) - which is the same final step either way.
+
+### Stage 1 — Decrypt (Google Drive copy only - skip this entirely if restoring from R2)
+
+On your own computer, open PowerShell and run:
+
+```powershell
+cd "C:\Users\USER\Downloads\Pro-RMS"
+$env:BACKUP_ENCRYPTION_KEY="<paste the key from wherever you saved it>"
+node scripts/decrypt-backup.js "<path to the downloaded .dump.enc file>" restored.dump
+```
+
+For example, if you downloaded it to your Downloads folder:
+
+```powershell
+node scripts/decrypt-backup.js "C:\Users\USER\Downloads\css-rms-db-2026-06-28.dump.enc" restored.dump
+```
+
+If the key you typed is correct, this creates a plain `restored.dump` file in the project folder - that's the real database snapshot, now readable. If the key is wrong, it fails immediately with an error rather than quietly producing a corrupted file - that's the encryption's built-in tamper/error check working as intended, not a bug.
+
+If you downloaded the **R2** copy instead, you already have a plain `.dump` file - there's nothing to decrypt, skip straight to Stage 2.
+
+### Stage 2 — Restore into a real database
+
+This step needs a tool called `pg_restore`, which is part of PostgreSQL's client tools. As of this writing it is **not installed** on the admin's own PC - if this is ever actually needed, either:
+- Install PostgreSQL's client tools on the PC doing the restore (just the client component, not a full server install), or
+- Run the restore command from any machine that already has it - a temporary cloud shell, a fresh server, anywhere with `pg_restore` available and network access to the target database.
+
+Once `pg_restore` is available, run:
+
+```
+pg_restore --clean --no-owner -d <target-database-url> restored.dump
+```
+
+Where `<target-database-url>` is the connection string for wherever the database is being rebuilt - this can be:
+- A brand-new Postgres database on Railway (if Railway itself is fine, but the data needs rolling back to an earlier point),
+- A Postgres database on a completely different host (if leaving Railway entirely, or Railway itself is unavailable),
+- Anywhere else Postgres can run.
+
+This is the detail that makes the system genuinely portable, not just "recoverable on Railway": the application code already lives in GitHub, the uploaded files already live in R2, and now the database can be rebuilt from either backup copy onto any new host - nothing permanently ties this system to Railway specifically.
