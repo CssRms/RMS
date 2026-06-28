@@ -26,6 +26,23 @@ function run(cmd, args) {
   });
 }
 
+// Google's token endpoint occasionally drops the connection mid-response in CI
+// containers ('Invalid response body ... Premature close') - a transient network
+// blip, not a logic error. This job runs unattended on a schedule, so retry rather
+// than let one flaky request fail the whole backup.
+async function withRetry(label, fn, attempts = 3) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === attempts) throw err;
+      const delayMs = 1000 * 2 ** (i - 1);
+      console.warn(`[drive-backup] ${label} failed (attempt ${i}/${attempts}): ${err.message}. Retrying in ${delayMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function main() {
   const required = ['DATABASE_URL', 'BACKUP_ENCRYPTION_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'];
   for (const name of required) {
@@ -54,25 +71,25 @@ async function main() {
   console.log(`[drive-backup] Uploading ${encryptedName} to Google Drive...`);
   const encPath = path.join(os.tmpdir(), encryptedName);
   fs.writeFileSync(encPath, encrypted);
-  await drive.files.create({
+  await withRetry('Upload', () => drive.files.create({
     requestBody: { name: encryptedName, parents: folderId ? [folderId] : undefined },
     media: { mimeType: 'application/octet-stream', body: fs.createReadStream(encPath) },
-  });
+  }));
   fs.unlinkSync(encPath);
   console.log('[drive-backup] Upload complete.');
 
   console.log('[drive-backup] Pruning old backups beyond retention...');
   const listQuery = `name contains '${BACKUP_NAME_PREFIX}'` + (folderId ? ` and '${folderId}' in parents` : '');
-  const list = await drive.files.list({
+  const list = await withRetry('List', () => drive.files.list({
     q: listQuery,
     fields: 'files(id, name, createdTime)',
     orderBy: 'name', // names are date-stamped, so name order == chronological order
     pageSize: 1000,
-  });
+  }));
   const files = list.data.files || [];
   const toDelete = files.slice(0, Math.max(0, files.length - RETENTION_COUNT));
   for (const file of toDelete) {
-    await drive.files.delete({ fileId: file.id });
+    await withRetry(`Delete ${file.name}`, () => drive.files.delete({ fileId: file.id }));
     console.log(`[drive-backup] Deleted old backup: ${file.name}`);
   }
 
