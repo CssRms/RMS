@@ -16,38 +16,57 @@ import ChatWidget from './ChatWidget';
 
 const normalizeRole = (r) => (r || '').toLowerCase().replace(/\s+/g, '_');
 
-const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = false, isCollapsed = false, badge = 0 }) => (
-  <div
-    onClick={onClick}
-    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
-    tabIndex={0}
-    title={isCollapsed ? label : ''}
-    className={mobile
-      ? `flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none focus-electric-halo hover-orange-pulse ${active ? 'text-[#f97316] animate-electric-pulse' : 'text-white'}`
-      : `flex items-center group relative px-3 py-2.5 rounded-2xl cursor-pointer transition-all duration-300 hover-shine-effect outline-none focus-electric-halo hover-orange-pulse ${isCollapsed ? 'justify-center mx-1' : 'space-x-4 mx-1'} ${active ? 'bg-white/10 text-[#f97316] shadow-lg shadow-black/20 scale-[0.98] animate-electric-pulse animate-active-hum' : 'text-white'}`
-    }
-  >
-    <div className={`relative transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
-      <Icon size={mobile ? 20 : 18} />
-      {badge > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] bg-amber-500 text-white text-[8px] font-black rounded-full flex items-center justify-center px-0.5 shadow-sm shadow-amber-900/30 animate-pulse">
-          {badge > 9 ? '9+' : badge}
+const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = false, isCollapsed = false, badge = 0 }) => {
+  const [clickId, setClickId] = useState(0);
+
+  const handleClick = () => {
+    setClickId(id => id + 1);
+    onClick?.();
+  };
+
+  return (
+    <div
+      onClick={handleClick}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick()}
+      tabIndex={0}
+      title={isCollapsed ? label : ''}
+      className={mobile
+        ? `relative overflow-hidden flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none focus-electric-halo hover-orange-pulse ${active ? 'text-[#f97316] animate-electric-pulse' : 'text-white'}`
+        : `relative flex items-center group px-3 py-2.5 rounded-2xl cursor-pointer transition-all duration-300 hover-shine-effect outline-none focus-electric-halo hover-orange-pulse ${isCollapsed ? 'justify-center mx-1' : 'space-x-4 mx-1'} ${active ? 'bg-white/15 text-[#f97316] shadow-lg shadow-black/20 scale-[0.98] animate-electric-pulse animate-active-hum' : 'text-white'}`
+      }
+    >
+      {/* Click ripple flash */}
+      {clickId > 0 && (
+        <span key={clickId} className="absolute inset-0 rounded-2xl bg-white/25 nav-click-ripple pointer-events-none" />
+      )}
+      {/* Active left accent bar (desktop only) */}
+      {active && !mobile && (
+        <span className="absolute left-0 inset-y-0 flex items-center pointer-events-none">
+          <span className="w-[3px] bg-[#f97316] rounded-r-full nav-indicator-in" style={{ height: '1.5rem' }} />
         </span>
       )}
-    </div>
-    {!mobile && !isCollapsed && (
-      <span className="font-bold text-[13px] tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300">
-        {label}
-      </span>
-    )}
-    {isCollapsed && !mobile && (
-      <div className="absolute left-full ml-4 px-3 py-2 bg-white text-primary text-[10px] font-black rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all translate-x-[-10px] group-hover:translate-x-0 shadow-xl whitespace-nowrap z-[100] uppercase tracking-widest">
-        {label}
+      <div className={`relative transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+        <Icon size={mobile ? 20 : 18} />
+        {badge > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] bg-amber-500 text-white text-[8px] font-black rounded-full flex items-center justify-center px-0.5 shadow-sm shadow-amber-900/30 animate-pulse">
+            {badge > 9 ? '9+' : badge}
+          </span>
+        )}
       </div>
-    )}
-    {mobile && <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter transition-all ${active ? 'text-[#f97316]' : 'text-white'}`}>{label}</span>}
-  </div>
-);
+      {!mobile && !isCollapsed && (
+        <span className="font-bold text-[13px] tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300">
+          {label}
+        </span>
+      )}
+      {isCollapsed && !mobile && (
+        <div className="absolute left-full ml-4 px-3 py-2 bg-white text-primary text-[10px] font-black rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all translate-x-[-10px] group-hover:translate-x-0 shadow-xl whitespace-nowrap z-[100] uppercase tracking-widest">
+          {label}
+        </div>
+      )}
+      {mobile && <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter transition-all ${active ? 'text-[#f97316]' : 'text-white'}`}>{label}</span>}
+    </div>
+  );
+};
 
 const SignalBars = ({ bars }) => (
   <div className="flex items-end gap-[2.5px]" style={{ height: '11px' }}>
@@ -1013,6 +1032,8 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   }, []);
 
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
+  const isAdminRole  = user?.role === 'global_admin';
+  const sidebarBg    = isAdminRole ? 'bg-[#0f172a]' : 'bg-[#206e33]';
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
   const isStoreDept = /\bstore\b/i.test(user?.name || '') || /\bstore\b/i.test(user?.parentDeptName || '');
   const isIccDept   = /\bicc\b|internal.*control|control.*compliance/i.test(user?.name || '');
@@ -1075,7 +1096,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
       <div className="flex h-[calc(100vh-56px)] overflow-hidden">
         {/* Desktop Sidebar App-Tile Navigation */}
         <aside
-          className={`border-r border-white/5 bg-[#206e33] sticky top-0 hidden lg:flex flex-col transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) ${isCollapsed ? 'w-20' : 'w-64'}`}
+          className={`border-r border-white/5 ${sidebarBg} sticky top-0 hidden lg:flex flex-col transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) ${isCollapsed ? 'w-20' : 'w-64'}`}
         >
           <div className="p-4 pt-6 flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
             <div className="space-y-2">
@@ -1179,7 +1200,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
       {/* Floating Mobile Nav — horizontally scrollable, all items always visible */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-lg lg:hidden z-[100] animate-in slide-in-from-bottom-5 duration-500">
         <nav
-          className="bg-[#206e33] border border-white/10 rounded-[2rem] flex items-center px-3 py-1.5 gap-1 shadow-2xl shadow-black/30 overflow-x-auto"
+          className={`${sidebarBg} border border-white/10 rounded-[2rem] flex items-center px-3 py-1.5 gap-1 shadow-2xl shadow-black/30 overflow-x-auto`}
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {user?.role === 'department' ? (

@@ -342,3 +342,21 @@
   color: #fb923c !important;
   background: rgba(251, 146, 60, 0.1) !important;
 }
+
+/* ── Sidebar Click Swap Animations ── */
+@keyframes nav-click-ripple {
+  0%   { transform: scale(0.3); opacity: 0.5; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.nav-click-ripple {
+  animation: nav-click-ripple 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes nav-indicator-in {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+.nav-indicator-in {
+  transform-origin: center;
+  animation: nav-indicator-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
