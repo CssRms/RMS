@@ -58,6 +58,30 @@ Files (attachments, signatures, stamps) are already stored on Cloudflare R2 rath
 
 Both backup jobs run independently of each other - if one fails, the other still runs and still succeeds.
 
+## How encryption works
+
+The Drive backup is encrypted using **AES-256-GCM** — a modern, authenticated encryption algorithm. The implementation lives in `scripts/backup-crypto.js`.
+
+**Encryption process (what happens every day automatically):**
+1. `pg_dump` produces a plain `.dump` file in the GitHub Actions runner's temp directory.
+2. A fresh random **12-byte IV (initialisation vector)** is generated — unique per backup run, so the same database content produces different ciphertext every time.
+3. The dump is encrypted with AES-256-GCM using the `BACKUP_ENCRYPTION_KEY` and that IV.
+4. GCM mode produces a **16-byte authentication tag** alongside the ciphertext — this tag is what makes decryption fail loudly with an error if the file is tampered with or the wrong key is used, rather than silently producing corrupt output.
+5. The final `.dump.enc` file layout: `[12-byte IV][16-byte auth tag][ciphertext]` — all three pieces must be present and correct to decrypt.
+6. The plain `.dump` file is deleted from temp immediately after encryption. It never leaves the runner unencrypted.
+
+**What the key is:**
+- A randomly generated 256-bit value stored as a 64-character hex string.
+- It is the **only thing** that can decrypt these backups. There is no password reset, no copy held anywhere else — if it is lost, every Drive backup becomes permanently unreadable.
+- It lives in the `BACKUP_ENCRYPTION_KEY` GitHub Actions secret and in your password manager — nowhere else.
+
+**Decryption process (only needed during a restore):**
+1. Download the `.dump.enc` file from Drive.
+2. Run `node scripts/decrypt-backup.js` with `BACKUP_ENCRYPTION_KEY` set in your shell.
+3. The script reads the IV from the first 12 bytes, the auth tag from the next 16 bytes, and the ciphertext from the rest.
+4. It verifies the auth tag — wrong key or modified file causes an immediate error (correct behaviour, not a bug).
+5. If the key is correct, it writes a plain `.dump` file ready for `pg_restore`.
+
 ## One-time setup (only needed once, already done for this project)
 
 A new admin would never normally need to redo this, but here is what's required if the Drive backup ever needs to be reconnected to a different Google account:
@@ -90,7 +114,7 @@ A new admin would never normally need to redo this, but here is what's required 
    | `GOOGLE_CLIENT_ID` | Step 2 |
    | `GOOGLE_CLIENT_SECRET` | Step 2 |
    | `GOOGLE_REFRESH_TOKEN` | Step 3 |
-   | `GOOGLE_DRIVE_FOLDER_ID` | optional - leave unset to store backups in the root of Drive |
+   | `GOOGLE_DRIVE_FOLDER_ID` | The ID of the Drive folder where backups should land — get it from the folder's URL (`https://drive.google.com/drive/folders/<ID>`). If left unset, backups go to the root of Drive. |
 
    The R2 backup job uses the same `DATABASE_URL`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` secrets that already exist for it (same values as the ones already configured on Railway - note: `DATABASE_URL` here must be the *external* `ballast.proxy.rlwy.net` address, not the `postgres.railway.internal` one, since GitHub Actions runs outside Railway's private network entirely).
 
@@ -104,15 +128,15 @@ Cloudflare's R2 dashboard works like a simple file browser - this walks through 
 
 1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) and log in.
 2. In the left sidebar, click **R2 Object Storage** (under "Storage" - if you don't see it immediately, it may be under a "More" or "Storage" submenu depending on the current dashboard layout).
-3. Click the bucket named **`genius-files`** - this is the single bucket used for everything: uploaded attachments, signatures, stamps, AND database backups, all organized into different folders inside it.
-4. Click into the **`backups`** folder, then the **`db`** folder. You'll see one file per day it ran, named like `css-rms-db-2026-06-28.dump` - the date in the filename tells you which day's snapshot it is.
+3. Click the bucket configured as **`R2_BUCKET_NAME`** in the GitHub secrets - this is the single bucket used for everything: uploaded attachments, signatures, stamps, AND database backups, all organized into different folders inside it.
+4. Click into the **`backups`** folder, then the **`db`** folder. You'll see one file per day it ran, named like `css-rms-2026-06-28.dump` - the date in the filename tells you which day's snapshot it is.
 5. Click on the specific file you want, then click **Download** (top right, or in the file's detail panel). It downloads as a plain `.dump` file - this one is NOT encrypted, so it's ready to restore directly, no decryption step needed.
 6. Only the most recent 30 days are kept - older ones are automatically deleted by the backup job itself to avoid the bucket growing forever. If you need something older than 30 days and it's not there anymore, check Google Drive instead (see below) - it keeps its own separate rolling 30, so the two don't necessarily expire on exactly the same files.
 
 ## Finding a backup in Google Drive
 
 1. Go to [drive.google.com](https://drive.google.com) and sign in with the Google account that was used as the backup owner (the one you approved access for during setup).
-2. Look in **My Drive** (or inside a specific folder, if `GOOGLE_DRIVE_FOLDER_ID` was set up to point one) for files named like `css-rms-db-2026-06-28.dump.enc` - the `.enc` at the end means this one IS encrypted, unlike the R2 copy.
+2. Open the folder configured via `GOOGLE_DRIVE_FOLDER_ID` in GitHub secrets, or look in **My Drive** if no folder was set. Files are named like `css-rms-db-2026-06-28.dump.enc` - the `.enc` at the end means this one IS encrypted, unlike the R2 copy.
 3. Google Drive cannot preview or open this file - if you click it, you'll see "No preview available." **This is expected and correct** - it's proof the file is genuinely encrypted gibberish to anyone without the key, not a sign something is broken.
 4. Click **Download** (or right-click → Download) to save it to your computer.
 5. Same 30-day retention as R2 - older ones get cleaned up automatically by the backup job.
