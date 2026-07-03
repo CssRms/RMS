@@ -1,3 +1,61 @@
+# Admin User Manual: API Security & Authorization
+
+## Security model overview
+
+The Pro-RMS API enforces three layers of protection on every request:
+
+1. **Authentication** — every protected route requires a valid JWT token issued at login. Requests without a valid token receive `401 Unauthorized`. Tokens carry the user's `id`, `role`, `deptId`, and `tokenVersion` — if the token version is stale (e.g. after a password change), the request is also rejected.
+2. **Role authorization** — operations are gated by role (`global_admin` vs `department`) checked via `normalizeRole(req.user.role)`. Admin-only routes return `403` for department users.
+3. **Object-level ownership / BOLA protection** — every route that fetches a resource by ID verifies the requesting user has legitimate access to that specific record. This is enforced via:
+   - The `canReadRequisition(requisition, user)` helper for all requisition-related routes — it checks department membership, forwarding chain, vetting chain, sub-account privileges, and ICC observer status
+   - Direct ownership checks (`notification.userId === userId || notification.departmentId === deptId`) for user-specific records
+   - Department self-check (`user.deptId === requestedDeptId`) for department data
+
+## What BOLA is and why it matters
+
+BOLA (Broken Object Level Authorization) is OWASP API Security #1 — the most common real-world API vulnerability. It occurs when an API verifies that a user is logged in but does not verify that the specific record they requested belongs to them or their department.
+
+Example of the vulnerability (before fix):
+```
+GET /api/attachments/789/download   ← dept A is logged in, attachment 789 belongs to dept B's requisition
+Server: ✅ token valid → streams dept B's confidential file  ← WRONG
+```
+
+After fix:
+```
+GET /api/attachments/789/download   ← dept A is logged in
+Server: ✅ token valid → canReadRequisition(attachment.requisition, deptA) → ❌ false → 403 Access denied
+```
+
+## Routes hardened (July 2026)
+
+| Route | Vulnerability fixed | Fix applied |
+|---|---|---|
+| `PUT /api/notifications/:id/read` | Any authenticated user could mark any notification as read | Fetch notification first; verify `userId` or `departmentId` matches requesting user before update |
+| `GET /api/departments/:id/activation` | Any authenticated user could view any department's head name and email | Department users can only view their own department; admins can view any |
+| `GET /api/attachments/:id/download` | Any authenticated user could download attachments from any requisition | Added `canReadRequisition(attachment.requisition, req.user)` check before streaming |
+| `GET /api/attachments/:id/preview` | Same as download | Same fix |
+| `GET /api/requisitions/:id/signed-pdf` | Any authenticated user could download the signed PDF of any requisition | Added `canReadRequisition(requisition, req.user)` check |
+| `GET /api/requisitions/:id/dynamic-pdf` | Any authenticated user could generate the PDF of any requisition | Added `canReadRequisition(requisition, req.user)` check |
+
+## The canReadRequisition helper
+
+`canReadRequisition(requisition, user)` is the central access-control function for all requisition data. A user/department passes if **any** of these are true:
+
+- Role is `global_admin`
+- Department is the **creator** (`departmentId`)
+- Department is the **target** (`targetDepartmentId`)
+- Department is the **current vetting dept**, **final approver**, or **treating dept**
+- Department appears anywhere in the **forwarding chain** (ForwardEvent)
+- Department participated in **vetting** (VettingEvent)
+- Department has been **tagged** on the requisition (RequisitionTag)
+- Department is the **ICC** (global observer)
+- Sub-account has the appropriate **cash/memo/material privilege** for the target dept
+
+This means the fix for attachments and PDFs does not block legitimate approval-chain access — it only blocks departments with no relationship to the requisition.
+
+---
+
 # Admin User Manual: Mobile Navigation
 
 ## Overview

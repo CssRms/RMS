@@ -2311,8 +2311,16 @@ app.put('/api/notifications/read-all', authenticateToken, async (req, res) => {
 
 app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
   try {
+    const notifId = parseInt(req.params.id);
+    const notification = await prisma.notification.findUnique({ where: { id: notifId } });
+    if (!notification) return res.status(404).json({ error: 'Notification not found' });
+    const userId = getNumericUserId(req.user);
+    const deptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+    if (notification.userId !== userId && notification.departmentId !== deptId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     await prisma.notification.update({
-      where: { id: parseInt(req.params.id) },
+      where: { id: notifId },
       data: { isRead: true }
     });
     res.json({ success: true });
@@ -5074,8 +5082,14 @@ app.get('/api/settings/print-access', authenticateToken, async (req, res) => {
 
 app.get('/api/departments/:id/activation', authenticateToken, async (req, res) => {
   try {
+    const deptIdParam = parseInt(req.params.id);
+    const userRole = normalizeRole(req.user.role);
+    if (userRole !== 'global_admin') {
+      const userDeptId = req.user.deptId ? parseInt(req.user.deptId) : null;
+      if (userDeptId !== deptIdParam) return res.status(403).json({ error: 'Access denied' });
+    }
     const dept = await prisma.department.findUnique({
-      where: { id: parseInt(req.params.id) },
+      where: { id: deptIdParam },
       select: { id: true, name: true, headName: true, headEmail: true }
     });
     if (!dept) return res.status(404).json({ error: 'Department not found' });
@@ -6751,10 +6765,12 @@ app.get('/api/requisitions/:id/signed-pdf', authenticateToken, async (req, res) 
     const { id } = req.params;
     const requisition = await prisma.requisition.findUnique({ where: { id: parseInt(id) } });
     if (!requisition) return res.status(404).json({ error: 'Requisition not found.' });
+    if (!(await canReadRequisition(requisition, req.user))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     if (!requisition.signedPdfKey) {
       return res.status(404).json({ error: 'This requisition does not have a signed copy yet. It must be fully approved before a signed document is generated.' });
     }
-    // All authenticated users (including target departments) may download the signed copy
     const stream = await getObjectStream(requisition.signedPdfKey);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="signed-requisition-${id}.pdf"`);
@@ -7166,6 +7182,9 @@ app.get('/api/requisitions/:id/dynamic-pdf', authenticateToken, async (req, res)
     });
 
     if (!requisition) return res.status(404).json({ error: 'Requisition not found' });
+    if (!(await canReadRequisition(requisition, req.user))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     // ── Stage filtering ────────────────────────────────
     let filteredApprovals = requisition.approvals || [];
@@ -8421,8 +8440,9 @@ app.get('/api/attachments/:id/download', authenticateToken, async (req, res) => 
       include: { requisition: true }
     });
     if (!attachment) return res.status(404).json({ error: 'File not found' });
-    // Any authenticated user can download — the requisition list is already access-controlled
-    // (blocking by dept here causes 403 for HR/vetting/forwarded departments in the approval chain)
+    if (!(await canReadRequisition(attachment.requisition, req.user))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     // Audit Log
     const accessUserId = getNumericUserId(req.user);
@@ -8453,7 +8473,9 @@ app.get('/api/attachments/:id/preview', authenticateToken, async (req, res) => {
       include: { requisition: true }
     });
     if (!attachment) return res.status(404).json({ error: 'File not found' });
-    // Any authenticated user can preview — dept check here blocks the forwarding/vetting chain
+    if (!(await canReadRequisition(attachment.requisition, req.user))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     if (!attachment.storageKey) return res.status(404).json({ error: 'File missing from storage' });
     const stream = await getObjectStream(attachment.storageKey);
     res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
