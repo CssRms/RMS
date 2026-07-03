@@ -8374,14 +8374,26 @@ app.get('/api/audit-logs', authenticateToken, async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
     const skip = (page - 1) * limit;
+    const isAdmin = normalizeRole(req.user.role) === 'global_admin';
+    const mineOnly = req.query.mine === 'true';
+
+    // Non-admins can only ever see their own activity
+    if (!isAdmin && !mineOnly) {
+      return res.status(403).json({ error: 'Access denied. Use ?mine=true to view your own activity.' });
+    }
+
+    const userId = getNumericUserId(req.user);
+    const where = (isAdmin && !mineOnly) ? {} : { userId };
+
     const [logs, total] = await Promise.all([
       prisma.activityLog.findMany({
+        where,
         include: { user: { select: { name: true } } },
         orderBy: { timestamp: 'desc' },
         skip,
         take: limit
       }),
-      prisma.activityLog.count()
+      prisma.activityLog.count({ where })
     ]);
     res.json({ data: logs, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (error) { sendError(res, 500, error.message); }

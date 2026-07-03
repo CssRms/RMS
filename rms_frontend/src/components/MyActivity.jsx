@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getActivityLog, uploadUserSignature } from '../lib/store';
+import { getMyActivityLog, uploadUserSignature } from '../lib/store';
 import { History, Clock, Upload } from 'lucide-react';
 
 const MyActivity = ({ onViewChange }) => {
@@ -12,7 +12,7 @@ const MyActivity = ({ onViewChange }) => {
 
   useEffect(() => {
     const load = async () => {
-      const log = await getActivityLog();
+      const log = await getMyActivityLog();
       setActivities(log);
       setLoading(false);
     };

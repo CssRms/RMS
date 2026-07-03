@@ -476,6 +476,20 @@ export async function getActivityLog() {
   }
 }
 
+// My Activity — returns only the current user's own logs
+export async function getMyActivityLog() {
+  await ensureInitialized();
+  try {
+    const remote = await auditAPI.getMyActivity();
+    const rawList = Array.isArray(remote) ? remote : (Array.isArray(remote?.data) ? remote.data : []);
+    return rawList.map(a => ({ ...a, detail: a.detail || a.details }));
+  } catch (err) {
+    console.warn("Offline: Fetching cached activity log", err);
+    const local = await activityStore.getItem('log');
+    return Array.isArray(local) ? local : [];
+  }
+}
+
 import { workflowAPI, typeAPI, notificationAPI } from './api';
 
 // ── Requisition Types ──

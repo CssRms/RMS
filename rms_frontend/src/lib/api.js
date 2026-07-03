@@ -200,6 +200,9 @@ export const auditAPI = {
   async getAuditLogs() {
     return api.get('/audit-logs');
   },
+  async getMyActivity() {
+    return api.get('/audit-logs?mine=true');
+  },
   async saveOverride(reqId, payload) {
     return api.post(`/requisitions/${reqId}/audit-override`, payload);
   },
