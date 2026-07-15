@@ -11,7 +11,7 @@ export default defineConfig({
       // (immediate registration + periodic update polling) — disable the
       // plugin's auto-injected script to avoid double-registering.
       injectRegister: false,
-      includeAssets: ['CSS_Favicon.svg', 'CSS_Favicon.png', 'CSS_CSS_Group.png', 'CSS_Group.svg'],
+      includeAssets: ['CSS_Favicon.svg', 'CSS_Favicon.png', 'CSS_Group.png', 'CSS_Group.svg'],
       manifest: {
         name: 'RMS Portal',
         short_name: 'RMS Portal',
