@@ -806,11 +806,11 @@ const Login = () => {
               {/* Mobile logo banner */}
               <div className="lg:hidden -mx-10 -mt-10 mb-8 bg-primary px-8 py-5 flex items-center gap-4 border-b border-white/10">
                 <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/15 p-0.5 shrink-0">
-                  <img src="/CSS_Group.png" alt="Logo" className="w-full h-full object-contain"/>
+                  <img src="/CSS_Favicon.png" alt="Logo" className="w-full h-full object-contain"/>
                 </div>
                 <div>
-                  <p className="text-base font-black text-white tracking-[0.1em] italic uppercase leading-none">RMS Portal</p>
-                  <p className="text-[10px] text-white/65 uppercase tracking-[0.3em] font-bold mt-0.5">CSS Group</p>
+                  <p className="text-[10px] text-white/65 uppercase tracking-[0.3em] font-bold leading-none">CSS Group</p>
+                  <p className="text-base font-black text-white tracking-[0.1em] italic uppercase mt-0.5">RMS Portal</p>
                 </div>
               </div>
 
