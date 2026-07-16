@@ -603,6 +603,24 @@ const loginAttempts = new Map(); // key => { count, lockedUntil }
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
+async function verifyTurnstile(token, ip) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) return true; // not configured — skip silently
+  if (!token) return false;
+  try {
+    const resp = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, response: token, remoteip: ip }),
+    });
+    const data = await resp.json();
+    return data.success === true;
+  } catch (e) {
+    logger.error('[TURNSTILE] Verification error:', e.message);
+    return false;
+  }
+}
+
 function checkLockout(key) {
   const record = loginAttempts.get(key);
   if (!record) return false;
@@ -1494,9 +1512,16 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Login details are missing or invalid. Please check your credentials and try again.' });
     }
     const { departmentName, accessCode, mfaCode } = parsed.data;
+    const { turnstileToken } = req.body;
 
     const deptKey = `dept:${(departmentName || '').trim().toLowerCase()}`;
     logger.info(`[AUTH] Unified login attempt: "${departmentName?.trim()}"`);
+
+    // Turnstile human verification
+    const turnstileOk = await verifyTurnstile(turnstileToken, req.ip);
+    if (!turnstileOk) {
+      return res.status(400).json({ error: 'Human verification failed. Please complete the security check and try again.' });
+    }
 
     // Account lockout check for department
     if (checkLockout(deptKey)) {

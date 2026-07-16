@@ -525,6 +525,8 @@ const TypewriterHeadline = ({ line1, line2 }) => {
   );
 };
 
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
+
 const Login = () => {
   const [selectedDept, setSelectedDept] = useState('');
   const [accessCode, setAccessCode] = useState('');
@@ -533,6 +535,9 @@ const Login = () => {
   const [mfaCode, setMfaCode] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef(null);
+  const widgetIdRef = useRef(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showForgotCode, setShowForgotCode] = useState(false);
@@ -577,6 +582,23 @@ const Login = () => {
     return () => { document.removeEventListener('mousedown', handleOutside); window.removeEventListener('beforeinstallprompt', handleBIP); };
   }, []);
 
+  // Render Turnstile widget once the script is loaded
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    const render = () => {
+      if (!window.turnstile || !turnstileRef.current || widgetIdRef.current != null) return;
+      widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+    };
+    if (window.turnstile) { render(); return; }
+    const iv = setInterval(() => { if (window.turnstile) { clearInterval(iv); render(); } }, 100);
+    return () => clearInterval(iv);
+  }, []);
+
   const selectDept = async (name) => {
     setSelectedDept(name);
     setDeptActivated(null);
@@ -600,19 +622,31 @@ const Login = () => {
     if (outcome === 'accepted') setDeferredPrompt(null);
   };
 
+  const resetTurnstile = () => {
+    if (TURNSTILE_SITE_KEY && widgetIdRef.current != null && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+    setTurnstileToken('');
+  };
+
   const handleLogin = async e => {
     e.preventDefault();
     setError('');
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      setError('Please complete the human verification check below.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       if (!selectedDept) throw new Error("Please select a department");
-      await deptLogin(selectedDept, accessCode, mfaCode);
+      await deptLogin(selectedDept, accessCode, mfaCode, turnstileToken);
     } catch (err) {
       if (err.message === 'REQUIRES_ACTIVATION') {
         setActivation({ token: err.activationToken, deptName: err.activationDeptName, isSubAccount: err.isSubAccount, headName: err.headName || '', headTitle: err.headTitle || '', headEmail: err.headEmail || '' });
         setIsSubmitting(false);
         return;
       }
+      resetTurnstile();
       const s = err.response?.status;
       setError(
         s === 401 ? (err.response?.data?.error || 'Incorrect password. Please try again.') :
@@ -893,8 +927,14 @@ const Login = () => {
                   </div>
                 )}
 
+                {TURNSTILE_SITE_KEY && (
+                  <div className="flex justify-center">
+                    <div ref={turnstileRef} />
+                  </div>
+                )}
+
                 <div className="pt-1">
-                  <button type="submit" disabled={isSubmitting}
+                  <button type="submit" disabled={isSubmitting || (TURNSTILE_SITE_KEY ? !turnstileToken : false)}
                     className="w-full bg-primary hover:bg-primary/90 active:bg-primary/95 text-primary-foreground font-bold py-4 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 active:scale-[0.985] disabled:opacity-50 text-base">
                     {isSubmitting
                       ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>Authenticating…</span></>
