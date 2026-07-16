@@ -234,3 +234,112 @@ npm test
 # Run frontend tests (from rms_frontend/) — shared display logic, no DB needed
 npm test
 ```
+
+---
+
+## 11. Cloudflare R2 + Railway Setup Guide
+
+> **cssgrouprms.com | RMS Project | Storage & Custom Domain Configuration**
+
+### Part 1 — Cloudflare R2 Storage Setup
+
+**Goal:** obtain five environment variables (`R2_ACCESS_KEY_ID`, `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`, `R2_SECRET_ACCESS_KEY`) and add them to Railway.
+
+#### Step 1 — Create the R2 bucket
+
+Cloudflare Dashboard → R2 Object Storage → Create bucket. Bucket created and named **cssrms**. This name is used directly as `R2_BUCKET_NAME`.
+
+#### Step 2 — Get the Account ID
+
+On the R2 Overview page, the Account Details panel (bottom right) shows the Account ID with a copy icon. This value is `R2_ACCOUNT_ID`.
+
+#### Step 3 — Create an Account API Token
+
+R2 → Manage API Tokens → **Account API Tokens** section (chosen over "User API Tokens" because account-level tokens stay active even if a team member leaves the organisation — better suited for production).
+
+- Clicked **Create Account API Token**
+- Token name: `railway-cssrms-access`
+- Permissions: **Object Read & Write**
+- Specify bucket(s): Apply to specific buckets only → selected **cssrms**
+- TTL: **Forever**
+- Client IP filtering: left blank
+- Clicked **Create API Token**
+
+Cloudflare displayed the following values **one time only** (copied immediately):
+
+| Variable | Source |
+|---|---|
+| `R2_ACCESS_KEY_ID` | Access Key ID shown after token creation |
+| `R2_SECRET_ACCESS_KEY` | Secret Access Key shown after token creation |
+
+#### Step 4 — Note (not used): the S3 API endpoint
+
+Found under the bucket's General settings tab:
+
+```
+https://6b7b15a3c6f5f6cc60c8b57919fc8f96.r2.cloudflarestorage.com/cssrms
+```
+
+This is the S3-compatible API endpoint used internally by SDKs. It is **not** one of the five required variables and is **not** the same as the public URL — it can be reconstructed from `R2_ACCOUNT_ID` if ever needed in code.
+
+#### Step 5 — Enable the Public Development URL
+
+Bucket **cssrms** → Settings → Public Development URL → clicked **Enable** → confirmed the public-access warning. Cloudflare generated a URL in the form `https://pub-xxxxxxxx.r2.dev`. This is `R2_PUBLIC_URL`.
+
+#### Result — All five R2 variables
+
+```
+R2_ACCESS_KEY_ID=<from Step 3>
+R2_ACCOUNT_ID=<from Step 2>
+R2_BUCKET_NAME=cssrms
+R2_PUBLIC_URL=<from Step 5>
+R2_SECRET_ACCESS_KEY=<from Step 3>
+```
+
+#### Step 6 — Add variables to Railway
+
+- Open the project in Railway → select the service
+- Go to the **Variables** tab
+- Use **Raw Editor** to paste all five lines at once, or add them individually
+- Click **Deploy** to redeploy the service with the new variables active
+
+---
+
+### Part 2 — Railway Custom Domain (`rms.cssgrouprms.com`)
+
+**Goal:** point the subdomain `rms.cssgrouprms.com` to the Railway-hosted app, verified through DNS records added at the domain registrar (Smart Web).
+
+#### Step 1 — Request a custom domain in Railway
+
+In the Railway service → Settings → Networking / Custom Domain → entered `rms.cssgrouprms.com`. Railway generated two DNS records that must be added at the domain's DNS provider.
+
+| Type | Name | Value |
+|---|---|---|
+| CNAME | `rms` | `yz51hg3b.up.railway.app` |
+| TXT | `_railway-verify.rms` | `railway-verify=53118dcce2ace7333164...` (full value from Railway) |
+
+#### Step 2 — Add the records at Smart Web (registrar) DNS Management
+
+`cssgrouprms.com` was purchased through Smart Web, whose client portal uses a WHMCS-style DNS Management page (Host Name / Record Type / Address / Priority). The domain's DNS is managed here rather than in Cloudflare, so records are entered directly in this panel.
+
+**Record 1 — CNAME:**
+- Host Name: `rms`
+- Record Type: `CNAME`
+- Address: `yz51hg3b.up.railway.app`
+- Priority: left blank (N/A)
+
+**Record 2 — TXT:**
+- Host Name: `_railway-verify.rms`
+- Record Type: `TXT`
+- Address: full `railway-verify=...` value copied exactly from Railway
+- Priority: left blank (N/A)
+
+Click **Save Changes** in Smart Web after both records are entered. Copy the TXT value directly from Railway's popup rather than typing it — it is long and must match exactly for verification to succeed.
+
+#### Step 3 — Wait for verification
+
+DNS propagation can take anywhere from a few minutes to a few hours. Railway will show a green checkmark / verified status on both records once propagation completes and the domain is confirmed.
+
+#### Notes for the future
+
+- `cssgrouprms.com` currently manages DNS through Smart Web's own panel, **not** through Cloudflare nameservers. This is fine for the Railway custom domain (a simple CNAME/TXT add), but if a branded custom domain is later wanted for R2 storage itself (e.g. `cdn.cssgrouprms.com`) instead of the free `pub-xxxx.r2.dev` URL, the same approach applies: get the CNAME from Cloudflare's Custom Domains section and add it in Smart Web the same way.
