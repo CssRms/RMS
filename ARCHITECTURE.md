@@ -237,6 +237,389 @@ npm test
 
 ---
 
+## 11. Authentication — two separate login systems
+
+There are **two completely different auth flows** that share the same JWT middleware but issue tokens in very different ways. Mixing them up is a common source of confusion.
+
+### System A — User / Admin login (`/api/auth/login`)
+
+Standard email + password. Issues a JWT containing `{ id, role, email, name, ... }`. Used by the Super Admin (`global_admin`) and any regular User-table accounts. Tokens are stateless — there is no server-side session, and force-logout is not possible for these accounts (no `tokenVersion` check exists for User-table logins). Role is embedded in the token and also re-read from the database on sensitive admin routes.
+
+### System B — Department login (`/api/auth/dept-login`)
+
+Department accounts do **not** have passwords in the traditional sense. They use a numeric **access code** (set at creation or changed by admin). The login flow:
+
+1. Department enters their access code → server verifies → checks if the department is `activated`.
+2. **If not yet activated:** an SMS OTP is sent to the department head's phone via Termii/Twilio. Department enters the OTP at `/api/departments/activate` → account becomes activated, first JWT issued.
+3. **If already activated:** JWT is issued immediately (no OTP needed on subsequent logins).
+
+The JWT contains `{ deptId, role: 'department', name, tokenVersion }`. The `tokenVersion` field is what enables **force-logout** — see gotcha §6.12.
+
+### Security Reset (`/api/departments/:id/security-reset`)
+
+Admin-only. Increments `tokenVersion` in the database for that department. Every subsequent request from any device holding the old token will fail the `tokenVersion` check and be rejected, effectively logging out every active session for that department simultaneously — no token blacklist or session store needed.
+
+### Token storage
+
+Both token types are returned in the response body (not set as httpOnly cookies despite `cookie-parser` being installed — it's available but not used for auth tokens). The frontend stores the JWT in `localforage` and sends it as `Authorization: Bearer <token>` on every request.
+
+---
+
+## 12. Real-time: SSE + Web Push notifications
+
+### Server-Sent Events (`/api/events`)
+
+A persistent SSE endpoint that keeps a long-lived HTTP connection open for each connected client. Used to push real-time updates (new requisitions, approvals, chat messages, notifications) to the browser without polling. Each client registers by connecting; the server stores the response object and broadcasts to it on relevant events.
+
+`/api/events/ticket` issues a short-lived one-time auth ticket used to authenticate the SSE connection (since `EventSource` in the browser can't send custom headers, the ticket is passed as a query param and validated server-side).
+
+### Web Push (`/api/push/subscribe`)
+
+VAPID-based Web Push for background notifications (works even when the tab is closed, if the user granted notification permission). Setup requires generating a VAPID key pair:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Add to Railway environment:
+```
+VAPID_PUBLIC_KEY=<public key>
+VAPID_PRIVATE_KEY=<private key>
+VAPID_EMAIL=mailto:admin@cssgrouprms.com
+```
+
+The public key is served at `/api/push/vapid-public` (no auth required — the frontend fetches it to register the service worker subscription). Subscriptions are stored in the database per-user. `/api/push/subscribe` upserts the subscription; `/api/push/subscribe` (DELETE) removes it.
+
+---
+
+## 13. Internal Chat system
+
+A full department-to-department messaging system. Two modes:
+
+| Mode | Endpoint | Description |
+|---|---|---|
+| Group chat | `/api/chat/group` | All departments in one shared channel |
+| Direct message | `/api/chat/dm/:deptId` | One-to-one between any two departments |
+
+Other endpoints:
+- `/api/chat/send` — send a message (text or with a file attachment)
+- `/api/chat/upload` — upload a file to attach to a chat message (stored in R2)
+- `/api/chat/media` — fetch all media shared in chat (images, files)
+- `/api/chat/read` — mark messages as read (drives the unread badge count)
+- `/api/chat/messages/:id` (PATCH) — edit a sent message
+- `/api/chat/conversations` — fetch the conversation list with last-message preview
+
+Chat messages are delivered in real-time over SSE (the same `/api/events` stream). New messages are broadcast immediately; clients update the UI without refreshing.
+
+---
+
+## 14. Workflow Builder
+
+The approval chain is not hardcoded — it is configured by the Super Admin through the Workflow Builder. A "stage" is one step in the chain, referencing a department that must act (approve/forward/reject) before the request moves to the next stage.
+
+- `/api/workflow-stages` (GET) — fetch the current ordered stage list
+- `/api/workflow-stages` (POST) — create or reorder stages (admin only)
+- `/api/requisition-types` — create/delete named requisition types (e.g. "Cash Advance", "Material Request") that appear in the "Type" dropdown when creating a requisition
+
+**Important:** the workflow is global — one chain for the entire system. There is no per-department or per-type routing yet. If this changes, the domain model in §4 will need to be re-read carefully because `targetDepartmentId` and `currentVettingDeptId` semantics are built around a single linear chain.
+
+---
+
+## 15. Sub-Accounts
+
+Sub-Accounts are delegated sub-units under a Department. A department head can create sub-accounts that operate with a subset of their department's privileges.
+
+**Permissions hierarchy:**
+- Super Admin → can do anything to any sub-account
+- Department Head → can manage their own department's sub-accounts (if `allowSubAccountManagement` is enabled for that department)
+- Sub-account → scoped to whatever privileges are explicitly granted
+
+**Key operations:**
+
+| Endpoint | What |
+|---|---|
+| `POST /api/sub-accounts` | Create a single sub-account |
+| `POST /api/sub-accounts/batch-upload` | CSV bulk-create (for large departments) |
+| `PATCH /api/sub-accounts/:id` | Edit name/details |
+| `PATCH /api/sub-accounts/:id/toggle` | Enable / disable |
+| `PATCH /api/sub-accounts/:id/move` | Move to a different parent department |
+| `DELETE /api/sub-accounts/:id` | Delete |
+| `POST /api/sub-accounts/:id/reactivate` | Re-activate a deactivated sub-account |
+| `POST /api/sub-accounts/:id/reset-code` | Generate a new access code |
+| `PUT /api/sub-accounts/:id/privilege` | Set what this sub-account can see/do |
+| `GET /api/sub-accounts/:id/users` | List users assigned to this sub-account |
+| `POST/DELETE /api/sub-accounts/:id/users` | Assign / remove users |
+| `GET /api/sub-accounts/:id/requisitions` | Requisitions visible to this sub-account |
+
+**Visibility control:** `PATCH /api/requisitions/:id/sub-account-visibility` controls whether a specific requisition is visible to sub-accounts under its department. `GET /api/requisitions/:id/sub-visibility` checks that flag.
+
+---
+
+## 16. Additional requisition actions (beyond basic CRUD)
+
+Beyond create/edit/delete, a requisition supports many lifecycle actions. Most require specific role/department checks server-side.
+
+| Action | Endpoint | Who can do it |
+|---|---|---|
+| Forward to next stage | `POST /api/requisitions/:id/forward` | Current stage's department |
+| Approve (stage-level) | `POST /api/requisitions/:id/approve` | Current approver |
+| Reject | `POST /api/requisitions/:id/reject` | Current approver |
+| Final approve | `POST /api/requisitions/:id/final-approve` | Final authority |
+| KIV (Keep in View) | `POST /api/requisitions/:id/kiv` | Reviewer — flags for follow-up without acting |
+| Un-KIV | `POST /api/requisitions/:id/un-kiv` | Same |
+| Creator comment | `POST /api/requisitions/:id/creator-comment` | Originating department only |
+| Forward for re-approval | `POST /api/requisitions/:id/forward-for-reapproval` | After a price revision pushes amount above authority |
+| Re-approve | `POST /api/requisitions/:id/reapprove` | Higher authority receiving the re-routed item |
+| Send to vetting | `POST /api/requisitions/:id/send-to-vetting` | ICC or Audit |
+| Vetting action | `POST /api/requisitions/:id/vetting-action` | ICC/Audit — approve/reject/return from vetting detour |
+| Audit price override | `POST /api/requisitions/:id/audit-override` | Audit department |
+| Delete audit override | `DELETE /api/requisitions/:id/audit-override` | Audit department |
+| ICC vet-forward | `POST /api/requisitions/:id/icc-vet-forward` | ICC — passes to another dept for vetting |
+| ICC vet-return | `POST /api/requisitions/:id/icc-vet-return` | ICC — returns from vetting back to chain |
+| ICC comment | `POST /api/requisitions/:id/icc-comment` | ICC |
+| ICC freeze | `POST /api/requisitions/:id/icc-freeze` | ICC — stops all action on a request |
+| ICC unfreeze | `POST /api/requisitions/:id/icc-unfreeze` | ICC |
+| Publish memo | `POST /api/requisitions/:id/publish-memo` | For Memo subtype only |
+| Add/get tags | `POST/GET /api/requisitions/:id/tag` | Any authenticated user |
+| Bulk delete | `POST /api/requisitions/bulk-delete` | Admin |
+
+---
+
+## 17. Store Records
+
+A separate module (distinct from Requisitions) for tracking physical store inventory movements. Used by the Store department.
+
+- `GET /api/store-records` — list all store records
+- `GET /api/store-records/carried-forward` — items carried forward from a previous period
+- `GET /api/store-records/sub-accounts` — sub-account breakdown view
+- `POST /api/store-records` — create a new record
+- `GET/PUT/DELETE /api/store-records/:id` — read, update, or delete a single record
+
+Store Records are separate from requisitions in both the schema and UI (they live on the Store department's own view). They are not part of the approval chain.
+
+---
+
+## 18. AI features
+
+Two AI capabilities powered by OpenAI. Requires `OPENAI_API_KEY` in Railway environment.
+
+### Voice transcription (`POST /api/ai/transcribe`)
+
+Accepts an audio file upload (recorded in-browser via the microphone). Sends it to OpenAI Whisper → returns the transcribed text. Used on the "Create Requisition" form to let a user dictate their requisition description rather than type it.
+
+### Draft refinement (`POST /api/ai/refine-requisition`)
+
+Takes a raw requisition description and sends it to GPT to produce a cleaner, more professional version (corrects grammar, improves clarity, preserves the meaning). The user sees the suggestion in a diff-style view and can accept or reject it.
+
+Both features can be **disabled system-wide** by the Super Admin via the Feature Flags toggle in System Settings (the `featureFlag.js` cache on the frontend picks this up within one page refresh — see §3).
+
+---
+
+## 19. System Settings — full catalog
+
+`GET/PUT /api/system-settings/:key` — read or write any setting by key. Admin-only write. The following keys are in active use:
+
+| Key | What it controls |
+|---|---|
+| `login_style` | Login page appearance — `default` or `minimal` (also served unauthenticated at `/api/public/login-style`) |
+| `support_phone` | Support phone number shown on the login page and footer |
+| `sms_provider` | `termii` or `twilio` — which SMS gateway to use for OTPs |
+| `ai_features_enabled` | `true`/`false` — enables/disables voice transcription and AI draft refinement |
+| `allow_sub_account_management` | Whether department heads can manage sub-accounts |
+| `max_attachment_size_mb` | File upload limit for requisition attachments |
+| `ref_pattern` | Reference number format (see §20) |
+| `print_access` | Who can print requisition PDFs (see §21) |
+
+Settings are stored in a `SystemSettings` table (key/value pairs). Fetching an unknown key returns `null` — the server never errors on a missing key, so adding new keys is safe without a migration.
+
+---
+
+## 20. Reference number pattern
+
+Requisition reference numbers (e.g. `CSS/REQ/2024/001`) are configurable.
+
+- `GET /api/settings/ref-pattern` — fetch the current pattern
+- `PATCH /api/settings/ref-pattern` — update the pattern (admin only)
+
+The pattern is a string template with tokens like `{ORG}`, `{TYPE}`, `{YEAR}`, `{SEQ}` that the server expands when a new requisition is created. If the pattern is changed mid-year, existing requisition reference numbers are NOT retroactively changed — only new ones use the new pattern.
+
+---
+
+## 21. Print settings and signed PDFs
+
+### Print access control (`/api/settings/print-access`, `/api/admin/print-settings`)
+
+The Super Admin can restrict who is allowed to print/download PDFs of requisitions. Options are typically: everyone, department heads only, admin only. The frontend checks this before showing the print button.
+
+### Signed PDF (`/api/requisitions/:id/signed-pdf`)
+
+Generates a PDF of the requisition that includes:
+- All approval signatures (fetched from each approving department's stored signature image)
+- Department stamps (if a stamp has been uploaded for that department)
+- A QR verification code (links to `/api/public-verify/:code` — see §22)
+
+### Dynamic PDF (`/api/requisitions/:id/dynamic-pdf`)
+
+An alternative PDF renderer that builds the document from the current database state at request time (vs. a stored/cached PDF). Used when the requisition is still in-flight and signatures may change.
+
+---
+
+## 22. QR Code public verification
+
+Every printed requisition PDF contains a QR code. Scanning it opens a public URL that requires no login.
+
+- `GET /api/public-verify/:code` — unauthenticated. Given a short verification code embedded in the QR, returns the requisition's key fields (reference number, status, approvers, amounts) in a read-only view. Used by external parties (vendors, auditors) to confirm a requisition is genuine without needing a system login.
+- `GET /api/verify/:code` — authenticated, admin only. Same but returns full internal detail.
+
+The verification code is a short hash stored on the requisition at creation time. It cannot be guessed — it's cryptographically generated.
+
+---
+
+## 23. Department Stamps and Signatures
+
+### Department signature (`/api/department/signature`, `/api/departments/:id/signature`)
+
+Each department can have a signature image (PNG/JPG) stored in R2. Used to stamp the signed PDF. A department head uploads their own signature through their profile; the admin can upload or override any department's signature via the admin panel.
+
+### Department stamp (`/api/departments/:id/stamp`)
+
+A separate image (official rubber-stamp scan). Admin-only upload. Appears on PDFs alongside the signature for departments that have one configured.
+
+### User signature (`/api/users/:id/signature`)
+
+Individual user-level signatures, separate from department-level ones. Used where a specific named person's signature is required (e.g. the approver's personal sign, not just the department seal).
+
+---
+
+## 24. Attachments
+
+Requisitions can have file attachments (supporting documents, quotes, invoices, etc.).
+
+- `POST /api/requisitions/:id/attachments` — upload one or more files (multipart, multiple files allowed in one request)
+- `GET /api/requisitions/:id/attachments` — list all attachments for a requisition
+- `GET /api/attachments/:id/download` — download a specific attachment
+- `GET /api/attachments/:id/preview` — preview in-browser (returns the file with appropriate Content-Type)
+- `DELETE /api/attachments/:id` — delete an attachment
+
+Files are stored in Cloudflare R2 (under `attachments/` prefix). The database stores the R2 object key; downloads are served by the backend via a signed or direct R2 URL depending on whether the bucket is public.
+
+---
+
+## 25. Soft-deleted records and recovery
+
+Certain records (requisitions in particular) are soft-deleted (a `deletedAt` field is set) rather than permanently removed. The admin can view and recover them:
+
+- `GET /api/admin/deleted-records` — list all soft-deleted records
+- `DELETE /api/admin/deleted-records/:id` — permanently delete a soft-deleted record (no recovery after this)
+
+Recovery (restoring a soft-deleted record to active) must be done via a direct database query — there is no "restore" button in the UI yet. To restore: set `deletedAt = NULL` on the relevant row via Railway's SQL console.
+
+---
+
+## 26. Audit Logs
+
+Every significant action in the system (requisition created, forwarded, approved, rejected, department edited, user login, etc.) is written to an `AuditLog` table.
+
+- `GET /api/audit-logs` — fetch the full audit log (admin only). Supports filters by date range, department, action type.
+
+Displayed in the admin UI's "Audit Logs" page. This is entirely separate from the database Migration Logbook (§5 / Documentation tab) — that tracks schema changes; this tracks operational events.
+
+---
+
+## 27. Email and SMS — operational checks
+
+### Email health
+
+- `GET /api/email-status` — returns whether the SMTP connection is working (admin only)
+- `POST /api/test-email` — sends a test email to a specified address (admin only). Use this to verify SMTP config after changing credentials.
+
+Required Railway environment variables for email (Nodemailer SMTP):
+```
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+```
+
+### SMS balance
+
+- `GET /api/admin/sms-balance` — queries the active SMS provider (Termii or Twilio) and returns the current credit balance. Use this to check if OTP sending will work before onboarding a large batch of departments.
+
+Required environment variables:
+```
+# Termii
+TERMII_API_KEY=
+TERMII_SENDER_ID=
+
+# Twilio (if sms_provider = twilio)
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
+```
+
+---
+
+## 28. Complete environment variables reference
+
+All variables required in Railway (or `.env` for local development). Variables marked **critical** will crash the server on startup if missing.
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | **critical** | Railway Postgres connection string |
+| `JWT_SECRET` | **critical** | Random string for signing JWTs — never change in production without force-logging out all users |
+| `OPENAI_API_KEY` | optional | Required for AI transcription and draft refinement (§18) |
+| `TERMII_API_KEY` | required for SMS | OTP delivery for department activation |
+| `TERMII_SENDER_ID` | required for SMS | Sender name shown on SMS |
+| `TWILIO_ACCOUNT_SID` | alternative SMS | Use instead of Termii if `sms_provider = twilio` |
+| `TWILIO_AUTH_TOKEN` | alternative SMS | — |
+| `TWILIO_PHONE_NUMBER` | alternative SMS | — |
+| `SMTP_HOST` | required for email | — |
+| `SMTP_PORT` | required for email | Usually `465` (SSL) or `587` (TLS) |
+| `SMTP_USER` | required for email | — |
+| `SMTP_PASS` | required for email | — |
+| `SMTP_FROM` | required for email | The "From" address on system emails |
+| `R2_ACCESS_KEY_ID` | required for files | Cloudflare R2 — see §29 |
+| `R2_SECRET_ACCESS_KEY` | required for files | — |
+| `R2_ACCOUNT_ID` | required for files | — |
+| `R2_BUCKET_NAME` | required for files | — |
+| `R2_PUBLIC_URL` | required for files | Public base URL for serving stored files |
+| `VAPID_PUBLIC_KEY` | required for push | Web Push — generate with `npx web-push generate-vapid-keys` |
+| `VAPID_PRIVATE_KEY` | required for push | — |
+| `VAPID_EMAIL` | required for push | `mailto:admin@cssgrouprms.com` |
+| `GOOGLE_CLIENT_ID` | required for Drive backup | Google OAuth for encrypted DB backup to Drive |
+| `GOOGLE_CLIENT_SECRET` | required for Drive backup | — |
+| `GOOGLE_REFRESH_TOKEN` | required for Drive backup | Long-lived token — generate once with `scripts/get-google-refresh-token.js` |
+| `BACKUP_ENCRYPTION_KEY` | required for Drive backup | AES-256 key — generate once with `scripts/generate-backup-key.js`, store in a password manager |
+| `NODE_ENV` | recommended | Set to `production` on Railway |
+| `PORT` | set by Railway | Do not set manually — Railway injects this |
+
+---
+
+## 29. Hard Reset — WARNING
+
+```
+POST /api/admin/hard-reset
+```
+
+**This wipes the entire operational database.** It deletes all requisitions, departments, sub-accounts, users, workflow stages, attachments references, notifications, chat messages, and audit logs. It does **not** delete the Railway Postgres instance itself or the R2 bucket — just the data inside the application tables.
+
+It exists for resetting a staging/demo instance back to a clean slate. It should never be run against the live production database.
+
+There is no confirmation dialog beyond the single API call. The only recovery path is restoring from a backup (§9). Before touching this endpoint for any reason, verify you are not connected to the production `DATABASE_URL`.
+
+---
+
+## 30. HR Module — current status (stub)
+
+The HR portal (Employee Directory, Leave Management, Attendance, Payroll, Recruitment Pipeline) has a full frontend UI built in `rms_frontend/src/components/` (HRDashboard.jsx, EmployeeDirectory.jsx, LeaveManagement.jsx, AttendanceTracker.jsx, PayrollOverview.jsx, RecruitmentPipeline.jsx) and all API routes are defined in `serve.js` under the `hrAuth` middleware.
+
+**However, every HR API route currently returns an empty array or no-op response.** The backend for HR is not yet implemented — the routes exist as stubs to prevent 404 errors and to define the interface, but no data is read from or written to the database through them.
+
+The HR module is UI-complete but backend-incomplete. Do not treat any HR data shown in the frontend as real — it is either demo/seeded data or just an empty state. Building the HR backend is a separate, clearly bounded project that has not been started.
+
+---
+
 ## 11. Cloudflare R2 + Railway Setup Guide
 
 > **cssgrouprms.com | RMS Project | Storage & Custom Domain Configuration**
