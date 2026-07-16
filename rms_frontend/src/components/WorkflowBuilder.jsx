@@ -155,6 +155,10 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [adminCreateMemoEnabled, setAdminCreateMemoEnabled]       = useState(false);
   const [savingFeatures, setSavingFeatures]         = useState(false);
 
+  // ── Turnstile per-department ───────────────────────────────────────────────
+  const [turnstileRequiredDepts, setTurnstileRequiredDepts] = useState([]);
+  const [savingTurnstile, setSavingTurnstile]               = useState(false);
+
   // ── All departments (for chairman/print toggles) ───────────────────────────
   const [allDepts, setAllDepts] = useState([]);
 
@@ -313,6 +317,12 @@ const WorkflowBuilder = ({ onViewChange }) => {
       if (adminCreateMemoRes.status === 'fulfilled' && adminCreateMemoRes.value?.value !== undefined)
         setAdminCreateMemoEnabled(adminCreateMemoRes.value.value === 'true');
     } catch {}
+
+    // Load Turnstile required depts separately (JSON array)
+    try {
+      const tsRes = await settingsAPI.get('turnstile_required_depts');
+      if (tsRes?.value) setTurnstileRequiredDepts(JSON.parse(tsRes.value));
+    } catch {}
   };
 
   const saveFeatureFlags = async () => {
@@ -387,6 +397,22 @@ const WorkflowBuilder = ({ onViewChange }) => {
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to save AI setting.');
     } finally { setSavingAI(false); }
+  };
+
+  // ── Turnstile per-department ───────────────────────────────────────────────
+  const toggleTurnstileDept = (deptName) => {
+    setTurnstileRequiredDepts(prev =>
+      prev.includes(deptName) ? prev.filter(n => n !== deptName) : [...prev, deptName]
+    );
+  };
+  const saveTurnstileSetting = async () => {
+    setSavingTurnstile(true);
+    try {
+      await settingsAPI.set('turnstile_required_depts', JSON.stringify(turnstileRequiredDepts));
+      toast.success('Turnstile settings saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save Turnstile settings.');
+    } finally { setSavingTurnstile(false); }
   };
 
   // ── Print settings ─────────────────────────────────────────────────────────
@@ -771,6 +797,56 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 {savingFeatures ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {savingFeatures ? 'Saving…' : 'Save Feature Settings'}
               </button>
+            </div>
+
+            {/* Cloudflare Turnstile — per-department human verification */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={18} className="text-orange-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">Cloudflare Turnstile</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Select departments that must pass human verification before logging in.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveTurnstileSetting}
+                  disabled={savingTurnstile}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-orange-200 active:scale-[0.98]"
+                >
+                  {savingTurnstile ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+              {allDepts.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic text-center py-4">No departments found.</p>
+              ) : (
+                <div className="max-h-[360px] overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {allDepts.filter(d => !d.isSubAccount && d.type !== 'Sub-Account').map(dept => {
+                    const required = turnstileRequiredDepts.includes(dept.name);
+                    return (
+                      <button
+                        key={dept.id}
+                        onClick={() => toggleTurnstileDept(dept.name)}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${required ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-white border-border/40 text-muted-foreground hover:border-orange-200'}`}
+                      >
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${required ? 'bg-orange-500 border-orange-500' : 'border-border'}`}>
+                          {required && <CheckCircle2 size={10} className="text-white" />}
+                        </div>
+                        <span className="text-[11px] font-bold truncate">{dept.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {turnstileRequiredDepts.length > 0 && (
+                <p className="text-[10px] text-orange-600 font-semibold mt-3">
+                  {turnstileRequiredDepts.length} department{turnstileRequiredDepts.length > 1 ? 's' : ''} require Turnstile verification.
+                  {!import.meta.env.VITE_TURNSTILE_SITE_KEY && ' ⚠ Set VITE_TURNSTILE_SITE_KEY in Railway for the widget to appear on the login page.'}
+                </p>
+              )}
             </div>
 
             {/* AIGC Features — own save action (immediate org-wide effect) */}

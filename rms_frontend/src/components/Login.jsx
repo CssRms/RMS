@@ -536,6 +536,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileRequiredDepts, setTurnstileRequiredDepts] = useState([]);
   const turnstileRef = useRef(null);
   const widgetIdRef = useRef(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -572,6 +573,11 @@ const Login = () => {
   useEffect(() => {
     getDepartments().then(setDepartments);
     fetch('/api/public/support-phone').then(r=>r.json()).then(d=>{if(d?.value) setIctPhone(d.value);}).catch(()=>{});
+    if (TURNSTILE_SITE_KEY) {
+      fetch('/api/public/turnstile-config').then(r=>r.json()).then(d=>{
+        if (Array.isArray(d?.requiredDepts)) setTurnstileRequiredDepts(d.requiredDepts.map(n => n.toLowerCase()));
+      }).catch(()=>{});
+    }
     const handleOutside = e => {
       if (deptDropRef.current && !deptDropRef.current.contains(e.target)) setDeptDropOpen(false);
     };
@@ -581,6 +587,9 @@ const Login = () => {
     if (window.matchMedia('(display-mode: standalone)').matches) setIsStandalone(true);
     return () => { document.removeEventListener('mousedown', handleOutside); window.removeEventListener('beforeinstallprompt', handleBIP); };
   }, []);
+
+  // Does the currently selected department require Turnstile?
+  const turnstileNeeded = !!(TURNSTILE_SITE_KEY && selectedDept && turnstileRequiredDepts.includes(selectedDept.toLowerCase()));
 
   // Render Turnstile widget once the script is loaded
   useEffect(() => {
@@ -602,6 +611,10 @@ const Login = () => {
   const selectDept = async (name) => {
     setSelectedDept(name);
     setDeptActivated(null);
+    setTurnstileToken('');
+    if (TURNSTILE_SITE_KEY && widgetIdRef.current != null && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
     if (!name || name === 'Super Admin') {
       setDeptActivated(name === 'Super Admin' ? true : null);
       return;
@@ -632,7 +645,7 @@ const Login = () => {
   const handleLogin = async e => {
     e.preventDefault();
     setError('');
-    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+    if (turnstileNeeded && !turnstileToken) {
       setError('Please complete the human verification check below.');
       return;
     }
@@ -928,13 +941,13 @@ const Login = () => {
                 )}
 
                 {TURNSTILE_SITE_KEY && (
-                  <div className="flex justify-center">
+                  <div className={turnstileNeeded ? 'flex justify-center' : 'hidden'}>
                     <div ref={turnstileRef} />
                   </div>
                 )}
 
                 <div className="pt-1">
-                  <button type="submit" disabled={isSubmitting || (TURNSTILE_SITE_KEY ? !turnstileToken : false)}
+                  <button type="submit" disabled={isSubmitting || (turnstileNeeded && !turnstileToken)}
                     className="w-full bg-primary hover:bg-primary/90 active:bg-primary/95 text-primary-foreground font-bold py-4 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 active:scale-[0.985] disabled:opacity-50 text-base">
                     {isSubmitting
                       ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>Authenticating…</span></>

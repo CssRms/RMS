@@ -1517,10 +1517,18 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     const deptKey = `dept:${(departmentName || '').trim().toLowerCase()}`;
     logger.info(`[AUTH] Unified login attempt: "${departmentName?.trim()}"`);
 
-    // Turnstile human verification
-    const turnstileOk = await verifyTurnstile(turnstileToken, req.ip);
-    if (!turnstileOk) {
-      return res.status(400).json({ error: 'Human verification failed. Please complete the security check and try again.' });
+    // Turnstile human verification — only for departments configured to require it
+    try {
+      const tsRows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'turnstile_required_depts' LIMIT 1`;
+      const requiredDepts = tsRows?.[0]?.value ? JSON.parse(tsRows[0].value).map(n => n.toLowerCase()) : [];
+      if (requiredDepts.includes((departmentName || '').trim().toLowerCase())) {
+        const turnstileOk = await verifyTurnstile(turnstileToken, req.ip);
+        if (!turnstileOk) {
+          return res.status(400).json({ error: 'Human verification failed. Please complete the security check and try again.' });
+        }
+      }
+    } catch (tsErr) {
+      logger.warn('[TURNSTILE] Config read error, skipping check:', tsErr.message);
     }
 
     // Account lockout check for department
@@ -4770,6 +4778,15 @@ app.get('/api/public/support-phone', async (req, res) => {
     const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'ict_support_phone' LIMIT 1`;
     res.json({ value: rows?.[0]?.value || '' });
   } catch { res.json({ value: '' }); }
+});
+
+// ── Public Turnstile config (no auth — needed by login page before user logs in) ─
+app.get('/api/public/turnstile-config', async (req, res) => {
+  try {
+    const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'turnstile_required_depts' LIMIT 1`;
+    const requiredDepts = rows?.[0]?.value ? JSON.parse(rows[0].value) : [];
+    res.json({ requiredDepts });
+  } catch { res.json({ requiredDepts: [] }); }
 });
 
 // ── System Settings ───────────────────────────────────────────────────────────
