@@ -55,9 +55,9 @@
 | PWA | `vite-plugin-pwa` | Service worker, installable |
 
 ### Deployment
-- **Railway**, single service running `npm start` from the repo root, which now runs `prisma migrate deploy && node serve.js` (see §5 — this changed recently).
+- **Railway**, single service running `npm start` from the repo root, which runs `prisma migrate deploy && node serve.js` (see §5).
 - The frontend is built (`vite build`) into `rms_frontend/dist` and served as static files by the same Express server in production.
-- No CI pipeline exists yet. No staging environment exists yet. Pushing to `main` is effectively "deploy" once Railway picks up the change.
+- **Two environments**: `dev` branch → Railway **staging**, `main` branch → Railway **production**. See §32 for the full CI/CD pipeline.
 
 ---
 
@@ -181,7 +181,7 @@ These are the ones worth knowing before you go looking for a "bug" that's actual
 - **An automated test suite exists, but only covers a thin slice so far.** Vitest is set up in both the root (backend) and `rms_frontend/` (frontend) — run `npm test` in either directory. Currently covered: the pure business-rule functions in `rms_backend/lib/businessRules.js` (authority-tier bands, override precedence — 20 tests) and `rms_frontend/src/lib/requisitionDisplay.js` (effective amount, live trail location — 15 tests). **Not yet covered:** anything touching the database (no integration tests exist yet), the vetting/approval state machine end-to-end, any React component rendering, and the vast majority of `serve.js`'s ~9,000 lines (most of it is still inline route handlers, not extracted into testable pure functions). Before this, every fix in this project's history was verified by `node --check` (syntax only), `npm run build` (compiles), and then the user manually finding the next bug in production — that's still true for anything outside the two files above. Treat anything not covered by an actual test as unverified, no matter how confident a past commit message sounds. **When you extract more business logic out of `serve.js` or a frontend component, write its test in the same commit** — that's how this slice grows instead of staying frozen at "the two files someone happened to touch on one particular day."
 - **Business display logic was duplicated, not shared — now fixed.** "What's the effective amount for this requisition," "where is this requisition right now," and the per-record field-flattening helper (`normalizeReq`) used to be implemented independently across `RequisitionsPage.jsx` (list table + detail modal) and `Dashboard.jsx` (two places) — five separate copies of three rules, each needing its own bugfix, and `normalizeReq`'s two copies had already drifted apart (one had four extra fields the other lacked). All three are now unified into `rms_frontend/src/lib/requisitionDisplay.js` (`getEffectiveAmount`, `getLiveTrailDepartment`, `normalizeReq`) and every call site imports from there instead of re-deriving it. **General rule going forward:** when you fix a display bug involving these two files, grep for the same pattern in the other before assuming you're done — and check `requisitionDisplay.js` first, since the answer to "how do I compute X" may already live there.
 - **`serve.js` (~9,000 lines) and `RequisitionsPage.jsx` (~5,600 lines) are both still monolithic files.** No service/repository layering on the backend; routes call Prisma directly. `DocumentStudio.jsx` was split this way (see §3, `documentStudio/`) as a proof of pattern, but `serve.js` and `RequisitionsPage.jsx` have NOT been — they're larger and riskier to split safely without more test coverage than currently exists. Be cautious about large refactors here until the test suite covers more of their behavior.
-- **CI pipeline exists** (`.github/workflows/ci.yml`) — runs backend syntax check + both test suites + a full frontend build on every push/PR to `main`. **No staging environment yet**, and this repo currently pushes straight to `main` with no PR/review step, so CI runs as a notification (red X if something breaks) rather than a hard gate — branch protection + a PR-based workflow would be needed to make it an actual gate.
+- **Full CI/CD pipeline exists** (`.github/workflows/ci.yml`) — runs backend syntax check + both test suites + a full frontend build on every push to `dev`/`main` and every PR to `main`. CI must pass before a PR can merge to `main` (branch protection enforces this). Merges to `main` trigger a production deploy only after a manual approval step in GitHub Environments. See §32 for the complete flow.
 - **The `DocumentStudio` bundle was split** (see §3) — `RichTextEditor`/`SpreadsheetEditor`/`PresentationEditor` now lazy-load as separate chunks instead of one ~3.8MB bundle for all three. Opening Word or PowerPoint now downloads ~520KB instead of 3.8MB; Excel still pulls Fortune-sheet's own ~2.7MB bundle on its own merits (that engine is genuinely large), but no longer drags the other two along with it. Other large chunks (`RequisitionsPage`, `WorkflowBuilder`, etc.) have not been similarly split yet.
 
 ---
@@ -620,7 +620,7 @@ The HR module is UI-complete but backend-incomplete. Do not treat any HR data sh
 
 ---
 
-## 11. Cloudflare R2 + Railway Setup Guide
+## 31. Cloudflare R2 + Railway Setup Guide
 
 > **cssgrouprms.com | RMS Project | Storage & Custom Domain Configuration**
 
@@ -726,3 +726,219 @@ DNS propagation can take anywhere from a few minutes to a few hours. Railway wil
 #### Notes for the future
 
 - `cssgrouprms.com` currently manages DNS through Smart Web's own panel, **not** through Cloudflare nameservers. This is fine for the Railway custom domain (a simple CNAME/TXT add), but if a branded custom domain is later wanted for R2 storage itself (e.g. `cdn.cssgrouprms.com`) instead of the free `pub-xxxx.r2.dev` URL, the same approach applies: get the CNAME from Cloudflare's Custom Domains section and add it in Smart Web the same way.
+
+---
+
+## 32. CI/CD Pipeline & Branch Strategy
+
+This section documents the complete deployment lifecycle — how code moves from a developer's machine to the live production system safely, with automated checks at every step and a manual approval gate before anything reaches clients.
+
+---
+
+### 32.1 Branch structure
+
+| Branch | Purpose | Railway environment |
+|---|---|---|
+| `dev` | Active development, staging testing | **Staging** — a separate Railway service |
+| `main` | Production-only, protected | **Production** — the live client-facing app |
+
+**Rule:** nobody pushes directly to `main`. All work goes to `dev` first. When ready for production, open a Pull Request from `dev` → `main` on GitHub. The PR cannot be merged unless CI passes (enforced by branch protection).
+
+---
+
+### 32.2 The full flow, step by step
+
+```
+Developer pushes to dev
+        │
+        ▼
+GitHub Actions — CI runs automatically
+  ├── Install backend deps
+  ├── Generate Prisma client
+  ├── node --check serve.js  (syntax check)
+  ├── npm test               (backend unit tests)
+  ├── Install frontend deps
+  ├── npm test               (frontend unit tests)
+  └── npm run build          (full Vite production build)
+        │
+        ├── CI fails → ✗ deploy is blocked, fix the issue first
+        │
+        └── CI passes ✓
+                │
+                ▼
+        GitHub Actions triggers Railway staging deploy hook
+                │
+                ▼
+        Staging app is live — test everything here
+        (separate Railway service, separate database, separate R2 bucket)
+```
+
+When staging looks good, open a PR `dev → main`:
+
+```
+Pull Request opened: dev → main
+        │
+        ▼
+GitHub Actions — CI runs again on the PR
+        │
+        ├── CI fails → ✗ PR cannot be merged (branch protection blocks it)
+        │
+        └── CI passes ✓ → PR is mergeable
+                │
+                ▼
+        Developer (or reviewer) merges the PR
+                │
+                ▼
+        GitHub Actions — deploy-production job fires
+                │
+                ▼
+        ⏸  MANUAL APPROVAL GATE
+        GitHub sends an email: "Production deploy is waiting for approval"
+        Someone with reviewer access clicks Approve in GitHub
+                │
+                └── Approved ✓
+                        │
+                        ▼
+                GitHub Actions triggers Railway production deploy hook
+                        │
+                        ▼
+                Production app is live — clients see the update
+```
+
+---
+
+### 32.3 Workflow file
+
+Everything above is encoded in a single file: `.github/workflows/ci.yml`.
+
+- **`build-and-test` job** — runs on every push to `dev`/`main` and every PR to `main`. This is the gate.
+- **`deploy-staging` job** — runs only on push to `dev`, only if `build-and-test` passed. Fires the Railway staging deploy hook.
+- **`deploy-production` job** — runs only on push to `main` (i.e. after a PR merge), only if `build-and-test` passed. Pauses at the GitHub `production` environment for manual approval, then fires the Railway production deploy hook.
+
+The daily database backup workflow (`.github/workflows/db-backup.yml`) runs independently of this — it targets production only, regardless of which branch was last pushed.
+
+---
+
+### 32.4 GitHub configuration (one-time setup)
+
+#### Branch protection on `main`
+
+GitHub → CssRms/RMS → Settings → Branches → Add rule → Branch name: `main`
+
+- ✅ Require a pull request before merging
+- ✅ Require status checks to pass → add **Build & Test** (appears after the first CI run)
+- ✅ Do not allow bypassing the above settings
+
+This means: no direct push to `main` is possible. The only way to get code into production is via a PR that passes CI.
+
+#### GitHub Environments
+
+GitHub → CssRms/RMS → Settings → Environments
+
+Create **`staging`** — no restrictions needed (auto-deploys after CI passes on `dev`).
+
+Create **`production`** → enable **Required reviewers** → add the project owner → Save.
+This is the manual approval gate. Every production deploy will pause here and send an email. Without approval, production never deploys — even if CI is green and the PR was merged.
+
+#### GitHub Secrets (Settings → Secrets and variables → Actions)
+
+| Secret | Where to get it |
+|---|---|
+| `RAILWAY_STAGING_DEPLOY_HOOK` | Railway → staging service → Settings → Deploy Hooks → create one → copy URL |
+| `RAILWAY_PRODUCTION_DEPLOY_HOOK` | Railway → production service → Settings → Deploy Hooks → create one → copy URL |
+| `DATABASE_URL` | Railway production DB → Variables tab → copy the external proxy URL (`ballast.proxy.rlwy.net`) — **not** the internal `railway.internal` URL, which only works inside Railway's network |
+| `R2_ACCOUNT_ID` | Cloudflare → R2 → account details |
+| `R2_ACCESS_KEY_ID` | Cloudflare → R2 → Manage API Tokens |
+| `R2_SECRET_ACCESS_KEY` | Same — shown once at token creation |
+| `R2_BUCKET_NAME` | Your production bucket name (e.g. `cssrms`) |
+| `BACKUP_ENCRYPTION_KEY` | Run `node scripts/generate-backup-key.js` once — store the output in a password manager |
+| `GOOGLE_CLIENT_ID` | Google Cloud Console → your OAuth 2.0 app |
+| `GOOGLE_CLIENT_SECRET` | Same |
+| `GOOGLE_REFRESH_TOKEN` | Run `node scripts/get-google-refresh-token.js` once — long-lived token |
+| `GOOGLE_DRIVE_FOLDER_ID` | The Google Drive folder ID where encrypted backups are stored |
+
+---
+
+### 32.5 Railway staging environment setup
+
+The staging environment is a second Railway service that mirrors production but points at a separate database and a separate R2 bucket — so test data and test uploads never pollute the live system.
+
+#### Create the staging service
+
+Railway → your project → **New Environment** → name it `staging` → connect it to the `dev` branch.
+
+**Disable Railway auto-deploy** on the staging service. GitHub Actions controls when staging deploys (after CI passes), not Railway's own push-triggered auto-deploy. This ensures staging never deploys broken code.
+
+#### Staging environment variables
+
+Set the same variables as production with these differences:
+
+| Variable | Staging value |
+|---|---|
+| `DATABASE_URL` | A **separate** Railway Postgres service created for staging — not the production database |
+| `R2_BUCKET_NAME` | `cssrms-staging` (a separate bucket — see §32.6) |
+| `NODE_ENV` | `production` (same — staging still runs the production build) |
+| All others | Same as production |
+
+#### Get the staging deploy hook
+
+Railway → staging service → Settings → Deploy Hooks → **Create hook** → copy the URL → add it as `RAILWAY_STAGING_DEPLOY_HOOK` in GitHub secrets (§32.4).
+
+---
+
+### 32.6 R2 staging bucket
+
+File uploads in staging should go to a completely separate bucket so test files don't mix with production files.
+
+**Create the bucket:**
+
+Cloudflare Dashboard → R2 → Create bucket → name it `cssrms-staging`.
+
+Use the **same API token** (`railway-cssrms-access`) — just update its bucket permissions to cover both `cssrms` and `cssrms-staging` (R2 → Manage API Tokens → edit the existing token → add `cssrms-staging` to the allowed buckets list).
+
+Enable the public development URL on `cssrms-staging` (bucket Settings → Public Development URL → Enable) to get `R2_PUBLIC_URL` for the staging env var.
+
+The staging Railway service then uses:
+```
+R2_BUCKET_NAME=cssrms-staging
+R2_PUBLIC_URL=https://pub-<staging-id>.r2.dev
+```
+Everything else (account ID, access key, secret key) stays identical to production.
+
+---
+
+### 32.7 Day-to-day developer workflow
+
+```bash
+# Always work on dev
+git checkout dev
+
+# Make your changes, then push
+git add <files>
+git commit -m "feat: describe your change"
+git push
+# → CI starts automatically, staging deploys if CI passes
+
+# Test your change on the staging URL
+# If something's wrong, fix it and push again to dev — repeat
+
+# When staging looks good, create a PR on GitHub
+# GitHub: dev → main → "Create pull request"
+# Wait for CI to go green on the PR
+# Merge the PR
+
+# GitHub Actions will email you: "Production deploy awaiting approval"
+# Click the link → approve → production deploys
+```
+
+**Never push directly to `main`.** If you find yourself needing to, it means something is wrong with the process — investigate before bypassing.
+
+---
+
+### 32.8 Recovering from a broken production deploy
+
+If a bad deploy reaches production despite the gates (e.g. a bug that tests didn't catch):
+
+1. **Immediate rollback:** Railway → production service → Deployments tab → find the last known-good deploy → click **Redeploy**. This is the fastest path — no code change needed.
+2. **Code fix:** fix the bug on `dev`, push, let it pass staging, then PR → merge → approve as normal.
+3. **Database rollback (if a migration was involved):** restore from the most recent backup (§9). The backup from 02:00 UTC the same day is the starting point — you will lose any data written between the backup and the rollback. This is the worst case and should be extremely rare if migrations are tested on staging first.
