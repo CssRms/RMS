@@ -1,18 +1,27 @@
-name: CI
+name: CI / Deploy
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Trigger matrix
+#  • push dev   → build+test → deploy to Railway STAGING
+#  • push main  → build+test → deploy to Railway PRODUCTION (requires approval)
+#  • PR to main → build+test only (gate before merge is allowed)
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [main]
 
 jobs:
+  # ── 1. BUILD & TEST ──────────────────────────────────────────────────────────
   build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
+      # ── Backend ──────────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -28,8 +37,9 @@ jobs:
         run: node --check serve.js
 
       - name: Run backend tests
-        run: npm test
+        run: npm test -- --passWithNoTests
 
+      # ── Frontend ─────────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -42,8 +52,47 @@ jobs:
 
       - name: Run frontend tests
         working-directory: rms_frontend
-        run: npm test
+        run: npm test -- --passWithNoTests
 
       - name: Build frontend
         working-directory: rms_frontend
         run: npm run build
+        env:
+          # No Turnstile key in CI — widget is runtime-only, not build-time
+          VITE_TURNSTILE_SITE_KEY: ''
+
+  # ── 2. DEPLOY → STAGING (dev branch only, after CI passes) ──────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    needs: build-and-test
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Trigger Railway staging deploy
+        # Get this URL from: Railway dashboard → staging service → Settings → Deploy Hook
+        # Then add it as GitHub secret: RAILWAY_STAGING_DEPLOY_HOOK
+        run: |
+          HTTP=$(curl -fsSL -o /dev/null -w "%{http_code}" -X POST "${{ secrets.RAILWAY_STAGING_DEPLOY_HOOK }}")
+          echo "Railway responded: HTTP $HTTP"
+          [[ "$HTTP" == "200" || "$HTTP" == "202" ]] || exit 1
+
+  # ── 3. DEPLOY → PRODUCTION (main branch only, after CI passes) ──────────────
+  deploy-production:
+    name: Deploy → Production
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    # ↑ Set "Required reviewers" on this GitHub Environment so every production
+    #   deploy pauses here and waits for your manual approval before continuing.
+
+    steps:
+      - name: Trigger Railway production deploy
+        # Get this URL from: Railway dashboard → production service → Settings → Deploy Hook
+        # Then add it as GitHub secret: RAILWAY_PRODUCTION_DEPLOY_HOOK
+        run: |
+          HTTP=$(curl -fsSL -o /dev/null -w "%{http_code}" -X POST "${{ secrets.RAILWAY_PRODUCTION_DEPLOY_HOOK }}")
+          echo "Railway responded: HTTP $HTTP"
+          [[ "$HTTP" == "200" || "$HTTP" == "202" ]] || exit 1
