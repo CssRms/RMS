@@ -112,6 +112,9 @@ async function broadcastUpdate(reqId, meta = {}) {
 }
 
 // ── Web Push (PWA phone notifications) ───────────────────────────────────────
+// PERMANENT KEYS: Never rotate VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in production.
+// Every subscribed browser stores the public key; rotating it silently kills push
+// notifications on every device until users manually re-enable them.
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
@@ -2216,7 +2219,7 @@ async function notifyDepartmentHead({ departmentId, requisition, subject, lines 
     logger.info(`[MAIL] Attempting to send email to: ${dept.headEmail} | Subject: ${subject}`);
     const result = await sendEmail({ to: dept.headEmail, subject, text, html });
     if (result && result.skipped) {
-      logger.warn(`[MAIL] Send SKIPPED for ${dept.headEmail} — GMAIL_USER=${process.env.GMAIL_USER ? 'SET' : 'MISSING'}, GMAIL_APP_PASSWORD=${process.env.GMAIL_APP_PASSWORD ? 'SET' : 'MISSING'}`);
+      logger.warn(`[MAIL] Send SKIPPED for ${dept.headEmail} — RESEND_API_KEY is not configured.`);
     } else {
       logger.info(`[MAIL] ✅ Email sent successfully to: ${dept.headEmail}`);
     }
@@ -4889,16 +4892,108 @@ async function getTwilioBalance() {
 app.get('/api/admin/sms-balance', authenticateToken, async (req, res) => {
   if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
   try {
-    const [termii, twilio, provider] = await Promise.all([
+    const [termii, twilio, provider, tThreshRow, wThreshRow] = await Promise.all([
       getTermiiBalance(),
       getTwilioBalance(),
       getSmsProvider(),
+      prisma.systemSetting.findFirst({ where: { key: 'sms_alert_termii_threshold' } }),
+      prisma.systemSetting.findFirst({ where: { key: 'sms_alert_twilio_threshold' } }),
     ]);
-    res.json({ termii, twilio, provider });
+    const termiiThreshold = parseFloat(tThreshRow?.value) || 1000;
+    const twilioThreshold = parseFloat(wThreshRow?.value) || 5;
+    if (termii.balance !== undefined) termii.belowThreshold = parseFloat(termii.balance) < termiiThreshold;
+    if (twilio.balance !== undefined) twilio.belowThreshold = parseFloat(twilio.balance) < twilioThreshold;
+    res.json({ termii, twilio, provider, thresholds: { termii: termiiThreshold, twilio: twilioThreshold } });
   } catch (error) {
     sendError(res, 500, error.message);
   }
 });
+
+// ── SMS Balance Alert Monitor ─────────────────────────────────────────────────
+// Runs every 2 hours. If Termii < threshold (₦) or Twilio < threshold ($),
+// sends an SMS (trying both providers) + email to the configured admin phone
+// and SUPER_ADMIN_EMAIL. Repeats every 2 h while still below threshold.
+const _smsAlertLastSent = { termii: 0, twilio: 0 };
+const SMS_ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+
+async function _getAdminAlertPhone() {
+  try {
+    const row = await prisma.systemSetting.findFirst({ where: { key: 'admin_alert_phone' } });
+    return row?.value?.trim() || null;
+  } catch { return null; }
+}
+
+async function _getSmsAlertThresholds() {
+  try {
+    const [tRow, wRow] = await Promise.all([
+      prisma.systemSetting.findFirst({ where: { key: 'sms_alert_termii_threshold' } }),
+      prisma.systemSetting.findFirst({ where: { key: 'sms_alert_twilio_threshold' } }),
+    ]);
+    return { termii: parseFloat(tRow?.value) || 1000, twilio: parseFloat(wRow?.value) || 5 };
+  } catch { return { termii: 1000, twilio: 5 }; }
+}
+
+async function _sendBalanceAlertSms(phone, message) {
+  if (!phone) return;
+  // For system alerts try Termii first then Twilio (independent of active provider)
+  const tRes = await sendTermiiSms({ to: phone, message });
+  if (!tRes?.error && !tRes?.skipped) return;
+  await sendTwilioSms({ to: phone, message });
+}
+
+async function checkSmsBalancesAndAlert() {
+  try {
+    const [termiiData, twilioData, thresholds, phone] = await Promise.all([
+      getTermiiBalance(), getTwilioBalance(), _getSmsAlertThresholds(), _getAdminAlertPhone(),
+    ]);
+    const now = Date.now();
+    const toEmail = SUPER_ADMIN_EMAIL || null;
+
+    if (termiiData.configured && !termiiData.error && termiiData.balance !== undefined) {
+      const bal = parseFloat(termiiData.balance);
+      if (bal < thresholds.termii && now - _smsAlertLastSent.termii > SMS_ALERT_COOLDOWN_MS) {
+        _smsAlertLastSent.termii = now;
+        logger.warn(`[SMS-ALERT] Termii balance ₦${bal} is below threshold ₦${thresholds.termii} — sending alert`);
+        const msg = `⚠️ CSS RMS ALERT: Termii SMS balance is ₦${bal}. Threshold: ₦${thresholds.termii}. Top up now to avoid OTP failures. This alert repeats every 2h.`;
+        await _sendBalanceAlertSms(phone, msg);
+        if (toEmail) {
+          const { text, html } = buildEmailContent({
+            title: '⚠️ Termii SMS Balance Low',
+            lines: [`Current balance: ₦${bal}`, `Alert threshold: ₦${thresholds.termii}`, 'Top up immediately — zero balance blocks all department account activations.', 'This alert repeats every 2 hours until the balance is above threshold.'],
+            actionUrl: APP_BASE_URL || '', actionLabel: 'Open RMS Dashboard',
+          });
+          await sendEmail({ to: toEmail, subject: '⚠️ CSS RMS — Termii SMS Balance Low', text, html }).catch(e => logger.error('[SMS-ALERT] email failed:', e.message));
+        }
+      }
+    }
+
+    if (twilioData.configured && !twilioData.error && twilioData.balance !== undefined) {
+      const bal = parseFloat(twilioData.balance);
+      if (bal < thresholds.twilio && now - _smsAlertLastSent.twilio > SMS_ALERT_COOLDOWN_MS) {
+        _smsAlertLastSent.twilio = now;
+        logger.warn(`[SMS-ALERT] Twilio balance $${bal} is below threshold $${thresholds.twilio} — sending alert`);
+        const msg = `⚠️ CSS RMS ALERT: Twilio balance is $${bal} USD. Threshold: $${thresholds.twilio}. Top up to prevent SMS failures. This alert repeats every 2h.`;
+        await _sendBalanceAlertSms(phone, msg);
+        if (toEmail) {
+          const { text, html } = buildEmailContent({
+            title: '⚠️ Twilio Balance Low',
+            lines: [`Current balance: $${bal} USD`, `Alert threshold: $${thresholds.twilio} USD`, 'Top up your Twilio account to prevent SMS delivery failures.', 'This alert repeats every 2 hours until the balance is above threshold.'],
+            actionUrl: APP_BASE_URL || '', actionLabel: 'Open RMS Dashboard',
+          });
+          await sendEmail({ to: toEmail, subject: '⚠️ CSS RMS — Twilio Balance Low', text, html }).catch(e => logger.error('[SMS-ALERT] email failed:', e.message));
+        }
+      }
+    }
+  } catch (err) {
+    logger.error('[SMS-ALERT] Balance check error:', err.message);
+  }
+}
+
+// Warm-up delay then every 2 h
+setTimeout(() => {
+  checkSmsBalancesAndAlert();
+  setInterval(checkSmsBalancesAndAlert, SMS_ALERT_COOLDOWN_MS);
+}, 5 * 60 * 1000);
 
 // ── Print Access Settings ─────────────────────────────────────────────────────
 // GET  /api/admin/print-settings  — returns all depts with canPrint + global showStamp
@@ -8596,9 +8691,7 @@ app.post('/api/test-email', authenticateToken, requireRoles(['global_admin']), a
     const { to } = req.body;
     if (!to) return res.json({ success: false, message: 'Please provide a recipient email address.' });
 
-    const rawUser = process.env.GMAIL_USER || '';
-    const rawPass = process.env.GMAIL_APP_PASSWORD || '';
-    logger.info(`[MAIL-TEST] to=${to} GMAIL_USER=${rawUser || 'NOT SET'} PASS_LEN=${rawPass.replace(/[\s"']/g,'').length}`);
+    logger.info(`[MAIL-TEST] to=${to} RESEND_API_KEY=${process.env.RESEND_API_KEY ? 'SET' : 'MISSING'}`);
 
     const { text, html } = buildEmailContent({
       title: 'CSS RMS — Email Test',
@@ -8608,20 +8701,15 @@ app.post('/api/test-email', authenticateToken, requireRoles(['global_admin']), a
 
     const result = await sendEmail({ to, subject: 'CSS RMS — Email Delivery Test', text, html });
     if (result && result.skipped) {
-      return res.json({ success: false, message: 'Email transport not configured.', hint: !rawUser ? 'Set GMAIL_USER in Railway.' : !rawPass ? 'Set GMAIL_APP_PASSWORD in Railway.' : 'Both are set but transport failed — check Railway logs.' });
+      return res.json({ success: false, message: 'Email transport not configured.', hint: 'Set RESEND_API_KEY in Railway environment variables.' });
     }
     res.json({ success: true, message: `Test email sent to ${to}` });
   } catch (err) {
     logger.error('[MAIL-TEST] FAILED:', err.message);
-    // Always return 200 with JSON so the UI can display the exact error
     res.json({
       success: false,
       message: err.message,
-      hint: /invalid.*credentials|535|username.*password/i.test(err.message)
-        ? 'Gmail rejected the App Password. Make sure 2FA is ON at myaccount.google.com/security, then create a fresh App Password at myaccount.google.com/apppasswords and update GMAIL_APP_PASSWORD in Railway.'
-        : /ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(err.message)
-          ? 'Cannot reach Gmail servers. Check Railway outbound firewall settings.'
-          : 'Check Railway logs for full error details.'
+      hint: 'Check that RESEND_API_KEY is set correctly in Railway and the sending domain is verified in your Resend dashboard.'
     });
   }
 });
@@ -8841,6 +8929,100 @@ app.get('/api/requisitions/:id/attachments', authenticateToken, async (req, res)
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// ── OpenAI per-user usage caps ────────────────────────────────────────────────
+// In-memory tracker: resets automatically when a window period changes.
+// Survives as long as the process is running; resets on redeploy (acceptable —
+// caps are intended as intra-period guardrails, not hard lifetime limits).
+const _aiUsageMap = new Map(); // userId (string) → {hourly,daily,weekly,monthly}
+
+function _getPeriodStart(period) {
+  const n = new Date();
+  switch (period) {
+    case 'hourly':  return new Date(n.getFullYear(), n.getMonth(), n.getDate(), n.getHours()).getTime();
+    case 'daily':   return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+    case 'weekly':  { const d = new Date(n.getFullYear(), n.getMonth(), n.getDate()); d.setDate(d.getDate() - d.getDay()); return d.getTime(); }
+    case 'monthly': return new Date(n.getFullYear(), n.getMonth(), 1).getTime();
+    default: return 0;
+  }
+}
+
+const AI_PERIODS = ['hourly', 'daily', 'weekly', 'monthly'];
+
+function _getOrInitAiEntry(userId) {
+  const key = String(userId);
+  if (!_aiUsageMap.has(key)) {
+    _aiUsageMap.set(key, Object.fromEntries(AI_PERIODS.map(p => [p, { count: 0, windowStart: _getPeriodStart(p) }])));
+  }
+  const entry = _aiUsageMap.get(key);
+  // Reset any expired windows
+  for (const p of AI_PERIODS) {
+    const current = _getPeriodStart(p);
+    if (entry[p].windowStart < current) entry[p] = { count: 0, windowStart: current };
+  }
+  return entry;
+}
+
+async function _getAiCaps() {
+  try {
+    const row = await prisma.systemSetting.findFirst({ where: { key: 'ai_caps' } });
+    return row?.value ? JSON.parse(row.value) : {};
+  } catch { return {}; }
+}
+
+const _resetLabels = { hourly: 'at the top of the next hour', daily: 'at midnight', weekly: 'on Monday', monthly: 'on the 1st of next month' };
+
+async function _checkAndIncrementAiUsage(userId) {
+  const caps = await _getAiCaps();
+  const entry = _getOrInitAiEntry(userId);
+  for (const p of AI_PERIODS) {
+    const cap = Number(caps[p]);
+    if (cap > 0 && entry[p].count >= cap) {
+      return { blocked: true, reason: `You have reached your ${p} AI usage limit (${cap} call${cap !== 1 ? 's' : ''}). Resets ${_resetLabels[p]}.` };
+    }
+  }
+  for (const p of AI_PERIODS) entry[p].count++;
+  return { blocked: false };
+}
+
+// ── AI caps admin endpoints ────────────────────────────────────────────────────
+app.get('/api/admin/ai-caps', authenticateToken, async (req, res) => {
+  if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const caps = await _getAiCaps();
+    const users = [];
+    for (const [uid, entry] of _aiUsageMap) {
+      _getOrInitAiEntry(uid); // refresh windows
+      const refreshed = _aiUsageMap.get(uid);
+      let userName = `User ${uid}`;
+      try {
+        const u = await prisma.user.findUnique({ where: { id: parseInt(uid) }, select: { name: true, role: true } });
+        if (u) userName = u.name;
+      } catch {}
+      users.push({ userId: uid, name: userName, usage: Object.fromEntries(AI_PERIODS.map(p => [p, refreshed[p].count])) });
+    }
+    res.json({ caps, users });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
+app.post('/api/admin/ai-caps', authenticateToken, async (req, res) => {
+  if (req.user?.role !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
+  try {
+    const { hourly, daily, weekly, monthly } = req.body;
+    const caps = {
+      hourly:  hourly  ? parseInt(hourly)  : null,
+      daily:   daily   ? parseInt(daily)   : null,
+      weekly:  weekly  ? parseInt(weekly)  : null,
+      monthly: monthly ? parseInt(monthly) : null,
+    };
+    await prisma.systemSetting.upsert({
+      where: { key: 'ai_caps' },
+      update: { value: JSON.stringify(caps) },
+      create: { key: 'ai_caps', value: JSON.stringify(caps) },
+    });
+    res.json({ ok: true, caps });
+  } catch (err) { sendError(res, 500, err.message); }
+});
+
 // ── AI VOICE TRANSCRIPTION (Whisper Fallback) ──
 app.post('/api/ai/transcribe', authenticateToken, upload.single('audio'), async (req, res) => {
   try {
@@ -8849,6 +9031,9 @@ app.post('/api/ai/transcribe', authenticateToken, upload.single('audio'), async 
     if (!process.env.OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI features are not configured.' });
     }
+
+    const capCheck = await _checkAndIncrementAiUsage(req.user.id);
+    if (capCheck.blocked) return res.status(429).json({ error: capCheck.reason });
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -8882,6 +9067,9 @@ app.post('/api/ai/refine-requisition', authenticateToken, async (req, res) => {
     if (!process.env.OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI features are not configured. Please contact the administrator.' });
     }
+
+    const capCheck = await _checkAndIncrementAiUsage(req.user.id);
+    if (capCheck.blocked) return res.status(429).json({ error: capCheck.reason });
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const isProMode = mode === 'pro';
