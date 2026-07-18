@@ -558,7 +558,7 @@ const Login = () => {
   const [actSubmitting, setActSubmitting] = useState(false);
   const [actError, setActError] = useState('');
   const deptDropRef = useRef(null);
-  const { deptLogin } = useAuth();
+  const { deptLogin, loginWithData } = useAuth();
 
   const mainDepts = departments.filter(d => d.type !== 'Sub-Account' && !d.isSubAccount);
 
@@ -702,8 +702,9 @@ const Login = () => {
       });
       const data = await res.json();
       if (!res.ok) { setActError(data.error || 'Activation failed.'); setActSubmitting(false); return; }
-      // Activation succeeded — re-login with new password to get full session (selectedDept = parent dept for sub-accounts)
-      await deptLogin(selectedDept, actPassword, null);
+      // Activate endpoint already set the auth cookie and returned userData — use it directly.
+      // Calling deptLogin here would trigger Turnstile verification and fail with 400.
+      await loginWithData(data.user, selectedDept, actPassword, null);
     } catch (err) {
       setActError(err.message || 'Activation failed. Please try again.');
       setActSubmitting(false);
