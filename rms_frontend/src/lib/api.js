@@ -373,6 +373,8 @@ export const adminAPI = {
   getSmsBalance: () => api.get('/admin/sms-balance'),
   getArchitectureDoc: () => api.get('/admin/architecture-doc'),
   getMigrationsLogbook: () => api.get('/admin/migrations'),
+  getAiCaps: () => api.get('/admin/ai-caps'),
+  saveAiCaps: (caps) => api.post('/admin/ai-caps', caps),
 };
 
 export const kivAPI = {

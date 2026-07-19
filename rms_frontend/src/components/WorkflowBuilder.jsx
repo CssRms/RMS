@@ -171,6 +171,17 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [aiToggle, setAiToggle]   = useState(true);
   const [savingAI, setSavingAI]   = useState(false);
 
+  // ── AI usage caps ──────────────────────────────────────────────────────────
+  const [aiCaps, setAiCaps] = useState({ hourly: '', daily: '', weekly: '', monthly: '' });
+  const [aiUsageUsers, setAiUsageUsers] = useState([]);
+  const [savingAiCaps, setSavingAiCaps] = useState(false);
+
+  // ── SMS balance alert settings ─────────────────────────────────────────────
+  const [smsAlertPhone, setSmsAlertPhone]               = useState('');
+  const [smsAlertTermiiThreshold, setSmsAlertTermiiThreshold] = useState('1000');
+  const [smsAlertTwilioThreshold, setSmsAlertTwilioThreshold] = useState('5');
+  const [savingSmsAlerts, setSavingSmsAlerts]           = useState(false);
+
   // ── Print settings ─────────────────────────────────────────────────────────
   const [canPrintIds, setCanPrintIds]         = useState(null);
   const [showStampOnPdf, setShowStampOnPdf]   = useState(true);
@@ -323,6 +334,32 @@ const WorkflowBuilder = ({ onViewChange }) => {
       const tsRes = await settingsAPI.get('turnstile_required_depts');
       if (tsRes?.value) setTurnstileRequiredDepts(JSON.parse(tsRes.value));
     } catch {}
+
+    // Load AI caps + current usage
+    try {
+      const capsData = await adminAPI.getAiCaps();
+      if (capsData?.caps) {
+        setAiCaps({
+          hourly:  capsData.caps.hourly  ?? '',
+          daily:   capsData.caps.daily   ?? '',
+          weekly:  capsData.caps.weekly  ?? '',
+          monthly: capsData.caps.monthly ?? '',
+        });
+      }
+      if (Array.isArray(capsData?.users)) setAiUsageUsers(capsData.users);
+    } catch {}
+
+    // Load SMS alert settings
+    try {
+      const [phoneRes, tRes, wRes] = await Promise.allSettled([
+        settingsAPI.get('admin_alert_phone'),
+        settingsAPI.get('sms_alert_termii_threshold'),
+        settingsAPI.get('sms_alert_twilio_threshold'),
+      ]);
+      if (phoneRes.status === 'fulfilled' && phoneRes.value?.value) setSmsAlertPhone(phoneRes.value.value);
+      if (tRes.status === 'fulfilled' && tRes.value?.value) setSmsAlertTermiiThreshold(tRes.value.value);
+      if (wRes.status === 'fulfilled' && wRes.value?.value) setSmsAlertTwilioThreshold(wRes.value.value);
+    } catch {}
   };
 
   const saveFeatureFlags = async () => {
@@ -397,6 +434,34 @@ const WorkflowBuilder = ({ onViewChange }) => {
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to save AI setting.');
     } finally { setSavingAI(false); }
+  };
+
+  // ── AI usage caps ──────────────────────────────────────────────────────────
+  const saveAiCaps = async () => {
+    setSavingAiCaps(true);
+    try {
+      await adminAPI.saveAiCaps(aiCaps);
+      const capsData = await adminAPI.getAiCaps();
+      if (Array.isArray(capsData?.users)) setAiUsageUsers(capsData.users);
+      toast.success('AI usage limits saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save AI limits.');
+    } finally { setSavingAiCaps(false); }
+  };
+
+  // ── SMS alert settings ─────────────────────────────────────────────────────
+  const saveSmsAlertSettings = async () => {
+    setSavingSmsAlerts(true);
+    try {
+      await Promise.all([
+        settingsAPI.set('admin_alert_phone', smsAlertPhone.trim()),
+        settingsAPI.set('sms_alert_termii_threshold', smsAlertTermiiThreshold || '1000'),
+        settingsAPI.set('sms_alert_twilio_threshold', smsAlertTwilioThreshold || '5'),
+      ]);
+      toast.success('SMS alert settings saved.');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to save SMS alert settings.');
+    } finally { setSavingSmsAlerts(false); }
   };
 
   // ── Turnstile per-department ───────────────────────────────────────────────
@@ -887,6 +952,169 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 >
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-transform duration-300 ${aiToggle ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
+              </div>
+            </div>
+
+            {/* AI Usage Limits — per-user hourly / daily / weekly / monthly caps */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+                    <Zap size={18} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">AI Usage Limits</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Per-user call caps across hourly / daily / weekly / monthly windows. Leave blank for unlimited.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveAiCaps}
+                  disabled={savingAiCaps}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-blue-200 active:scale-[0.98]"
+                >
+                  {savingAiCaps ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+
+              {/* Cap inputs */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                {[
+                  { label: 'Hourly cap', key: 'hourly',  placeholder: '∞' },
+                  { label: 'Daily cap',  key: 'daily',   placeholder: '∞' },
+                  { label: 'Weekly cap', key: 'weekly',  placeholder: '∞' },
+                  { label: 'Monthly cap',key: 'monthly', placeholder: '∞' },
+                ].map(({ label, key, placeholder }) => (
+                  <div key={key} className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">{label}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={placeholder}
+                      value={aiCaps[key] ?? ''}
+                      onChange={e => setAiCaps(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="w-full bg-white border border-border/50 rounded-xl px-3 py-2 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-blue-300 shadow-inner"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Live usage table */}
+              {aiUsageUsers.length > 0 && (
+                <div className="border border-border/40 rounded-2xl overflow-hidden">
+                  <div className="bg-blue-50/60 px-4 py-2.5 border-b border-border/30">
+                    <p className="text-[9px] font-black text-blue-700 uppercase tracking-widest">Current session usage (resets on server restart)</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="border-b border-border/30">
+                          <th className="text-left px-4 py-2 font-black text-muted-foreground/60 uppercase tracking-wide text-[9px]">User</th>
+                          <th className="text-center px-3 py-2 font-black text-muted-foreground/60 uppercase tracking-wide text-[9px]">Hourly</th>
+                          <th className="text-center px-3 py-2 font-black text-muted-foreground/60 uppercase tracking-wide text-[9px]">Daily</th>
+                          <th className="text-center px-3 py-2 font-black text-muted-foreground/60 uppercase tracking-wide text-[9px]">Weekly</th>
+                          <th className="text-center px-3 py-2 font-black text-muted-foreground/60 uppercase tracking-wide text-[9px]">Monthly</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiUsageUsers.map(u => {
+                          const capOf = p => Number(aiCaps[p]) || 0;
+                          const overOf = (p) => capOf(p) > 0 && u.usage[p] >= capOf(p);
+                          return (
+                            <tr key={u.userId} className="border-b border-border/20 last:border-0 hover:bg-blue-50/30 transition-colors">
+                              <td className="px-4 py-2 font-bold text-foreground">{u.name}</td>
+                              {['hourly','daily','weekly','monthly'].map(p => (
+                                <td key={p} className="px-3 py-2 text-center">
+                                  <span className={`px-2 py-0.5 rounded-lg font-black text-[10px] ${overOf(p) ? 'bg-red-100 text-red-600 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                    {u.usage[p]}{capOf(p) > 0 ? `/${capOf(p)}` : ''}
+                                  </span>
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {aiUsageUsers.length === 0 && (
+                <p className="text-[11px] text-muted-foreground/50 text-center py-3">No AI calls recorded yet in this server session.</p>
+              )}
+            </div>
+
+            {/* SMS Balance Alerts — admin phone + thresholds */}
+            <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={18} className="text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">SMS Balance Alerts</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Receive SMS + email alerts every 2 hours when SMS provider balance falls below threshold.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={saveSmsAlertSettings}
+                  disabled={savingSmsAlerts}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-md shadow-red-200 active:scale-[0.98]"
+                >
+                  {savingSmsAlerts ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Admin alert phone */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Admin alert phone number</label>
+                  <div className="flex items-center gap-2 bg-white border border-border/50 rounded-xl px-3 py-2 shadow-inner">
+                    <Phone size={13} className="text-muted-foreground shrink-0" />
+                    <input
+                      type="tel"
+                      placeholder="e.g. 08012345678 or +2348012345678"
+                      value={smsAlertPhone}
+                      onChange={e => setSmsAlertPhone(e.target.value)}
+                      className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none font-medium"
+                    />
+                  </div>
+                  <p className="text-[9px] text-muted-foreground/50 leading-tight pl-1">Nigerian format (080…) or E.164 (+234…). Alert SMS goes to this number regardless of active provider.</p>
+                </div>
+
+                {/* Threshold inputs */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Termii alert threshold (₦)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="1000"
+                      value={smsAlertTermiiThreshold}
+                      onChange={e => setSmsAlertTermiiThreshold(e.target.value)}
+                      className="w-full bg-white border border-border/50 rounded-xl px-3 py-2 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-red-300 shadow-inner"
+                    />
+                    <p className="text-[9px] text-muted-foreground/50 pl-1">Alert when balance drops below this amount</p>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Twilio alert threshold ($)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="5"
+                      value={smsAlertTwilioThreshold}
+                      onChange={e => setSmsAlertTwilioThreshold(e.target.value)}
+                      className="w-full bg-white border border-border/50 rounded-xl px-3 py-2 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-red-300 shadow-inner"
+                    />
+                    <p className="text-[9px] text-muted-foreground/50 pl-1">Alert when balance drops below this amount</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200/60">
+                  <AlertTriangle size={13} className="text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-amber-700 leading-relaxed">Alerts send every <strong>2 hours</strong> while balance stays below threshold. Email goes to <strong>SUPER_ADMIN_EMAIL</strong> env var. SMS goes to the phone number above.</p>
+                </div>
               </div>
             </div>
 

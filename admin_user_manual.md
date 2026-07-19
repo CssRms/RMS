@@ -308,3 +308,88 @@ If the encryption key or Google refresh token are ever regenerated (security pre
 - **Rotating `GOOGLE_REFRESH_TOKEN`**: this only affects *future* uploads (whether the backup job can still log in to Drive). It has no effect on files already uploaded - those aren't touched, and don't need re-uploading just because the token changed.
 - **After rotating either one**, update the corresponding GitHub secret (Settings → Secrets and variables → Actions) immediately - until you do, the scheduled job is still using the *old* value, not the one you just generated. Generating a new key or token locally does nothing on its own; it only takes effect once it's saved as the GitHub secret.
 - **A simple way to confirm a rotation actually took effect**: go to Actions → Database Backup → Run workflow manually right after updating the secret, and check that `backup-to-drive` still succeeds.
+
+---
+
+# Admin User Manual: Cloudflare Turnstile (Bot & Human Verification)
+
+## What is Cloudflare Turnstile?
+
+Cloudflare Turnstile is the bot-detection layer on the RMS login page. It silently analyses browser signals — IP reputation, Cloudflare cookies, device fingerprint, and session behaviour — and decides in real time whether the person logging in is human or a bot.
+
+Unlike old-style CAPTCHAs (clicking fire hydrants, reading distorted text), Turnstile is **non-interactive for legitimate users**. A real person using a normal browser on a clean IP will almost always see the widget auto-resolve to a green **"✅ Success!"** checkmark within one to two seconds, with no action required from them. The widget only presents a visible challenge when it is genuinely uncertain — which is rare in practice.
+
+**This is expected, correct behaviour — not a malfunction.** If staff report "the green tick appeared on its own", that is the system working as designed.
+
+| What the user sees | What it means |
+|---|---|
+| Green checkmark appears automatically | Cloudflare is confident the user is human — no action needed |
+| Widget spins briefly then resolves | Turnstile running its silent checks — resolves within a second or two |
+| "Verify you are human" prompt appears | Unusual browser or IP signals — user taps/clicks to confirm |
+| Widget stays in loading state | Network connectivity issue or misconfigured site key — see troubleshooting below |
+
+## How Turnstile is enforced in RMS
+
+Turnstile is enforced **per department**, not globally. When a department has Turnstile enabled:
+
+1. The login page loads the Cloudflare widget as soon as that department is selected from the dropdown.
+2. The widget runs its silent verification and produces a one-time token (valid for ~5 minutes).
+3. When the user submits the login form, the server calls Cloudflare's API to verify the token.
+4. If verification fails (bot-like signals, token reused, or token missing), the server returns `400 Human verification failed` and the login is blocked.
+5. If verification passes, login proceeds normally.
+
+Departments without Turnstile enabled skip all of the above — login works with just the access code and optional MFA PIN.
+
+## Enabling or disabling Turnstile per department (Admin only)
+
+Turnstile is configured from the **Workflow Builder** screen (Admin → System Studio → Workflow Builder).
+
+1. Open the **Cloudflare Turnstile** card. It lists every department in the system with a toggle next to each name.
+2. Toggle the departments that should require Turnstile verification at login.
+3. Click **Save** at the top-right of the card.
+4. Changes take effect immediately — no restart required.
+
+**Recommendation:** Enable Turnstile on departments with access to sensitive financial or approval data (Accounts, Procurement, Management). Low-risk operational departments can be left without it to reduce any friction.
+
+> **Important:** If no departments have Turnstile enabled, the widget never appears on the login page at all — the `VITE_TURNSTILE_SITE_KEY` environment variable is still required for the widget to work when departments are enabled. If you enable a department but the widget does not appear, check that `VITE_TURNSTILE_SITE_KEY` is set in Railway under the production environment variables.
+
+## How the server verifies the token
+
+When a login request arrives at `POST /api/auth/dept-login`, the server:
+
+1. Looks up `turnstile_required_depts` from the `SystemSetting` table.
+2. If the requested department is in that list, it calls Cloudflare's Siteverify API (`https://challenges.cloudflare.com/turnstile/v0/siteverify`) with the token from the login request and the server-side `TURNSTILE_SECRET_KEY`.
+3. Cloudflare returns `{ success: true/false }`. The server only allows login if `success` is `true`.
+4. If the token is missing, expired, reused, or was generated for a different domain, Cloudflare returns `success: false` and the server returns `400 Human verification failed`.
+
+The activation flow (first-time password set) is exempt from this check — the activation endpoint issues the auth cookie directly, so it never calls `dept-login` and Turnstile is not required during activation.
+
+## Required environment variables
+
+| Variable | Where it lives | What it does |
+|---|---|---|
+| `VITE_TURNSTILE_SITE_KEY` | Railway (production env) — frontend build | Public key loaded into the browser widget. Safe to expose — it identifies the site but cannot verify tokens. |
+| `TURNSTILE_SECRET_KEY` | Railway (production env) — server | Private key used by the server to verify tokens with Cloudflare's API. Never expose this to the frontend. |
+
+Both keys come from the Cloudflare dashboard: **Turnstile → your site → Site key / Secret key**.
+
+## Cloudflare dashboard setup
+
+The site key must be configured for the exact domain where the login page is served. If the site key was created for `localhost` only, Cloudflare will reject tokens from `cssgrouprms.com` with error **300010 (hostname not allowed)**.
+
+To check or update allowed hostnames:
+1. Log in to [dash.cloudflare.com](https://dash.cloudflare.com).
+2. Go to **Turnstile** in the left sidebar.
+3. Click the site name.
+4. Under **Allowed hostnames**, confirm `cssgrouprms.com` (and any staging domain) is listed.
+5. Save changes — they take effect within a few minutes.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Console error **300010** | Domain not in Cloudflare's allowed hostnames for this site key | Add `cssgrouprms.com` to allowed hostnames in Turnstile dashboard |
+| Widget never appears even after enabling a department | `VITE_TURNSTILE_SITE_KEY` not set in Railway, or frontend not rebuilt after adding it | Set the variable in Railway → redeploy the frontend |
+| Login returns **400 Human verification failed** | Token expired (>5 min since widget loaded), or user submitted the form before the widget finished | Refresh the page and submit within a few seconds of the green checkmark appearing |
+| Widget spins indefinitely | Network cannot reach `challenges.cloudflare.com` (e.g. heavy corporate firewall) | Whitelist Cloudflare Turnstile endpoints, or disable Turnstile for affected departments |
+| Staff report they had to "click something" | Normal — rare challenge shown when browser or IP signals are unusual | No action needed; Turnstile showed a challenge as designed |

@@ -119,6 +119,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Called after flows that already have a valid session (e.g. post-activation).
+  // Mirrors what deptLogin does after a successful API call, without hitting dept-login.
+  const loginWithData = async (userData, departmentName, accessCode, mfaCode) => {
+    await clearAllCaches();
+    if (departmentName && accessCode) {
+      const accessSalt = randomHex(16);
+      const accessHash = await deriveHash(accessCode, accessSalt);
+      const mfaSalt = mfaCode ? randomHex(16) : null;
+      const mfaHash = mfaCode ? await deriveHash(mfaCode, mfaSalt) : null;
+      localStorage.setItem('rms_offline_auth', JSON.stringify({ departmentName, accessSalt, accessHash, mfaSalt, mfaHash }));
+    }
+    localStorage.setItem('rms_offline_session', JSON.stringify({ user: userData }));
+    setUser(userData);
+    localStorage.setItem('rms_user', JSON.stringify(userData));
+    return userData;
+  };
+
   const updateUser = (updatedFields, _newToken) => {
     // _newToken ignored — server rotates the auth cookie directly on profile update
     const merged = { ...user, ...updatedFields };
@@ -143,7 +160,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, deptLogin, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, deptLogin, loginWithData, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

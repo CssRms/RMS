@@ -4,23 +4,29 @@ import { getDashboardStats, getRequisitions, isMemoRecord, isOperationalRequisit
 import { reqAPI, settingsAPI, adminAPI } from '../lib/api';
 import { getEffectiveAmount, getLiveTrailDepartment, normalizeReq } from '../lib/requisitionDisplay';
 import toast from 'react-hot-toast';
-import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare } from 'lucide-react';
+import { ArrowUpRight, Clock, CheckCircle2, XCircle, ListFilter, Eye, AlertTriangle, ShieldCheck, ArrowRight, Paperclip, ChevronDown, ChevronUp, Send, BadgeCheck, RotateCcw, FileText, MessageSquare, AlertOctagon } from 'lucide-react';
 
-const StatCard = ({ label, value, icon: Icon, color, onClick, title, active, activeLabel }) => (
-  <div onClick={onClick} title={title} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border relative overflow-hidden group transition-all bg-white/70 shadow-sm ${active ? `border-${color}-400 ring-2 ring-${color}-300/50` : 'border-border/40'} ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
-    <div className={`absolute top-0 right-0 w-24 h-24 bg-${color}-500/5 blur-[60px] rounded-full translate-x-8 -translate-y-8`}></div>
-    {active && activeLabel && (
+const StatCard = ({ label, value, icon: Icon, color, onClick, title, active, activeLabel, danger }) => (
+  <div onClick={onClick} title={title} className={`glass p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border relative overflow-hidden group transition-all bg-white/70 shadow-sm ${danger ? 'border-red-400 ring-2 ring-red-300/60 bg-red-50/60' : active ? `border-${color}-400 ring-2 ring-${color}-300/50` : 'border-border/40'} ${onClick ? 'hover:border-primary/40 cursor-pointer hover:shadow-xl hover:shadow-primary/5 active:scale-[0.98]' : ''}`}>
+    <div className={`absolute top-0 right-0 w-24 h-24 bg-${danger ? 'red' : color}-500/5 blur-[60px] rounded-full translate-x-8 -translate-y-8`}></div>
+    {danger && (
+      <span className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-red-500 text-white shadow-sm z-10 animate-pulse">
+        <AlertOctagon size={8} /> LOW
+      </span>
+    )}
+    {!danger && active && activeLabel && (
       <span className={`absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-${color}-500 text-white shadow-sm z-10`}>
         {activeLabel}
       </span>
     )}
     <div className="flex flex-col gap-2.5 sm:gap-4 relative z-10">
-      <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-${color}-500/10 border border-${color}-500/20 text-${color}-600 flex items-center justify-center group-hover:bg-${color}-500 group-hover:text-white transition-all duration-500 shadow-inner`}>
-        <Icon size={18} />
+      <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl ${danger ? 'bg-red-500/10 border border-red-500/30 text-red-600 group-hover:bg-red-500' : `bg-${color}-500/10 border border-${color}-500/20 text-${color}-600 group-hover:bg-${color}-500`} flex items-center justify-center group-hover:text-white transition-all duration-500 shadow-inner`}>
+        {danger ? <AlertOctagon size={18} /> : <Icon size={18} />}
       </div>
       <div>
         <p className="text-[8px] sm:text-[10px] font-black text-muted-foreground/60 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-0.5 sm:mb-1 leading-tight">{label}</p>
-        <h3 className="text-2xl sm:text-4xl font-black text-foreground tracking-tighter leading-none">{value}</h3>
+        <h3 className={`text-2xl sm:text-4xl font-black tracking-tighter leading-none ${danger ? 'text-red-600' : 'text-foreground'}`}>{value}</h3>
+        {danger && <p className="text-[9px] font-bold text-red-500 mt-1 uppercase tracking-wide">Balance critical — top up now</p>}
       </div>
     </div>
   </div>
@@ -338,8 +344,9 @@ const Dashboard = ({ onViewChange }) => {
                   color="teal"
                   active={activeProvider === 'termii'}
                   activeLabel="Active"
+                  danger={!!smsBalance?.termii?.belowThreshold}
                   onClick={() => switchSmsProvider('termii')}
-                  title={smsBalance?.termii?.error || (activeProvider === 'termii' ? 'Active — click Twilio to switch' : 'Click to activate Termii')}
+                  title={smsBalance?.termii?.belowThreshold ? `⚠️ Balance below ₦${smsBalance?.thresholds?.termii ?? 1000} threshold — top up now` : smsBalance?.termii?.error || (activeProvider === 'termii' ? 'Active — click Twilio to switch' : 'Click to activate Termii')}
                 />
                 <StatCard
                   label="Twilio Balance"
@@ -348,8 +355,9 @@ const Dashboard = ({ onViewChange }) => {
                   color="indigo"
                   active={activeProvider === 'twilio'}
                   activeLabel="Active"
+                  danger={!!smsBalance?.twilio?.belowThreshold}
                   onClick={() => switchSmsProvider('twilio')}
-                  title={smsBalance?.twilio?.error || (activeProvider === 'twilio' ? 'Active — click Termii to switch' : 'Click to activate Twilio')}
+                  title={smsBalance?.twilio?.belowThreshold ? `⚠️ Balance below $${smsBalance?.thresholds?.twilio ?? 5} threshold — top up now` : smsBalance?.twilio?.error || (activeProvider === 'twilio' ? 'Active — click Termii to switch' : 'Click to activate Twilio')}
                 />
               </>
             );
