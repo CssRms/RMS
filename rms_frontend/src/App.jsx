@@ -212,12 +212,41 @@ const getViewFromHash = () => {
   return VALID_VIEWS.includes(hash) ? hash : 'dashboard';
 };
 
+// ── Maintenance overlay ────────────────────────────────────────────────────────
+// Shown when MAINTENANCE_MODE=true in Railway. Polls /api/public/app-status
+// every 30 s. When maintenance is detected, the logged-in user is signed out
+// and this full-screen message is shown for all visitors on the production URL.
+const MaintenanceScreen = () => (
+  <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#0f1f12] via-[#1a3320] to-[#0f1f12] text-white p-8 text-center">
+    <div className="max-w-md space-y-6">
+      <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+        </svg>
+      </div>
+      <div>
+        <h1 className="text-2xl font-black tracking-tight" style={{textWrap:'balance'}}>System Undergoing Maintenance</h1>
+        <p className="mt-3 text-white/60 text-sm leading-relaxed" style={{textWrap:'balance'}}>
+          The CSS Group RMS portal is currently being upgraded to serve you better.
+          We'll be back shortly. Thank you for your patience.
+        </p>
+      </div>
+      <div className="flex items-center justify-center gap-2 text-white/40 text-xs">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
+        Upgrade in progress — please check back soon
+      </div>
+      <img src="/CSS_Group.png" alt="CSS Group" className="w-24 h-14 object-contain mx-auto opacity-30 mt-4" />
+    </div>
+  </div>
+);
+
 const AppContent = () => {
   const { user, loading, logout } = useAuth();
   const [currentView, setCurrentView] = useState(getViewFromHash);
   const [deptProfile, setDeptProfile] = useState(null);
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [deepLinkReqId, setDeepLinkReqId] = useState(null);
+  const [maintenance, setMaintenance] = useState(false);
   // Read cached value first so there is zero flash on refresh
   const [loginStyle, setLoginStyle] = useState(
     () => sessionStorage.getItem('rms_login_style') || null
@@ -233,6 +262,19 @@ const AppContent = () => {
       })
       .catch(() => setLoginStyle('standard'));
   }, []);
+
+  // Poll maintenance status every 30 s; auto-logout when maintenance activates
+  useEffect(() => {
+    const checkMaintenance = () => {
+      fetch('/api/public/app-status').then(r => r.json()).then(d => {
+        if (d?.maintenance) { setMaintenance(true); if (user) logout(); }
+        else setMaintenance(false);
+      }).catch(() => {});
+    };
+    checkMaintenance();
+    const iv = setInterval(checkMaintenance, 30000);
+    return () => clearInterval(iv);
+  }, [user]);
 
   // navigate(view) — normal navigation
   // navigate('requisitions', { reqId: 31 }) — deep-link directly into a requisition
@@ -282,6 +324,8 @@ const AppContent = () => {
     };
     loadDept();
   }, [user?.role, user?.deptId]);
+
+  if (maintenance) return <MaintenanceScreen />;
 
   if (loading) {
     return (

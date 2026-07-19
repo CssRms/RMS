@@ -520,6 +520,27 @@ const sanitizePayload = (req, res, next) => {
 
 app.use(sanitizePayload);
 
+// ── Maintenance Mode ──────────────────────────────────────────────────────────
+// Set MAINTENANCE_MODE=true in Railway env to activate. The Railway-assigned URL
+// bypasses this gate so the super-admin can still reach the system.
+// Only the production domain (APP_BASE_URL) is blocked.
+app.use((req, res, next) => {
+  if (process.env.MAINTENANCE_MODE !== 'true') return next();
+  // Always allow the status endpoint (frontend polls this to detect maintenance)
+  if (req.path === '/api/public/app-status') return next();
+  // Allow Railway's own domain — prod domain (from APP_BASE_URL) is the gated one
+  let prodHost = null;
+  try { prodHost = new URL(process.env.APP_BASE_URL || '').hostname; } catch {}
+  const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0];
+  if (prodHost && reqHost !== prodHost) return next();
+  // Block all API calls with a machine-readable code the frontend can act on
+  if (req.path.startsWith('/api/')) {
+    return res.status(503).json({ code: 'MAINTENANCE', error: 'System is currently under maintenance.' });
+  }
+  // Non-API requests (SPA page loads) pass through — React renders the maintenance UI
+  next();
+});
+
 // Apply mutation limiter to all state-changing API requests
 app.use('/api', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
@@ -1520,18 +1541,20 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     const deptKey = `dept:${(departmentName || '').trim().toLowerCase()}`;
     logger.info(`[AUTH] Unified login attempt: "${departmentName?.trim()}"`);
 
-    // Turnstile human verification — only for departments configured to require it
-    try {
-      const tsRows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'turnstile_required_depts' LIMIT 1`;
-      const requiredDepts = tsRows?.[0]?.value ? JSON.parse(tsRows[0].value).map(n => n.toLowerCase()) : [];
-      if (requiredDepts.includes((departmentName || '').trim().toLowerCase())) {
-        const turnstileOk = await verifyTurnstile(turnstileToken, req.ip);
-        if (!turnstileOk) {
-          return res.status(400).json({ error: 'Human verification failed. Please complete the security check and try again.' });
+    // Turnstile human verification — skipped when TURNSTILE_ENABLED=false in env
+    if (process.env.TURNSTILE_ENABLED !== 'false') {
+      try {
+        const tsRows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'turnstile_required_depts' LIMIT 1`;
+        const requiredDepts = tsRows?.[0]?.value ? JSON.parse(tsRows[0].value).map(n => n.toLowerCase()) : [];
+        if (requiredDepts.includes((departmentName || '').trim().toLowerCase())) {
+          const turnstileOk = await verifyTurnstile(turnstileToken, req.ip);
+          if (!turnstileOk) {
+            return res.status(400).json({ error: 'Human verification failed. Please complete the security check and try again.' });
+          }
         }
+      } catch (tsErr) {
+        logger.warn('[TURNSTILE] Config read error, skipping check:', tsErr.message);
       }
-    } catch (tsErr) {
-      logger.warn('[TURNSTILE] Config read error, skipping check:', tsErr.message);
     }
 
     // Account lockout check for department
@@ -4783,13 +4806,20 @@ app.get('/api/public/support-phone', async (req, res) => {
   } catch { res.json({ value: '' }); }
 });
 
+// ── Public app status (maintenance mode check — no auth, bypasses maintenance middleware) ─
+app.get('/api/public/app-status', (req, res) => {
+  res.json({ maintenance: process.env.MAINTENANCE_MODE === 'true' });
+});
+
 // ── Public Turnstile config (no auth — needed by login page before user logs in) ─
 app.get('/api/public/turnstile-config', async (req, res) => {
   try {
     const rows = await prisma.$queryRaw`SELECT "value" FROM "SystemSetting" WHERE "key" = 'turnstile_required_depts' LIMIT 1`;
     const requiredDepts = rows?.[0]?.value ? JSON.parse(rows[0].value) : [];
-    res.json({ requiredDepts });
-  } catch { res.json({ requiredDepts: [] }); }
+    // TURNSTILE_ENABLED=false in Railway env disables Turnstile system-wide
+    const globallyEnabled = process.env.TURNSTILE_ENABLED !== 'false';
+    res.json({ requiredDepts, globallyEnabled });
+  } catch { res.json({ requiredDepts: [], globallyEnabled: true }); }
 });
 
 // ── System Settings ───────────────────────────────────────────────────────────
@@ -4916,11 +4946,29 @@ app.get('/api/admin/sms-balance', authenticateToken, async (req, res) => {
 const _smsAlertLastSent = { termii: 0, twilio: 0 };
 const SMS_ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
-async function _getAdminAlertPhone() {
+async function _getAdminAlertPhones() {
   try {
     const row = await prisma.systemSetting.findFirst({ where: { key: 'admin_alert_phone' } });
-    return row?.value?.trim() || null;
-  } catch { return null; }
+    if (!row?.value) return [];
+    const val = row.value.trim();
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : (val ? [val] : []);
+    } catch { return val ? [val] : []; }
+  } catch { return []; }
+}
+
+async function _getAdminAlertEmails() {
+  const emails = new Set();
+  if (SUPER_ADMIN_EMAIL) emails.add(SUPER_ADMIN_EMAIL);
+  try {
+    const row = await prisma.systemSetting.findFirst({ where: { key: 'admin_alert_emails' } });
+    if (row?.value) {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed)) parsed.filter(Boolean).forEach(e => emails.add(e));
+    }
+  } catch {}
+  return [...emails];
 }
 
 async function _getSmsAlertThresholds() {
@@ -4933,30 +4981,31 @@ async function _getSmsAlertThresholds() {
   } catch { return { termii: 1000, twilio: 5 }; }
 }
 
-async function _sendBalanceAlertSms(phone, message) {
-  if (!phone) return;
-  // For system alerts try Termii first then Twilio (independent of active provider)
-  const tRes = await sendTermiiSms({ to: phone, message });
-  if (!tRes?.error && !tRes?.skipped) return;
-  await sendTwilioSms({ to: phone, message });
+async function _sendBalanceAlertSms(phones, message) {
+  if (!phones?.length) return;
+  for (const phone of phones) {
+    const tRes = await sendTermiiSms({ to: phone, message });
+    if (!tRes?.error && !tRes?.skipped) continue;
+    await sendTwilioSms({ to: phone, message });
+  }
 }
 
 async function checkSmsBalancesAndAlert() {
   try {
-    const [termiiData, twilioData, thresholds, phone] = await Promise.all([
-      getTermiiBalance(), getTwilioBalance(), _getSmsAlertThresholds(), _getAdminAlertPhone(),
+    const [termiiData, twilioData, thresholds, phones, emails] = await Promise.all([
+      getTermiiBalance(), getTwilioBalance(), _getSmsAlertThresholds(),
+      _getAdminAlertPhones(), _getAdminAlertEmails(),
     ]);
     const now = Date.now();
-    const toEmail = SUPER_ADMIN_EMAIL || null;
 
     if (termiiData.configured && !termiiData.error && termiiData.balance !== undefined) {
       const bal = parseFloat(termiiData.balance);
       if (bal < thresholds.termii && now - _smsAlertLastSent.termii > SMS_ALERT_COOLDOWN_MS) {
         _smsAlertLastSent.termii = now;
-        logger.warn(`[SMS-ALERT] Termii balance ₦${bal} is below threshold ₦${thresholds.termii} — sending alert`);
-        const msg = `⚠️ CSS RMS ALERT: Termii SMS balance is ₦${bal}. Threshold: ₦${thresholds.termii}. Top up now to avoid OTP failures. This alert repeats every 2h.`;
-        await _sendBalanceAlertSms(phone, msg);
-        if (toEmail) {
+        logger.warn(`[SMS-ALERT] Termii balance ₦${bal} below threshold ₦${thresholds.termii} — alerting ${phones.length} phone(s), ${emails.length} email(s)`);
+        const msg = `⚠️ CSS RMS ALERT: Termii SMS balance is ₦${bal}. Threshold: ₦${thresholds.termii}. Top up now to avoid OTP failures. Repeats every 2h.`;
+        await _sendBalanceAlertSms(phones, msg);
+        for (const toEmail of emails) {
           const { text, html } = buildEmailContent({
             title: '⚠️ Termii SMS Balance Low',
             lines: [`Current balance: ₦${bal}`, `Alert threshold: ₦${thresholds.termii}`, 'Top up immediately — zero balance blocks all department account activations.', 'This alert repeats every 2 hours until the balance is above threshold.'],
@@ -4971,10 +5020,10 @@ async function checkSmsBalancesAndAlert() {
       const bal = parseFloat(twilioData.balance);
       if (bal < thresholds.twilio && now - _smsAlertLastSent.twilio > SMS_ALERT_COOLDOWN_MS) {
         _smsAlertLastSent.twilio = now;
-        logger.warn(`[SMS-ALERT] Twilio balance $${bal} is below threshold $${thresholds.twilio} — sending alert`);
-        const msg = `⚠️ CSS RMS ALERT: Twilio balance is $${bal} USD. Threshold: $${thresholds.twilio}. Top up to prevent SMS failures. This alert repeats every 2h.`;
-        await _sendBalanceAlertSms(phone, msg);
-        if (toEmail) {
+        logger.warn(`[SMS-ALERT] Twilio balance $${bal} below threshold $${thresholds.twilio} — alerting ${phones.length} phone(s), ${emails.length} email(s)`);
+        const msg = `⚠️ CSS RMS ALERT: Twilio balance is $${bal} USD. Threshold: $${thresholds.twilio}. Top up to prevent SMS failures. Repeats every 2h.`;
+        await _sendBalanceAlertSms(phones, msg);
+        for (const toEmail of emails) {
           const { text, html } = buildEmailContent({
             title: '⚠️ Twilio Balance Low',
             lines: [`Current balance: $${bal} USD`, `Alert threshold: $${thresholds.twilio} USD`, 'Top up your Twilio account to prevent SMS delivery failures.', 'This alert repeats every 2 hours until the balance is above threshold.'],
