@@ -217,12 +217,18 @@ const getViewFromHash = () => {
 // every 30 s. When maintenance is detected, the logged-in user is signed out
 // and this full-screen message is shown for all visitors on the production URL.
 const MaintenanceScreen = () => (
-  <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#0f1f12] via-[#1a3320] to-[#0f1f12] text-white p-8 text-center">
-    <div className="max-w-md space-y-6">
-      <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"/><path d="M12 8v4"/><path d="M12 16h.01"/>
-        </svg>
+  <div className="min-h-screen relative flex flex-col items-center justify-center bg-gradient-to-br from-[#0a1a0c] via-[#1a3320] to-[#0a1a0c] text-white p-8 text-center overflow-hidden">
+    {/* Full-page background logo */}
+    <img
+      src="/CSS_Group.png"
+      alt=""
+      aria-hidden="true"
+      className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+      style={{ opacity: 0.06, filter: 'brightness(3) saturate(0)' }}
+    />
+    <div className="relative z-10 max-w-md space-y-6">
+      <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
+        <img src="/CSS_Favicon.png" alt="CSS Group" className="w-full h-full object-contain p-1.5" />
       </div>
       <div>
         <h1 className="text-2xl font-black tracking-tight" style={{textWrap:'balance'}}>System Undergoing Maintenance</h1>
@@ -235,7 +241,6 @@ const MaintenanceScreen = () => (
         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
         Upgrade in progress — please check back soon
       </div>
-      <img src="/CSS_Group.png" alt="CSS Group" className="w-24 h-14 object-contain mx-auto opacity-30 mt-4" />
     </div>
   </div>
 );
