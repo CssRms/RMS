@@ -177,7 +177,10 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [savingAiCaps, setSavingAiCaps] = useState(false);
 
   // ── SMS balance alert settings ─────────────────────────────────────────────
-  const [smsAlertPhone, setSmsAlertPhone]               = useState('');
+  const [smsAlertPhones, setSmsAlertPhones]             = useState([]);
+  const [smsAlertPhoneInput, setSmsAlertPhoneInput]     = useState('');
+  const [smsAlertEmails, setSmsAlertEmails]             = useState([]);
+  const [smsAlertEmailInput, setSmsAlertEmailInput]     = useState('');
   const [smsAlertTermiiThreshold, setSmsAlertTermiiThreshold] = useState('1000');
   const [smsAlertTwilioThreshold, setSmsAlertTwilioThreshold] = useState('5');
   const [savingSmsAlerts, setSavingSmsAlerts]           = useState(false);
@@ -351,12 +354,20 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
     // Load SMS alert settings
     try {
-      const [phoneRes, tRes, wRes] = await Promise.allSettled([
+      const [phoneRes, emailRes, tRes, wRes] = await Promise.allSettled([
         settingsAPI.get('admin_alert_phone'),
+        settingsAPI.get('admin_alert_emails'),
         settingsAPI.get('sms_alert_termii_threshold'),
         settingsAPI.get('sms_alert_twilio_threshold'),
       ]);
-      if (phoneRes.status === 'fulfilled' && phoneRes.value?.value) setSmsAlertPhone(phoneRes.value.value);
+      if (phoneRes.status === 'fulfilled' && phoneRes.value?.value) {
+        try { const p = JSON.parse(phoneRes.value.value); setSmsAlertPhones(Array.isArray(p) ? p : [phoneRes.value.value]); }
+        catch { setSmsAlertPhones([phoneRes.value.value]); }
+      }
+      if (emailRes.status === 'fulfilled' && emailRes.value?.value) {
+        try { const e = JSON.parse(emailRes.value.value); setSmsAlertEmails(Array.isArray(e) ? e : []); }
+        catch {}
+      }
       if (tRes.status === 'fulfilled' && tRes.value?.value) setSmsAlertTermiiThreshold(tRes.value.value);
       if (wRes.status === 'fulfilled' && wRes.value?.value) setSmsAlertTwilioThreshold(wRes.value.value);
     } catch {}
@@ -454,7 +465,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
     setSavingSmsAlerts(true);
     try {
       await Promise.all([
-        settingsAPI.set('admin_alert_phone', smsAlertPhone.trim()),
+        settingsAPI.set('admin_alert_phone', JSON.stringify(smsAlertPhones)),
+        settingsAPI.set('admin_alert_emails', JSON.stringify(smsAlertEmails)),
         settingsAPI.set('sms_alert_termii_threshold', smsAlertTermiiThreshold || '1000'),
         settingsAPI.set('sms_alert_twilio_threshold', smsAlertTwilioThreshold || '5'),
       ]);
@@ -462,6 +474,17 @@ const WorkflowBuilder = ({ onViewChange }) => {
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to save SMS alert settings.');
     } finally { setSavingSmsAlerts(false); }
+  };
+
+  const addSmsPhone = () => {
+    const v = smsAlertPhoneInput.trim();
+    if (v && !smsAlertPhones.includes(v)) setSmsAlertPhones(p => [...p, v]);
+    setSmsAlertPhoneInput('');
+  };
+  const addSmsEmail = () => {
+    const v = smsAlertEmailInput.trim().toLowerCase();
+    if (v && !smsAlertEmails.includes(v)) setSmsAlertEmails(e => [...e, v]);
+    setSmsAlertEmailInput('');
   };
 
   // ── Turnstile per-department ───────────────────────────────────────────────
@@ -1043,7 +1066,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
               )}
             </div>
 
-            {/* SMS Balance Alerts — admin phone + thresholds */}
+            {/* SMS Balance Alerts — multi-phone + multi-email + thresholds */}
             <div className="glass bg-white/70 rounded-3xl border border-border/50 p-6 shadow-sm flex flex-col">
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
@@ -1066,20 +1089,64 @@ const WorkflowBuilder = ({ onViewChange }) => {
               </div>
 
               <div className="space-y-4">
-                {/* Admin alert phone */}
+                {/* Multi-phone tag input */}
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Admin alert phone number</label>
-                  <div className="flex items-center gap-2 bg-white border border-border/50 rounded-xl px-3 py-2 shadow-inner">
-                    <Phone size={13} className="text-muted-foreground shrink-0" />
-                    <input
-                      type="tel"
-                      placeholder="e.g. 08012345678 or +2348012345678"
-                      value={smsAlertPhone}
-                      onChange={e => setSmsAlertPhone(e.target.value)}
-                      className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none font-medium"
-                    />
+                  <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Alert phone numbers</label>
+                  {smsAlertPhones.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-1">
+                      {smsAlertPhones.map(p => (
+                        <span key={p} className="flex items-center gap-1 bg-red-50 border border-red-200 text-red-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                          {p}
+                          <button onClick={() => setSmsAlertPhones(prev => prev.filter(x => x !== p))} className="text-red-400 hover:text-red-600 ml-0.5 leading-none">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <div className="flex flex-1 items-center gap-2 bg-white border border-border/50 rounded-xl px-3 py-2 shadow-inner">
+                      <Phone size={13} className="text-muted-foreground shrink-0" />
+                      <input
+                        type="tel"
+                        placeholder="e.g. 08012345678 — press Enter to add"
+                        value={smsAlertPhoneInput}
+                        onChange={e => setSmsAlertPhoneInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSmsPhone(); } }}
+                        className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none font-medium"
+                      />
+                    </div>
+                    <button onClick={addSmsPhone} className="px-3 py-2 rounded-xl bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold transition-colors">Add</button>
                   </div>
-                  <p className="text-[9px] text-muted-foreground/50 leading-tight pl-1">Nigerian format (080…) or E.164 (+234…). Alert SMS goes to this number regardless of active provider.</p>
+                  <p className="text-[9px] text-muted-foreground/50 leading-tight pl-1">Nigerian format (080…) or E.164 (+234…). SMS alerts go to all numbers listed.</p>
+                </div>
+
+                {/* Multi-email tag input */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Additional alert email addresses</label>
+                  {smsAlertEmails.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-1">
+                      {smsAlertEmails.map(e => (
+                        <span key={e} className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                          {e}
+                          <button onClick={() => setSmsAlertEmails(prev => prev.filter(x => x !== e))} className="text-blue-400 hover:text-blue-600 ml-0.5 leading-none">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <div className="flex flex-1 items-center gap-2 bg-white border border-border/50 rounded-xl px-3 py-2 shadow-inner">
+                      <Mail size={13} className="text-muted-foreground shrink-0" />
+                      <input
+                        type="email"
+                        placeholder="email@example.com — press Enter to add"
+                        value={smsAlertEmailInput}
+                        onChange={e => setSmsAlertEmailInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSmsEmail(); } }}
+                        className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none font-medium"
+                      />
+                    </div>
+                    <button onClick={addSmsEmail} className="px-3 py-2 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold transition-colors">Add</button>
+                  </div>
+                  <p className="text-[9px] text-muted-foreground/50 leading-tight pl-1">These are added on top of SUPER_ADMIN_EMAIL. Email alerts go to all addresses.</p>
                 </div>
 
                 {/* Threshold inputs */}
@@ -1087,9 +1154,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Termii alert threshold (₦)</label>
                     <input
-                      type="number"
-                      min="0"
-                      placeholder="1000"
+                      type="number" min="0" placeholder="1000"
                       value={smsAlertTermiiThreshold}
                       onChange={e => setSmsAlertTermiiThreshold(e.target.value)}
                       className="w-full bg-white border border-border/50 rounded-xl px-3 py-2 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-red-300 shadow-inner"
@@ -1099,10 +1164,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[9px] font-black text-muted-foreground/60 uppercase tracking-[0.15em]">Twilio alert threshold ($)</label>
                     <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="5"
+                      type="number" min="0" step="0.01" placeholder="5"
                       value={smsAlertTwilioThreshold}
                       onChange={e => setSmsAlertTwilioThreshold(e.target.value)}
                       className="w-full bg-white border border-border/50 rounded-xl px-3 py-2 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-red-300 shadow-inner"
@@ -1113,7 +1175,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
 
                 <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200/60">
                   <AlertTriangle size={13} className="text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-amber-700 leading-relaxed">Alerts send every <strong>2 hours</strong> while balance stays below threshold. Email goes to <strong>SUPER_ADMIN_EMAIL</strong> env var. SMS goes to the phone number above.</p>
+                  <p className="text-[10px] text-amber-700 leading-relaxed">Alerts send every <strong>2 hours</strong> while balance stays below threshold. Email goes to <strong>SUPER_ADMIN_EMAIL</strong> + any addresses added above. SMS goes to all phone numbers listed.</p>
                 </div>
               </div>
             </div>

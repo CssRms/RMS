@@ -537,6 +537,7 @@ const Login = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const [turnstileRequiredDepts, setTurnstileRequiredDepts] = useState([]);
+  const [turnstileGloballyEnabled, setTurnstileGloballyEnabled] = useState(true);
   const turnstileRef = useRef(null);
   const widgetIdRef = useRef(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -576,6 +577,8 @@ const Login = () => {
     if (TURNSTILE_SITE_KEY) {
       fetch('/api/public/turnstile-config').then(r=>r.json()).then(d=>{
         if (Array.isArray(d?.requiredDepts)) setTurnstileRequiredDepts(d.requiredDepts.map(n => n.toLowerCase()));
+        // TURNSTILE_ENABLED=false in Railway env disables widget globally
+        if (d?.globallyEnabled === false) setTurnstileGloballyEnabled(false);
       }).catch(()=>{});
     }
     const handleOutside = e => {
@@ -589,7 +592,8 @@ const Login = () => {
   }, []);
 
   // Does the currently selected department require Turnstile?
-  const turnstileNeeded = !!(TURNSTILE_SITE_KEY && selectedDept && turnstileRequiredDepts.includes(selectedDept.toLowerCase()));
+  // Also gated by TURNSTILE_ENABLED env var via globallyEnabled flag from server.
+  const turnstileNeeded = !!(TURNSTILE_SITE_KEY && turnstileGloballyEnabled && selectedDept && turnstileRequiredDepts.includes(selectedDept.toLowerCase()));
 
   // Render Turnstile widget once the script is loaded
   useEffect(() => {
