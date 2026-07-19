@@ -154,6 +154,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [adminCreateMaterialEnabled, setAdminCreateMaterialEnabled] = useState(false);
   const [adminCreateMemoEnabled, setAdminCreateMemoEnabled]       = useState(false);
   const [savingFeatures, setSavingFeatures]         = useState(false);
+  const [settingsReady, setSettingsReady]           = useState(false);
 
   // ── Turnstile per-department ───────────────────────────────────────────────
   const [turnstileRequiredDepts, setTurnstileRequiredDepts] = useState([]);
@@ -589,6 +590,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         loadEmailStatus(),
         loadDeletedRecords(),
       ]);
+      setSettingsReady(true);
     })();
   }, []);
 
@@ -706,8 +708,14 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 Enable or disable system features for all users. Changes take effect immediately.
               </p>
             </div>
+            {!settingsReady && (
+              <div className="flex items-center gap-3 py-6 text-muted-foreground text-sm">
+                <Loader2 size={16} className="animate-spin shrink-0" />
+                Loading settings…
+              </div>
+            )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {settingsReady && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {[
                 { label: 'Document Studio', desc: 'Allows all users to access the Document Studio for printing and PDF generation. When disabled the Studio tab is hidden from the sidebar.', value: studioEnabled, set: setStudioEnabled },
                 { label: 'HR Portal', desc: 'Grants the HR department access to the HR management portal (employees, leave, attendance, payroll, recruitment). When disabled the HR Portal button is hidden from the sidebar.', value: hrPortalEnabled, set: setHrPortalEnabled },
@@ -835,10 +843,10 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 </div>
               </div>
 
-            </div>
+            </div>}
 
             {/* Compact status summary — wraps as pills instead of a tall vertical list */}
-            <div className="flex flex-wrap gap-2">
+            {settingsReady && <div className="flex flex-wrap gap-2">
               {[
                 { label: 'Document Studio', value: studioEnabled },
                 { label: 'HR Portal', value: hrPortalEnabled },
@@ -874,7 +882,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                 Login Screen: <span className="capitalize">{loginStyle}</span>
               </span>
-            </div>
+            </div>}
 
             <div className="flex lg:justify-end">
               <button

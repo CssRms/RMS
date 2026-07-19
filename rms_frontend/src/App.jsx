@@ -266,7 +266,7 @@ const MaintenanceScreen = () => (
       {/* Body text */}
       <p className="text-white/55 text-lg leading-relaxed max-w-sm mx-auto"
         style={{ textWrap:'balance', animation:'maintSlideUp .7s ease .25s both' }}>
-        The CSS Group RMS portal is currently being upgraded to serve you better.
+        The CSS Group RMS portal is currently undergoing an upgrade to serve you better.
         We'll be back shortly — thank you for your patience.
       </p>
 
@@ -292,7 +292,11 @@ const AppContent = () => {
   const [deptProfile, setDeptProfile] = useState(null);
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [deepLinkReqId, setDeepLinkReqId] = useState(null);
-  const [maintenance, setMaintenance] = useState(false);
+  // Seed from sessionStorage so the very first render already knows whether
+  // maintenance is on — eliminates the login→maintenance flash on reload.
+  const [maintenance, setMaintenance] = useState(
+    () => sessionStorage.getItem('rms_maintenance') === 'true'
+  );
   // Read cached value first so there is zero flash on refresh
   const [loginStyle, setLoginStyle] = useState(
     () => sessionStorage.getItem('rms_login_style') || null
@@ -313,8 +317,14 @@ const AppContent = () => {
   useEffect(() => {
     const checkMaintenance = () => {
       fetch('/api/public/app-status').then(r => r.json()).then(d => {
-        if (d?.maintenance) { setMaintenance(true); if (user) logout(); }
-        else setMaintenance(false);
+        if (d?.maintenance) {
+          sessionStorage.setItem('rms_maintenance', 'true');
+          setMaintenance(true);
+          if (user) logout();
+        } else {
+          sessionStorage.removeItem('rms_maintenance');
+          setMaintenance(false);
+        }
       }).catch(() => {});
     };
     checkMaintenance();
