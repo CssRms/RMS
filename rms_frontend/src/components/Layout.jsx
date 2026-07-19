@@ -420,8 +420,6 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
             <span className="ml-2 px-1.5 py-0.5 rounded-md bg-primary/5 border border-primary/10 text-[7px] text-primary/60 font-mono hidden md:inline-block">V1.0.4</span>
           </h1>
           <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-widest">RMS PORTAL</span>
-            <span className="text-[8px] text-muted-foreground/30">/</span>
             <span className="text-[8px] font-black text-primary uppercase tracking-widest">
               {currentView === 'dashboard' ? 'Overview' :
                 currentView === 'requisitions' ? 'Requisition Directory' :
