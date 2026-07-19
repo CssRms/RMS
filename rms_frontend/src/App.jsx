@@ -216,31 +216,72 @@ const getViewFromHash = () => {
 // Shown when MAINTENANCE_MODE=true in Railway. Polls /api/public/app-status
 // every 30 s. When maintenance is detected, the logged-in user is signed out
 // and this full-screen message is shown for all visitors on the production URL.
+const MAINT_CSS = `
+  @keyframes maintFadeUp   { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes maintFadeIn   { from { opacity:0; } to { opacity:1; } }
+  @keyframes maintSlideUp  { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes maintGlow     { 0%,100% { text-shadow:0 0 18px rgba(134,239,172,.18),0 0 40px rgba(134,239,172,.08); } 50% { text-shadow:0 0 32px rgba(134,239,172,.38),0 0 70px rgba(134,239,172,.18); } }
+  @keyframes maintPulseBar { 0%,100% { opacity:.35; transform:scaleX(.85); } 50% { opacity:.7; transform:scaleX(1); } }
+  @keyframes maintBadge    { 0%,100% { box-shadow:0 0 0 0 rgba(251,191,36,.22); } 60% { box-shadow:0 0 0 10px rgba(251,191,36,0); } }
+  @keyframes maintDot      { 0%,100% { opacity:.5; } 50% { opacity:1; } }
+  @keyframes maintIconBob  { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+  @keyframes maintScanline { 0% { transform:translateY(-100%); } 100% { transform:translateY(100vh); } }
+`;
 const MaintenanceScreen = () => (
   <div className="min-h-screen relative flex flex-col items-center justify-center bg-gradient-to-br from-[#0a1a0c] via-[#1a3320] to-[#0a1a0c] text-white p-8 text-center overflow-hidden">
+    <style>{MAINT_CSS}</style>
+
+    {/* Slow scanline shimmer */}
+    <div className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-white/6 to-transparent pointer-events-none"
+      style={{ animation:'maintScanline 8s linear infinite', top:0 }} />
+
     {/* Full-page background logo */}
-    <img
-      src="/CSS_Group.png"
-      alt=""
-      aria-hidden="true"
+    <img src="/CSS_Group.png" alt="" aria-hidden="true"
       className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-      style={{ opacity: 0.06, filter: 'brightness(3) saturate(0)' }}
-    />
-    <div className="relative z-10 max-w-md space-y-6">
-      <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
-        <img src="/CSS_Favicon.png" alt="CSS Group" className="w-full h-full object-contain p-1.5" />
+      style={{ opacity: 0.06, filter: 'brightness(3) saturate(0)' }} />
+
+    <div className="relative z-10 max-w-lg w-full space-y-8">
+
+      {/* Icon badge */}
+      <div className="w-24 h-24 mx-auto rounded-3xl bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden"
+        style={{ animation:'maintIconBob 3.5s ease-in-out infinite, maintFadeIn .6s ease both' }}>
+        <img src="/CSS_Favicon.png" alt="CSS Group" className="w-full h-full object-contain p-2" />
       </div>
-      <div>
-        <h1 className="text-2xl font-black tracking-tight" style={{textWrap:'balance'}}>System Undergoing Maintenance</h1>
-        <p className="mt-3 text-white/60 text-sm leading-relaxed" style={{textWrap:'balance'}}>
-          The CSS Group RMS portal is currently being upgraded to serve you better.
-          We'll be back shortly. Thank you for your patience.
+
+      {/* Headline */}
+      <div style={{ animation:'maintFadeUp .7s ease .1s both' }}>
+        <p className="text-xs font-black uppercase tracking-[0.42em] text-white/35 mb-3"
+          style={{ animation:'maintFadeIn .6s ease .05s both' }}>
+          CSS Group RMS
         </p>
+        <h1 className="text-4xl sm:text-5xl font-black tracking-tight leading-tight"
+          style={{ textWrap:'balance', animation:'maintGlow 4s ease-in-out infinite' }}>
+          System Undergoing<br/>Maintenance
+        </h1>
+        {/* Animated underline bar */}
+        <div className="mt-4 h-[3px] w-24 rounded-full bg-gradient-to-r from-green-400/60 via-green-300/80 to-green-400/60 mx-auto"
+          style={{ animation:'maintPulseBar 2.8s ease-in-out infinite', transformOrigin:'center' }} />
       </div>
-      <div className="flex items-center justify-center gap-2 text-white/40 text-xs">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
-        Upgrade in progress — please check back soon
+
+      {/* Body text */}
+      <p className="text-white/55 text-lg leading-relaxed max-w-sm mx-auto"
+        style={{ textWrap:'balance', animation:'maintSlideUp .7s ease .25s both' }}>
+        The CSS Group RMS portal is currently being upgraded to serve you better.
+        We'll be back shortly — thank you for your patience.
+      </p>
+
+      {/* Status row */}
+      <div className="flex items-center justify-center gap-3 text-white/45 text-sm font-medium"
+        style={{ animation:'maintSlideUp .7s ease .4s both' }}>
+        <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-amber-400/25 bg-amber-400/8"
+          style={{ animation:'maintBadge 2.4s ease-in-out infinite' }}>
+          <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" style={{ animation:'maintDot 1.2s ease-in-out infinite' }} />
+          Upgrade in progress
+        </span>
+        <span className="text-white/25">·</span>
+        <span className="text-white/35 text-xs">Please check back soon</span>
       </div>
+
     </div>
   </div>
 );
