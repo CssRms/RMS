@@ -393,3 +393,143 @@ To check or update allowed hostnames:
 | Login returns **400 Human verification failed** | Token expired (>5 min since widget loaded), or user submitted the form before the widget finished | Refresh the page and submit within a few seconds of the green checkmark appearing |
 | Widget spins indefinitely | Network cannot reach `challenges.cloudflare.com` (e.g. heavy corporate firewall) | Whitelist Cloudflare Turnstile endpoints, or disable Turnstile for affected departments |
 | Staff report they had to "click something" | Normal — rare challenge shown when browser or IP signals are unusual | No action needed; Turnstile showed a challenge as designed |
+
+---
+
+# Admin User Manual: Code Updates — GitHub Push & Merge Guide
+
+## Why this guide exists
+
+Every time a developer (or Claude) makes changes to the system, those changes need to reach two places:
+
+1. **Ephraimraxy/Pro-RMS** — your personal GitHub fork. Railway watches this repo and auto-deploys every push to `main`. This is what your live users see at `cssgrouprms.com`.
+2. **CssRms/RMS** — the organisation's official repo. This is the protected "source of truth" copy. Changes reach it through a Pull Request (PR) that must pass automated tests before merging.
+
+The live site is driven by the fork. CssRms/RMS is kept in sync so the codebase is never lost if something happens to the fork.
+
+---
+
+## How the two-repo flow works
+
+```
+Developer makes change on local machine
+        │
+        ├──▶  git push fork main          (Ephraimraxy/Pro-RMS)
+        │         └──▶ Railway detects push → auto-deploys to cssgrouprms.com  ✅
+        │
+        └──▶  git push CssRms dev         (CssRms/RMS — dev branch only)
+                  └──▶ You open a Pull Request: dev → main
+                            └──▶ GitHub runs CI (Build & Test, ~1–2 min)
+                                      └──▶ You click "Merge pull request"  ✅
+```
+
+**Key point:** the live site updates immediately when the fork is pushed. The PR to CssRms/RMS is a safety step — you do not need to merge it for the site to work, but you should merge it to keep the org repo in sync.
+
+---
+
+## Step-by-step: how to merge pending changes into CssRms/RMS
+
+Do this whenever you are told "changes have been pushed to the dev branch."
+
+### Step 1 — Go to the compare page
+
+Open your browser and go to:
+```
+https://github.com/CssRms/RMS/compare
+```
+
+You will see a page titled **"Compare changes"** with a list of recent branches at the bottom.
+
+### Step 2 — Select the dev branch
+
+In the example comparisons list at the bottom, click **`dev`**.
+
+The page reloads and now shows:
+- **base: main** ← **compare: dev**
+- A list of all commits that are in `dev` but not yet in `main`
+- A green **"Create pull request"** button in the top-right
+
+### Step 3 — Create the pull request
+
+Click the green **"Create pull request"** button.
+
+A form opens. The title and description are pre-filled. You do not need to change anything. Scroll down and click **"Create pull request"** again (the green button at the bottom of the form).
+
+### Step 4 — Wait for CI to pass
+
+GitHub will run two automated checks (called "Build & Test"). This takes about **1–2 minutes**.
+
+You will see orange spinning circles next to each check. Wait until they turn into **green ticks** ✅.
+
+If a check turns into a red ✗, do not merge — contact your developer to fix the failing test first.
+
+### Step 5 — Merge the pull request
+
+Once both checks are green, a **"Merge pull request"** button appears. Click it, then click **"Confirm merge"**.
+
+The `dev` branch is now merged into `main`. CssRms/RMS is fully up to date.
+
+---
+
+## How to check what is currently deployed vs what is pending
+
+### Check what is live on Railway
+
+1. Go to [railway.app](https://railway.app) and open your **RMS** project.
+2. Click the **RMS** service.
+3. Under **Deployments**, the top entry shows the latest deploy. Click it to see the commit hash and timestamp.
+4. Compare that commit hash to `github.com/Ephraimraxy/Pro-RMS/commits/main` — if they match, everything is live.
+
+### Check if CssRms/RMS is behind
+
+1. Go to `github.com/CssRms/RMS`.
+2. Near the top it will say something like **"This branch is N commits behind Ephraimraxy:main"** if it is out of date.
+3. If you see that message, follow the merge steps above.
+
+### Check what commits are pending (not yet on main)
+
+Go to:
+```
+https://github.com/CssRms/RMS/compare/main...dev
+```
+
+This shows every commit in `dev` that has not yet been merged to `main`. If the page says "There isn't anything to compare" — you are fully in sync.
+
+---
+
+## Removing the branch protection restriction (optional — for advanced admins)
+
+By default, CssRms/RMS requires a PR + CI check before anything can be merged to `main`. This is intentional to prevent untested code reaching the org repo. However, if you want to allow direct pushes (e.g. to avoid the PR step), you can change this:
+
+1. Go to `github.com/CssRms/RMS/settings/branches`.
+2. Under **Branch protection rules**, click **Edit** next to the `main` rule.
+3. Uncheck **"Do not allow bypassing the above settings"**.
+4. Click **Save changes**.
+
+After this, organisation admins can push directly to `main` without a PR. **Note:** CI will no longer run automatically, so be careful — only do this if you trust every push being made.
+
+---
+
+## Quick-reference cheat sheet
+
+| Task | Where to go |
+|---|---|
+| See what is live | railway.app → RMS project → Deployments |
+| See pending commits (dev vs main) | `github.com/CssRms/RMS/compare/main...dev` |
+| Open a PR (dev → main) | `github.com/CssRms/RMS/compare` → click `dev` → Create pull request |
+| See all open PRs | `github.com/CssRms/RMS/pulls` |
+| See CI results | `github.com/CssRms/RMS/actions` |
+| See recent deployments on fork | `github.com/Ephraimraxy/Pro-RMS/commits/main` |
+| Turn off branch protection | `github.com/CssRms/RMS/settings/branches` |
+
+---
+
+## What "CI" means and what it checks
+
+CI stands for **Continuous Integration** — automated tests that run on every PR to make sure the code compiles and passes basic checks before it can be merged. For this project, CI runs three things:
+
+1. **Backend syntax check** — confirms `serve.js` has no JavaScript syntax errors.
+2. **Backend tests** — runs any test files in `rms_backend/` (currently minimal).
+3. **Frontend build** — runs `npm run build` on the React app to confirm it compiles without errors.
+
+If all three pass, the PR can be merged. If any fail, the error must be fixed first. To see what failed, click **"Details"** next to the failing check on the PR page — it opens the full log showing exactly which line caused the problem.
