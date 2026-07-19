@@ -1576,9 +1576,13 @@ app.post('/api/auth/dept-login', authLimiter, async (req, res) => {
     const isSuperAdmin = dept.name.toLowerCase() === 'super admin';
     const trimmedAccess = accessCode.trim();
 
-    // ── Step 1: try the dept head's own access code ──────────────────────────
+    // ── Step 1: verify access code ───────────────────────────────────────────
+    // Super Admin MUST use SUPER_ADMIN_ACCESS_CODE env var — no DB fallback.
     let codeMatch = false;
-    if (isSuperAdmin && SUPER_ADMIN_ACCESS_CODE) {
+    if (isSuperAdmin) {
+      if (!SUPER_ADMIN_ACCESS_CODE) {
+        return res.status(500).json({ error: 'Super Admin access code not configured. Set SUPER_ADMIN_ACCESS_CODE in Railway environment variables.' });
+      }
       const provided = Buffer.from(trimmedAccess);
       const expected = Buffer.from(SUPER_ADMIN_ACCESS_CODE);
       codeMatch = provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
