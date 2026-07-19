@@ -722,8 +722,8 @@ const Login = () => {
       <AnimBg mobile />
 
       {/* ── Left Branding Panel ── */}
-      <div className="hidden lg:flex lg:w-[46%] bg-gradient-to-br from-[hsl(var(--primary))] via-[hsl(var(--primary)/0.88)] to-[hsl(var(--primary)/0.62)] text-white relative overflow-hidden flex-col justify-between p-10">
-        <div className="absolute inset-0 bg-black/26 z-0" />
+      <div className="hidden lg:flex lg:w-[46%] bg-gradient-to-br from-[#0a1a0c] via-[#1a3320] to-[#0a1a0c] text-white relative overflow-hidden flex-col justify-between p-10">
+        <div className="absolute inset-0 bg-black/20 z-0" />
         <AnimBg />
         <div className="absolute top-0 right-0 w-80 h-80 bg-white/4 rounded-full -translate-y-1/3 translate-x-1/3 blur-sm z-[2]" />
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/4 rounded-full translate-y-1/3 -translate-x-1/3 z-[2]" />
