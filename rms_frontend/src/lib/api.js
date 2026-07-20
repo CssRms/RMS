@@ -408,8 +408,8 @@ export const hrAPI = {
   },
 
   // Employees
-  async getEmployees() {
-    return api.get('/hr/employees');
+  async getEmployees(params = {}) {
+    return api.get('/hr/employees', { params });
   },
   async getEmployee(id) {
     return api.get(`/hr/employees/${id}`);
@@ -446,7 +446,7 @@ export const hrAPI = {
     return api.get(`/hr/employees/${employeeId}/leave-balances`);
   },
 
-  // Attendance
+  // Attendance — monthly manual grid
   async getAttendance(params = {}) {
     return api.get('/hr/attendance', { params });
   },
@@ -455,6 +455,19 @@ export const hrAPI = {
   },
   async updateAttendance(id, data) {
     return api.put(`/hr/attendance/${id}`, data);
+  },
+
+  // Attendance — biometric daily view
+  async getDailyAttendance(params = {}) {
+    return api.get('/hr/attendance/daily', { params });
+  },
+
+  // ZKTeco status & punch log
+  async getZKTecoStatus() {
+    return api.get('/hr/zkteco/status');
+  },
+  async getZKTecoPunches(params = {}) {
+    return api.get('/hr/zkteco/punches', { params });
   },
 
   // Payroll

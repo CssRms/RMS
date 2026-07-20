@@ -503,3 +503,62 @@ model DeletedRecord {
   deletedAt      DateTime @default(now())
   snapshot       Json
 }
+
+// ── HR Portal: Employee Directory ──────────────────────────────────────────────
+model HREmployee {
+  id          Int       @id @default(autoincrement())
+  staffId     String    @unique // matches ZKTeco enroll number
+  firstName   String
+  lastName    String
+  otherName   String?
+  email       String?
+  phone       String?
+  department  String?
+  position    String?
+  status      String    @default("active") // "active" | "inactive" | "terminated"
+  photoKey    String?
+  joinDate    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ── HR Portal: Raw biometric punches from ZKTeco devices ──────────────────────
+// staffId is a soft reference to HREmployee.staffId (no FK so unregistered punches still land)
+model ZKAttendancePunch {
+  id           Int      @id @default(autoincrement())
+  staffId      String
+  punchTime    DateTime
+  punchType    Int      @default(0) // 0=check-in, 1=check-out, 4=break-out, 5=break-in
+  verifyType   Int      @default(1) // 1=fingerprint, 4=face, 15=manual
+  deviceSerial String?
+  source       String   @default("adms") // "adms" | "agent" | "manual"
+  isDuplicate  Boolean  @default(false)
+  isFlagged    Boolean  @default(false)
+  flagReason   String?
+
+  @@unique([staffId, punchTime])
+  @@index([staffId, punchTime])
+  @@index([punchTime])
+}
+
+// ── HR Portal: Computed daily attendance record per staff ──────────────────────
+model HRAttendanceRecord {
+  id           Int      @id @default(autoincrement())
+  staffId      String
+  date         DateTime @db.Date
+  firstPunch   DateTime?
+  lastPunch    DateTime?
+  punchCount   Int      @default(0)
+  isPresent    Boolean  @default(false)
+  hoursWorked  Float?
+  isFlagged    Boolean  @default(false)
+  flagReason   String?
+  manualStatus String?  // null=computed from punches, "P"/"A"/"L"/"LV"/"H"=override
+  manualNote   String?
+  manualBy     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([staffId, date])
+  @@index([date])
+}

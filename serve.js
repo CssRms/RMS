@@ -9287,27 +9287,165 @@ Return ONLY a JSON object (no extra text):
 // ── HR PORTAL ROUTES ──────────────────────────────────────────────────────────
 const hrAuth = [authenticateToken];
 
+// ── Conspiracy / duplicate punch detection ────────────────────────────────────
+// Returns flags to attach to a newly-arrived punch.
+async function zkCheckPunch(staffId, punchTime) {
+  const t = new Date(punchTime);
+  const flags = { isDuplicate: false, isFlagged: false, flagReason: null };
+
+  // 1. Duplicate: same staff punched within 30 seconds
+  const thirtySecAgo = new Date(t.getTime() - 30_000);
+  const thirtySecFwd  = new Date(t.getTime() + 30_000);
+  const nearby = await prisma.zKAttendancePunch.count({
+    where: { staffId, punchTime: { gte: thirtySecAgo, lte: thirtySecFwd } },
+  });
+  if (nearby > 0) { flags.isDuplicate = true; return flags; }
+
+  // 2. Conspiracy: 10+ DIFFERENT employees all punched in a 60-second burst
+  const sixtySecAgo = new Date(t.getTime() - 60_000);
+  const burst = await prisma.zKAttendancePunch.groupBy({
+    by: ['staffId'],
+    where: { punchTime: { gte: sixtySecAgo, lte: t }, isDuplicate: false },
+    _count: { staffId: true },
+  });
+  if (burst.length >= 10) {
+    flags.isFlagged = true;
+    flags.flagReason = `Suspicious burst: ${burst.length} different staff within 60s`;
+  }
+  return flags;
+}
+
+// Upsert the daily HRAttendanceRecord for a given staffId + punchTime.
+async function zkUpdateDailyRecord(staffId, punchTime) {
+  const date = new Date(punchTime);
+  date.setHours(0, 0, 0, 0);
+
+  const existing = await prisma.hRAttendanceRecord.findUnique({
+    where: { staffId_date: { staffId, date } },
+  });
+
+  if (!existing) {
+    await prisma.hRAttendanceRecord.create({
+      data: {
+        staffId, date,
+        firstPunch: punchTime, lastPunch: punchTime,
+        punchCount: 1, isPresent: true,
+        hoursWorked: 0,
+      },
+    });
+  } else {
+    const first = existing.firstPunch && punchTime < existing.firstPunch ? punchTime : existing.firstPunch;
+    const last  = existing.lastPunch  && punchTime > existing.lastPunch  ? punchTime : existing.lastPunch;
+    const hours = first && last ? (last - first) / 3_600_000 : existing.hoursWorked;
+    await prisma.hRAttendanceRecord.update({
+      where: { staffId_date: { staffId, date } },
+      data: { firstPunch: first, lastPunch: last, punchCount: { increment: 1 }, isPresent: true, hoursWorked: hours },
+    });
+  }
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────────
 app.get('/api/hr/stats', hrAuth, async (req, res) => {
-  res.json({ employees: 0, pendingLeaves: 0, attendanceRate: 0, openPositions: 0 });
+  try {
+    const [empCount, today] = await Promise.all([
+      prisma.hREmployee.count({ where: { status: 'active' } }),
+      (async () => {
+        const d = new Date(); d.setHours(0,0,0,0);
+        const [present, total] = await Promise.all([
+          prisma.hRAttendanceRecord.count({ where: { date: d, isPresent: true } }),
+          prisma.hREmployee.count({ where: { status: 'active' } }),
+        ]);
+        return total > 0 ? Math.round((present / total) * 100) : 0;
+      })(),
+    ]);
+    res.json({ employees: empCount, pendingLeaves: 0, attendanceRate: today, openPositions: 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/hr/employees', hrAuth, async (req, res) => { res.json([]); });
+// ── Employee Directory ─────────────────────────────────────────────────────────
+app.get('/api/hr/employees', hrAuth, async (req, res) => {
+  try {
+    const { status, department, search, page = 1, limit = 200 } = req.query;
+    const where = {};
+    if (status) where.status = status;
+    if (department) where.department = department;
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName:  { contains: search, mode: 'insensitive' } },
+        { staffId:   { contains: search, mode: 'insensitive' } },
+        { email:     { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    const skip = (Number(page) - 1) * Number(limit);
+    const [results, total] = await Promise.all([
+      prisma.hREmployee.findMany({ where, orderBy: { lastName: 'asc' }, skip, take: Number(limit) }),
+      prisma.hREmployee.count({ where }),
+    ]);
+    res.json({ results, total, page: Number(page) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/hr/employees', hrAuth, async (req, res) => {
-  res.status(201).json({ id: Date.now(), ...req.body, createdAt: new Date() });
-});
-app.get('/api/hr/employees/:id', hrAuth, async (req, res) => {
-  res.status(404).json({ error: 'Employee not found' });
-});
-app.put('/api/hr/employees/:id', hrAuth, async (req, res) => {
-  res.json({ id: req.params.id, ...req.body });
-});
-app.delete('/api/hr/employees/:id', hrAuth, async (req, res) => {
-  res.json({ success: true });
-});
-app.post('/api/hr/employees/:id/photo', hrAuth, upload.single('file'), async (req, res) => {
-  res.json({ id: req.params.id, photoUrl: null });
+  try {
+    const { staffId, firstName, lastName, otherName, email, phone, department, position, joinDate } = req.body;
+    if (!staffId || !firstName || !lastName) return res.status(400).json({ error: 'staffId, firstName, lastName are required' });
+    const emp = await prisma.hREmployee.create({
+      data: { staffId: staffId.trim().toUpperCase(), firstName, lastName, otherName, email, phone, department, position,
+              joinDate: joinDate ? new Date(joinDate) : null },
+    });
+    res.status(201).json(emp);
+  } catch (e) {
+    if (e.code === 'P2002') return res.status(409).json({ error: 'Staff ID already exists' });
+    res.status(500).json({ error: e.message });
+  }
 });
 
+app.get('/api/hr/employees/:id', hrAuth, async (req, res) => {
+  try {
+    const emp = await prisma.hREmployee.findUnique({ where: { id: Number(req.params.id) } });
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    res.json(emp);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/hr/employees/:id', hrAuth, async (req, res) => {
+  try {
+    const { staffId, firstName, lastName, otherName, email, phone, department, position, status, joinDate } = req.body;
+    const data = {};
+    if (staffId  !== undefined) data.staffId   = staffId.trim().toUpperCase();
+    if (firstName !== undefined) data.firstName = firstName;
+    if (lastName  !== undefined) data.lastName  = lastName;
+    if (otherName !== undefined) data.otherName = otherName;
+    if (email     !== undefined) data.email     = email;
+    if (phone     !== undefined) data.phone     = phone;
+    if (department!== undefined) data.department= department;
+    if (position  !== undefined) data.position  = position;
+    if (status    !== undefined) data.status    = status;
+    if (joinDate  !== undefined) data.joinDate  = joinDate ? new Date(joinDate) : null;
+    const emp = await prisma.hREmployee.update({ where: { id: Number(req.params.id) }, data });
+    res.json(emp);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/hr/employees/:id', hrAuth, async (req, res) => {
+  try {
+    await prisma.hREmployee.update({ where: { id: Number(req.params.id) }, data: { status: 'terminated' } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/hr/employees/:id/photo', hrAuth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const key = `hr-photos/${req.params.id}-${Date.now()}`;
+    const s3key = await uploadToS3(req.file.buffer, key, req.file.mimetype);
+    await prisma.hREmployee.update({ where: { id: Number(req.params.id) }, data: { photoKey: s3key } });
+    res.json({ photoKey: s3key });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Leaves (stub — kept for UI compatibility) ──────────────────────────────────
 app.get('/api/hr/leaves', hrAuth, async (req, res) => { res.json([]); });
 app.post('/api/hr/leaves', hrAuth, async (req, res) => {
   res.status(201).json({ id: Date.now(), ...req.body, status: 'pending', createdAt: new Date() });
@@ -9322,22 +9460,263 @@ app.get('/api/hr/leaves/balances/:employeeId', hrAuth, async (req, res) => {
   res.json({ annual: 20, sick: 10, used: 0 });
 });
 
-app.get('/api/hr/attendance', hrAuth, async (req, res) => { res.json([]); });
-app.post('/api/hr/attendance', hrAuth, async (req, res) => {
-  res.status(201).json({ id: Date.now(), ...req.body, createdAt: new Date() });
-});
-app.put('/api/hr/attendance/:id', hrAuth, async (req, res) => {
-  res.json({ id: req.params.id, ...req.body });
+// ── Manual Attendance (monthly grid marks) ────────────────────────────────────
+app.get('/api/hr/attendance', hrAuth, async (req, res) => {
+  try {
+    const { year, month } = req.query;
+    if (!year || !month) return res.json([]);
+    const start = new Date(Number(year), Number(month) - 1, 1);
+    const end   = new Date(Number(year), Number(month), 0, 23, 59, 59);
+    const records = await prisma.hRAttendanceRecord.findMany({
+      where: { date: { gte: start, lte: end } },
+      orderBy: { date: 'asc' },
+    });
+    // Return in format AttendanceTracker expects: { employeeId, date, status }
+    const emps = await prisma.hREmployee.findMany({ select: { id: true, staffId: true } });
+    const idMap = Object.fromEntries(emps.map(e => [e.staffId, e.id]));
+    res.json(records.map(r => ({
+      id: r.id,
+      employeeId: idMap[r.staffId] ?? r.staffId,
+      staffId: r.staffId,
+      date: r.date,
+      status: r.manualStatus || (r.isPresent ? 'P' : ''),
+      firstPunch: r.firstPunch,
+      lastPunch: r.lastPunch,
+      hoursWorked: r.hoursWorked,
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/hr/attendance', hrAuth, async (req, res) => {
+  try {
+    const { employeeId, staffId: rawStaffId, date, status } = req.body;
+    // Resolve staffId from employeeId (numeric) or rawStaffId
+    let resolvedStaffId = rawStaffId;
+    if (!resolvedStaffId && employeeId) {
+      const emp = await prisma.hREmployee.findUnique({ where: { id: Number(employeeId) }, select: { staffId: true } });
+      resolvedStaffId = emp?.staffId;
+    }
+    if (!resolvedStaffId || !date) return res.status(400).json({ error: 'staffId and date required' });
+    const d = new Date(date); d.setHours(0,0,0,0);
+    const rec = await prisma.hRAttendanceRecord.upsert({
+      where: { staffId_date: { staffId: resolvedStaffId, date: d } },
+      update: { manualStatus: status, isPresent: ['P','L'].includes(status) },
+      create: { staffId: resolvedStaffId, date: d, manualStatus: status, isPresent: ['P','L'].includes(status) },
+    });
+    res.status(201).json({ id: rec.id, employeeId, staffId: resolvedStaffId, date, status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/hr/attendance/:id', hrAuth, async (req, res) => {
+  try {
+    const { status, manualNote, manualBy } = req.body;
+    const rec = await prisma.hRAttendanceRecord.update({
+      where: { id: Number(req.params.id) },
+      data: { manualStatus: status, manualNote, manualBy, isPresent: ['P','L'].includes(status) },
+    });
+    res.json(rec);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Biometric Attendance: Daily View ──────────────────────────────────────────
+app.get('/api/hr/attendance/daily', hrAuth, async (req, res) => {
+  try {
+    const { date, department } = req.query;
+    const d = date ? new Date(date) : new Date();
+    d.setHours(0,0,0,0);
+
+    const empWhere = { status: 'active' };
+    if (department) empWhere.department = department;
+    const employees = await prisma.hREmployee.findMany({ where: empWhere, orderBy: { lastName: 'asc' } });
+
+    const records = await prisma.hRAttendanceRecord.findMany({ where: { date: d } });
+    const recMap = Object.fromEntries(records.map(r => [r.staffId, r]));
+
+    const result = employees.map(emp => {
+      const rec = recMap[emp.staffId];
+      const status = rec?.manualStatus || (rec?.isPresent ? 'P' : 'A');
+      return {
+        staffId:    emp.staffId,
+        firstName:  emp.firstName,
+        lastName:   emp.lastName,
+        otherName:  emp.otherName,
+        department: emp.department,
+        position:   emp.position,
+        isPresent:  rec?.isPresent ?? false,
+        status,
+        firstPunch: rec?.firstPunch ?? null,
+        lastPunch:  rec?.lastPunch  ?? null,
+        hoursWorked: rec?.hoursWorked ?? null,
+        punchCount:  rec?.punchCount ?? 0,
+        isFlagged:   rec?.isFlagged ?? false,
+        flagReason:  rec?.flagReason ?? null,
+      };
+    });
+    res.json({ date: d, results: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── ZKTeco Sync Agent: bulk upload (from local PC running zk-sync-agent.js) ────
+const ZKTECO_SYNC_SECRET = process.env.ZKTECO_SYNC_SECRET;
+const zkSyncAuth = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (ZKTECO_SYNC_SECRET && token !== ZKTECO_SYNC_SECRET) return res.status(401).json({ error: 'Invalid sync secret' });
+  next();
+};
+
+app.post('/api/hr/zkteco/upload', zkSyncAuth, async (req, res) => {
+  try {
+    const { punches, deviceSerial } = req.body;
+    if (!Array.isArray(punches) || punches.length === 0) return res.status(400).json({ error: 'punches array required' });
+
+    let saved = 0, duplicates = 0, flagged = 0, errors = 0;
+    for (const p of punches) {
+      try {
+        const { staffId, punchTime, punchType = 0, verifyType = 1 } = p;
+        if (!staffId || !punchTime) { errors++; continue; }
+        const sid = String(staffId).trim().toUpperCase();
+        const pt  = new Date(punchTime);
+        const { isDuplicate, isFlagged, flagReason } = await zkCheckPunch(sid, pt);
+        if (isDuplicate) { duplicates++; continue; }
+        if (isFlagged) flagged++;
+        await prisma.zKAttendancePunch.upsert({
+          where: { staffId_punchTime: { staffId: sid, punchTime: pt } },
+          update: {},
+          create: { staffId: sid, punchTime: pt, punchType, verifyType, deviceSerial, source: 'agent', isFlagged, flagReason },
+        });
+        if (!isDuplicate) await zkUpdateDailyRecord(sid, pt);
+        saved++;
+      } catch { errors++; }
+    }
+    res.json({ saved, duplicates, flagged, errors, total: punches.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── ZKTeco ADMS Protocol (device pushes directly to Railway URL) ──────────────
+// Device registers and polls
+app.get('/iclock/cdata', async (req, res) => {
+  const sn = req.query.SN || 'UNKNOWN';
+  logger.info({ sn }, 'ZKTeco ADMS registration');
+  // Tell device to push attendance in real-time with no encryption
+  res.set('Content-Type', 'text/plain').send(
+`GET OPTION FROM: ${sn}
+ATTLOGStamp=None
+OPERLOGStamp=None
+ATTPHOTOStamp=None
+ErrorDelay=30
+Delay=10
+TransTimes=00:00;23:59
+TransInterval=1
+TransFlag=0011011000000000
+Realtime=1
+Encrypt=None
+ServerVer=2.4.1 2015-04-14
+PushProtVer=2.2.14 1.3.1
+PushOptionsFlag=1
+`);
+});
+
+// Device pushes attendance records
+app.post('/iclock/cdata', async (req, res) => {
+  try {
+    const sn    = req.query.SN || req.body?.SN || 'UNKNOWN';
+    const table = req.query.table || req.body?.table || '';
+    const stamp = req.query.Stamp || req.body?.Stamp;
+
+    if (table !== 'ATTLOG') { res.set('Content-Type','text/plain').send('OK'); return; }
+
+    // Body is URL-encoded: data=ATTLOG\tSTAFFID\tYYYY-MM-DD HH:MM:SS\tTYPE\tVERIFY\t0\t0\n...
+    let rawData = req.body?.data || '';
+    if (!rawData && typeof req.body === 'string') rawData = req.body;
+
+    const lines = rawData.split(/\r?\n/).filter(l => l.startsWith('ATTLOG'));
+    let saved = 0, duplicates = 0;
+    for (const line of lines) {
+      const parts = line.split(/\t/);
+      // ATTLOG \t enrollNum \t dateTime \t status \t verify \t workCode \t reserved
+      if (parts.length < 3) continue;
+      const staffId   = String(parts[1]).trim().toUpperCase();
+      const punchTime = new Date(parts[2].trim());
+      const punchType = parseInt(parts[3] || '0', 10);
+      const verifyType= parseInt(parts[4] || '1', 10);
+      if (!staffId || isNaN(punchTime.getTime())) continue;
+
+      const { isDuplicate, isFlagged, flagReason } = await zkCheckPunch(staffId, punchTime);
+      if (isDuplicate) { duplicates++; continue; }
+      try {
+        await prisma.zKAttendancePunch.upsert({
+          where: { staffId_punchTime: { staffId, punchTime } },
+          update: {},
+          create: { staffId, punchTime, punchType, verifyType, deviceSerial: sn, source: 'adms', isFlagged, flagReason },
+        });
+        await zkUpdateDailyRecord(staffId, punchTime);
+        saved++;
+      } catch {}
+    }
+    logger.info({ sn, lines: lines.length, saved, duplicates }, 'ADMS punch batch');
+    res.set('Content-Type','text/plain').send('OK');
+  } catch (e) {
+    logger.error(e, 'ADMS cdata error');
+    res.set('Content-Type','text/plain').send('OK'); // Always ACK so device doesn't retry infinitely
+  }
+});
+
+// Device polls for pending commands (heartbeat)
+app.get('/iclock/getrequest', (req, res) => {
+  res.set('Content-Type','text/plain').send('OK');
+});
+
+// Device sends command result
+app.post('/iclock/devicecmd', (req, res) => {
+  res.set('Content-Type','text/plain').send('OK');
+});
+
+// ── ZKTeco status & punch log ─────────────────────────────────────────────────
+app.get('/api/hr/zkteco/status', hrAuth, async (req, res) => {
+  try {
+    const last = await prisma.zKAttendancePunch.findFirst({ orderBy: { punchTime: 'desc' } });
+    const today = new Date(); today.setHours(0,0,0,0);
+    const [todayCount, flaggedCount, totalPunches] = await Promise.all([
+      prisma.zKAttendancePunch.count({ where: { punchTime: { gte: today }, isDuplicate: false } }),
+      prisma.zKAttendancePunch.count({ where: { isFlagged: true } }),
+      prisma.zKAttendancePunch.count({ where: { isDuplicate: false } }),
+    ]);
+    res.json({
+      lastPunchAt: last?.punchTime ?? null,
+      lastDevice:  last?.deviceSerial ?? null,
+      lastSource:  last?.source ?? null,
+      todayPunches: todayCount,
+      flaggedPunches: flaggedCount,
+      totalPunches,
+      admsEndpoint: `${process.env.APP_BASE_URL || ''}/iclock/cdata`,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hr/zkteco/punches', hrAuth, async (req, res) => {
+  try {
+    const { date, staffId, flagged } = req.query;
+    const where = {};
+    if (date) { const d = new Date(date); d.setHours(0,0,0,0); const d2 = new Date(d); d2.setDate(d2.getDate()+1); where.punchTime = { gte: d, lt: d2 }; }
+    if (staffId) where.staffId = staffId;
+    if (flagged === 'true') where.isFlagged = true;
+    const punches = await prisma.zKAttendancePunch.findMany({
+      where, orderBy: { punchTime: 'desc' }, take: 500,
+    });
+    res.json(punches);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Payroll (stub) ────────────────────────────────────────────────────────────
 app.get('/api/hr/payroll', hrAuth, async (req, res) => { res.json([]); });
 app.post('/api/hr/payroll/process', hrAuth, async (req, res) => {
-  res.json({ processed: 0, message: 'No employees configured yet' });
+  res.json({ processed: 0, message: 'No payroll engine configured yet' });
 });
 app.put('/api/hr/payroll/:id/paid', hrAuth, async (req, res) => {
   res.json({ id: req.params.id, status: 'paid' });
 });
 
+// ── Recruitment (stub) ────────────────────────────────────────────────────────
 app.get('/api/hr/jobs', hrAuth, async (req, res) => { res.json([]); });
 app.post('/api/hr/jobs', hrAuth, async (req, res) => {
   res.status(201).json({ id: Date.now(), ...req.body, status: 'open', createdAt: new Date() });
