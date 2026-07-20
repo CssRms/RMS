@@ -533,3 +533,191 @@ CI stands for **Continuous Integration** — automated tests that run on every P
 3. **Frontend build** — runs `npm run build` on the React app to confirm it compiles without errors.
 
 If all three pass, the PR can be merged. If any fail, the error must be fixed first. To see what failed, click **"Details"** next to the failing check on the PR page — it opens the full log showing exactly which line caused the problem.
+
+---
+
+# Admin User Manual: ZKTeco Biometric Attendance
+
+## Overview
+
+The RMS portal integrates with ZKTeco fingerprint/face-recognition attendance devices. Every punch a staff member makes on the device is recorded in the portal automatically. No manual entry is needed for days where the device is running.
+
+There are **two ways the device can sync with the portal** — you can use either one, or both at the same time:
+
+| Method | How it works | When to use |
+|---|---|---|
+| **ADMS / Cloud Push** | The device itself calls the portal URL over the internet every time someone punches | Best option when the device has an internet connection or SIM card |
+| **Local Sync Agent** | A script runs on your PC, connects to the device over your office LAN, and uploads all logs to the portal | Use this when the device has no internet access, or as a manual on-demand option |
+
+---
+
+## Navigating the Attendance Tracker
+
+The Attendance Tracker is inside **HR Portal → Attendance Tracker**. It has three tabs:
+
+### Tab 1: Daily Biometric
+
+This is the main daily view. It shows every active employee for a selected date and whether they were present or absent based on biometric punches.
+
+**What you see:**
+- A date picker at the top — defaults to today. Use it to view any past date.
+- A department filter — select "All Departments" or filter to a specific one.
+- A table showing:
+  - **Staff ID** and **full name** (First, Last, Other)
+  - **Department**
+  - **Status** — a green "Present" badge or a red "Absent" badge
+  - **Check-In** — time of first punch that day
+  - **Check-Out** — time of last punch that day
+  - **Hours** — calculated from first to last punch
+  - **Punches** — total punch count that day (a staff who punches in and out for lunch will show 4)
+  - A yellow "Flagged" badge if the system detected unusual activity (see conspiracy detection below)
+- Summary pills at the top showing total Present / Absent / Flagged counts
+- **Export CSV** button to download the day's full attendance list
+
+**How to use it:**
+1. Open **HR Portal** → **Attendance Tracker**
+2. The "Daily Biometric" tab opens by default
+3. Change the date if you want a past day
+4. Use the department dropdown to narrow by team
+5. Click "Refresh" to reload if you expect new punches
+
+**Staff ID must match the device enroll number.** If a staff punches on the device but is not in the portal's Employee Directory (or their Staff ID doesn't match), they will not appear in the daily table. Add them first in the Employee Directory using their exact device enroll number as the Staff ID.
+
+---
+
+### Tab 2: Monthly Calendar
+
+The manual attendance grid — same as the original tracker. Use this for:
+- Marking holidays, leave days, or late arrivals that the biometric device cannot capture
+- Reviewing a full month at a glance
+- Downloading a full monthly CSV
+
+Click any cell to mark it P (Present), L (Late), A (Absent), H (Holiday), or LV (On Leave). Weekend cells are locked automatically.
+
+**Note:** Manual marks on this tab set a "manual override" status. The daily biometric tab shows the biometric data (punch times). Both are stored separately — a manual "H" on a public holiday does not erase the biometric record, it just adds a label HR can see.
+
+---
+
+### Tab 3: ZKTeco / Sync
+
+This is the device control panel. It shows:
+- **Last Punch Received** — timestamp of the most recent punch the portal received from any device
+- **Today's Punches** — total biometric punches received today
+- **Flagged Punches** — punches the system marked as suspicious
+
+It also has the setup guides for both sync methods (see sections below).
+
+---
+
+## Setting Up the Device — Method A: ADMS Cloud Push (Recommended)
+
+This is the easiest option if the ZKTeco device has internet access (via Ethernet cable, Wi-Fi, or a SIM card data plan).
+
+**One-time configuration on the device:**
+
+1. On the ZKTeco device, go to **Comm → Cloud Server** (exact menu name varies by model — may also be labelled "ADMS", "Web Server", or "HTTP Server")
+2. Set **Server Address** to: the URL shown in the "ZKTeco / Sync" tab under "Option A — Cloud Push". It looks like:
+   ```
+   https://your-app.up.railway.app/iclock/cdata
+   ```
+3. Set **Port** to `443` (for HTTPS) or `80` (for HTTP)
+4. Enable **Real-time Upload** (or "Real-time Push")
+5. Save and restart the device if prompted
+
+**That is the entire setup.** Once configured, every fingerprint or face scan on the device sends a punch to the portal within seconds. No PC needs to be running. The device works even at night or on weekends.
+
+**The enroll number on the device is the Staff ID.** When enrolling a new staff member's fingerprint, the device asks for an "Enroll Number" or "User ID". Enter the staff member's Staff ID (e.g. `CSS001`) exactly as it appears in the portal's Employee Directory. If they don't match, the punch arrives at the portal but cannot be linked to any employee — it will be stored but won't appear in the daily table.
+
+---
+
+## Setting Up the Sync Agent — Method B: Local Network (from any PC)
+
+Use this if the device has no internet connection, or if you want to do a one-time bulk upload from historical device memory.
+
+**You can run this from any PC that is connected to the same network (office LAN, or your phone's hotspot) as the device.** It connects to the device directly, reads all attendance logs, and uploads them to Railway.
+
+### First time setup
+
+1. Copy the file `zk-sync-agent.js` from the project root to a folder on your PC (e.g. `C:\CSS-Sync\`)
+2. In that same folder, create a file named `.env` with the following content:
+   ```
+   ZKTECO_IP=192.168.1.100
+   RAILWAY_API_URL=https://your-app.up.railway.app
+   ZKTECO_SYNC_SECRET=your-secret-value
+   ```
+   - Replace `192.168.1.100` with the actual IP address of your ZKTeco device (find it on the device under Comm → Ethernet or Network Settings)
+   - Replace the Railway URL with your actual app URL
+   - `ZKTECO_SYNC_SECRET` must match the value of `ZKTECO_SYNC_SECRET` in your Railway environment variables (set it once in Railway, use the same value here)
+3. Install Node.js on the PC if not already installed (nodejs.org — free download)
+4. Open a terminal (Command Prompt or PowerShell) in that folder and run:
+   ```
+   npm install node-zklib dotenv
+   ```
+
+### Running a sync
+
+**Scenario 1: Run once right now (manual)**
+```
+node zk-sync-agent.js
+```
+This connects to the device, reads all records since the last sync, and uploads them. It prints a summary at the end: how many punches were saved, how many were duplicates, and how many were flagged.
+
+**Scenario 2: Auto-sync every 30 minutes (runs in the background)**
+```
+node zk-sync-agent.js --schedule=30
+```
+Keep this terminal window open. The agent will sync automatically every 30 minutes. Change `30` to any number of minutes you prefer.
+
+**Scenario 3: Using your phone's hotspot**
+If you're not in the office and need to sync from home:
+1. Connect the ZKTeco device to your phone hotspot (or bring a laptop that has been connected to the device's LAN before)
+2. Confirm the device is reachable from your laptop (try `ping 192.168.x.x` from terminal)
+3. Connect your laptop to the same hotspot
+4. Run `node zk-sync-agent.js` as normal
+
+**The agent only uploads NEW records each run.** It saves a `.last_sync` file in its folder tracking the timestamp of the last-uploaded punch. The next run only reads records newer than that timestamp, so re-running it repeatedly doesn't cause duplicates.
+
+---
+
+## Duplicate & Conspiracy Detection
+
+The portal automatically protects against two types of false data:
+
+### Duplicate Punches (30-second rule)
+If the same staff member punches more than once within 30 seconds (e.g. accidentally taps the device twice), the second punch is marked as a duplicate and **not counted** in the daily attendance record. It is stored in the database but does not change the check-in/check-out time or punch count.
+
+### Conspiracy Detection (burst rule)
+If **10 or more different employees** all punch within a 60-second window, the system flags all of those punches as suspicious. This detects the scenario where one person is swiping multiple colleagues' cards or pressing multiple enrolled fingers rapidly. Flagged punches are still saved and the staff are still shown as present — but a yellow "Flagged" badge appears on their row in the daily table, and the count appears in the ZKTeco / Sync tab under "Flagged Punches."
+
+**What to do when punches are flagged:**
+1. Go to the "Daily Biometric" tab for that date
+2. Look for the yellow "Flagged" badges — hover over them to see the reason
+3. Verify with the staff involved whether they actually attended that day
+4. If attendance is confirmed, no further action is needed (present = present)
+5. If you suspect misconduct, investigate through normal HR channels
+
+---
+
+## Required Railway Environment Variables
+
+Set these once in Railway → your service → Variables:
+
+| Variable | Purpose |
+|---|---|
+| `ZKTECO_SYNC_SECRET` | Secret token the sync agent must send when uploading. Can be any random string — just keep it secret. Leave blank to disable authentication (not recommended). |
+
+The ADMS device push endpoint (`/iclock/cdata`) does NOT require a secret — ZKTeco devices cannot send custom headers. Keep your Railway URL private to prevent unauthorised punch submissions.
+
+---
+
+## Troubleshooting
+
+| Problem | Likely cause | Fix |
+|---|---|---|
+| Punches arrive but employee shows "Absent" in daily tab | Staff ID in portal doesn't match device enroll number | Edit the employee in the directory; set Staff ID to the exact number enrolled on the device |
+| Sync agent says "Connection refused" or "ECONNREFUSED" | PC and device are not on the same network | Confirm both are on the same Wi-Fi/LAN; try pinging the device IP |
+| Sync agent says "API 401" | `ZKTECO_SYNC_SECRET` in `.env` doesn't match Railway | Copy the exact value from Railway env vars into the agent's `.env` |
+| Device says "Server Error" after configuring ADMS | URL entered incorrectly on device | Copy the URL exactly from the "ZKTeco / Sync" tab; no trailing slash |
+| Daily tab shows 0 employees | No active employees in the Employee Directory | Add employees under HR Portal → Employee Directory |
+| Flagged punches every morning | All staff arrive and punch within 60 seconds | Normal for small teams — ignore the flags, or they can stagger arrival by 1–2 minutes |
+| "Last Punch Received: Never" in sync tab | No punches have been received yet | Confirm device ADMS config or run the sync agent |
