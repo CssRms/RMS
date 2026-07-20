@@ -136,8 +136,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [savingRef, setSavingRef]   = useState(false);
 
   // ── Feature flags ──────────────────────────────────────────────────────────
-  const [studioEnabled, setStudioEnabled]           = useState(true);
-  const [hrPortalEnabled, setHrPortalEnabled]       = useState(true);
+  const [studioEnabled, setStudioEnabled]               = useState(true);
+  const [hrPortalEnabled, setHrPortalEnabled]           = useState(true);
+  const [hrPortalAdminEnabled, setHrPortalAdminEnabled] = useState(true);
   const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(true);
   const [loginStyle, setLoginStyle]                 = useState('standard');
   const [headsCanManageSubaccounts, setHeadsCanManageSubaccounts] = useState(true);
@@ -274,13 +275,14 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const loadFeatureFlags = async () => {
     try {
       const [
-        studioRes, hrRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes, deptHeadDetailsRes,
+        studioRes, hrRes, hrAdminRes, loginRes, storeRes, headsManageRes, headsPrivRes, iccOversightRes, deptHeadDetailsRes,
         accountIccBypassRes, ceoIccBypassRes,
         accountThreshEnabledRes, accountThreshAmountRes, ceoThreshEnabledRes, ceoThreshAmountRes,
         adminCreateFundRes, adminCreateMaterialRes, adminCreateMemoRes,
       ] = await Promise.allSettled([
         settingsAPI.get('document_studio_enabled'),
         settingsAPI.get('hr_portal_enabled'),
+        settingsAPI.get('hr_portal_admin_enabled'),
         settingsAPI.get('login_style'),
         settingsAPI.get('store_records_enabled'),
         settingsAPI.get('heads_can_manage_subaccounts'),
@@ -301,6 +303,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
         setStudioEnabled(studioRes.value.value !== 'false');
       if (hrRes.status === 'fulfilled' && hrRes.value?.value !== undefined)
         setHrPortalEnabled(hrRes.value.value !== 'false');
+      if (hrAdminRes.status === 'fulfilled' && hrAdminRes.value?.value !== undefined)
+        setHrPortalAdminEnabled(hrAdminRes.value.value !== 'false');
       if (loginRes.status === 'fulfilled' && loginRes.value?.value)
         setLoginStyle(loginRes.value.value);
       if (storeRes.status === 'fulfilled' && storeRes.value?.value !== undefined)
@@ -388,6 +392,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
       await Promise.all([
         settingsAPI.set('document_studio_enabled', String(studioEnabled)),
         settingsAPI.set('hr_portal_enabled', String(hrPortalEnabled)),
+        settingsAPI.set('hr_portal_admin_enabled', String(hrPortalAdminEnabled)),
         settingsAPI.set('store_records_enabled', String(storeRecordsEnabled)),
         settingsAPI.set('login_style', loginStyle),
         settingsAPI.set('heads_can_manage_subaccounts', String(headsCanManageSubaccounts)),
@@ -405,6 +410,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('admin_create_memo_enabled', String(adminCreateMemoEnabled)),
       ]);
       toast.success('Feature settings saved.');
+      window.dispatchEvent(new CustomEvent('rms:flags:updated'));
     } catch {
       toast.error('Failed to save. Please try again.');
     } finally { setSavingFeatures(false); }
@@ -718,7 +724,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
             {settingsReady && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {[
                 { label: 'Document Studio', desc: 'Allows all users to access the Document Studio for printing and PDF generation. When disabled the Studio tab is hidden from the sidebar.', value: studioEnabled, set: setStudioEnabled },
-                { label: 'HR Portal', desc: 'Grants the HR department access to the HR management portal (employees, leave, attendance, payroll, recruitment). When disabled the HR Portal button is hidden from the sidebar.', value: hrPortalEnabled, set: setHrPortalEnabled },
+                { label: 'HR Portal (Departments)', desc: 'Grants the HR department and HR-role users access to the HR management portal. When disabled, the HR Portal button is hidden from department sidebars — Super Admin access is controlled separately below.', value: hrPortalEnabled, set: setHrPortalEnabled },
+                { label: 'HR Portal (Super Admin)', desc: 'Grants the Super Admin account access to the HR management portal. Toggle this independently — disabling it hides HR Portal from the admin sidebar while departments can still have it enabled, and vice versa.', value: hrPortalAdminEnabled, set: setHrPortalAdminEnabled },
                 { label: 'Store Records', desc: 'Gives the Store department and all its sub-accounts access to the stock ledger (store records) module. When disabled the Store Records button is hidden from the sidebar.', value: storeRecordsEnabled, set: setStoreRecordsEnabled },
                 { label: 'ICC Oversight Console', desc: 'Shows the "Oversight" button in ICC\'s sidebar, giving them the global observer console (view all requests, freeze/unfreeze, comment). When disabled, the button is hidden from ICC\'s sidebar.', value: iccOversightEnabled, set: setIccOversightEnabled },
                 { label: 'Heads Can Create/Manage Sub-Accounts', desc: 'Lets department heads create new units and act on existing ones (rename, reset code, enable/disable, delete). When disabled, heads can still see their sub-account list but lose all action buttons — only Super Admin can manage units.', value: headsCanManageSubaccounts, set: setHeadsCanManageSubaccounts },
@@ -849,7 +856,8 @@ const WorkflowBuilder = ({ onViewChange }) => {
             {settingsReady && <div className="flex flex-wrap gap-2">
               {[
                 { label: 'Document Studio', value: studioEnabled },
-                { label: 'HR Portal', value: hrPortalEnabled },
+                { label: 'HR Portal (Depts)', value: hrPortalEnabled },
+                { label: 'HR Portal (Admin)', value: hrPortalAdminEnabled },
                 { label: 'Store Records', value: storeRecordsEnabled },
                 { label: 'ICC Oversight', value: iccOversightEnabled },
                 { label: 'Heads Manage Sub-Accounts', value: headsCanManageSubaccounts },

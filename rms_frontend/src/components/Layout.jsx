@@ -426,6 +426,7 @@ const Navbar = ({ user, toggleSidebar, isCollapsed, notifications, setNotificati
                   currentView === 'dept_profile' ? 'Authority Profile' :
                     currentView === 'memos' ? 'Document Management' :
                       currentView === 'activity' ? 'System Activity' :
+                      
                         currentView === 'document_studio' ? 'Document Studio' :
                           currentView === 'workflow_builder' ? 'Workflow Architecture' :
                             currentView === 'department_manager' ? 'Tenant Control' :
@@ -1003,6 +1004,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
 
   const [hrPortalOpen, setHrPortalOpen] = useState(false);
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
+  const [hrPortalAdminEnabled, setHrPortalAdminEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
   const [storeRecordsEnabled, setStoreRecordsEnabled] = useState(null);
   // Starts `null` (unknown) so the Oversight button stays hidden until the real setting
@@ -1015,18 +1017,22 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
     // never blindly to "enabled" — so a feature an admin disabled doesn't get exposed
     // just because the device went offline or the network hiccuped.
     const loadFeatureFlags = async () => {
-      const [hr, studio, store, iccOversight] = await Promise.all([
+      const [hr, hrAdmin, studio, store, iccOversight] = await Promise.all([
         loadFeatureFlag('hr_portal_enabled'),
+        loadFeatureFlag('hr_portal_admin_enabled'),
         loadFeatureFlag('document_studio_enabled'),
         loadFeatureFlag('store_records_enabled'),
         loadFeatureFlag('icc_oversight_enabled'),
       ]);
       setHrPortalEnabled(hr);
+      setHrPortalAdminEnabled(hrAdmin);
       setStudioEnabled(studio);
       setStoreRecordsEnabled(store);
       setIccOversightEnabled(iccOversight);
     };
     loadFeatureFlags();
+    window.addEventListener('rms:flags:updated', loadFeatureFlags);
+    return () => window.removeEventListener('rms:flags:updated', loadFeatureFlags);
   }, []);
 
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
@@ -1035,7 +1041,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   const isHRDept    = /\bhr\b|human\s*resource/i.test(user?.name || '');
   const isStoreDept = /\bstore\b/i.test(user?.name || '') || /\bstore\b/i.test(user?.parentDeptName || '');
   const isIccDept   = /\bicc\b|internal.*control|control.*compliance/i.test(user?.name || '');
-  const showHRPortal     = (user?.role === 'hr' || user?.role === 'global_admin' || isHRDept) && hrPortalEnabled;
+  const showHRPortal     = user?.role === 'global_admin'
+    ? hrPortalAdminEnabled
+    : (user?.role === 'hr' || isHRDept) && hrPortalEnabled;
   const showStoreRecords = (user?.role === 'global_admin' || isStoreDept) && storeRecordsEnabled;
 
   return (
