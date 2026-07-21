@@ -1,0 +1,11 @@
+# Local database — each install has its own data
+attendance.db
+settings.json
+
+# PyInstaller build artefacts
+dist/
+build/
+*.spec
+icon.ico
+__pycache__/
+*.pyc
