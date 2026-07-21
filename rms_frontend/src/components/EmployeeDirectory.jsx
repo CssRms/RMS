@@ -15,9 +15,8 @@ const STATUS_COLORS = {
 };
 
 const EMPTY_FORM = {
-  firstName: '', lastName: '', email: '', phone: '', jobTitle: '',
-  department: '', employeeId: '', gender: '', startDate: '',
-  salary: '', status: 'active', address: '',
+  firstName: '', lastName: '', otherName: '', email: '', phone: '',
+  position: '', department: '', staffId: '', joinDate: '', status: 'active',
 };
 
 const Avatar = ({ name, size = 'md' }) => {
@@ -37,7 +36,7 @@ const EmployeeCard = ({ emp, onEdit, onDelete, onView }) => (
         <Avatar name={`${emp.firstName} ${emp.lastName}`} />
         <div>
           <p className="text-[13px] font-black text-foreground tracking-tight">{emp.firstName} {emp.lastName}</p>
-          <p className="text-[10px] text-muted-foreground/70 font-medium">{emp.jobTitle || '—'}</p>
+          <p className="text-[10px] text-muted-foreground/70 font-medium">{emp.position || '—'}</p>
         </div>
       </div>
       <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${STATUS_COLORS[emp.status] || STATUS_COLORS.active}`}>
@@ -151,8 +150,8 @@ const EmployeeDirectory = ({ onViewChange }) => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!formData.firstName || !formData.lastName || !formData.email) {
-      toast.error('First name, last name and email are required.');
+    if (!formData.staffId || !formData.firstName || !formData.lastName) {
+      toast.error('Staff ID, first name and last name are required.');
       return;
     }
     setSaving(true);
@@ -167,7 +166,7 @@ const EmployeeDirectory = ({ onViewChange }) => {
       closeForm();
       load();
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to save employee.');
+      toast.error(err?.response?.data?.error || err?.response?.data?.message || 'Failed to save employee.');
     } finally {
       setSaving(false);
     }
@@ -187,7 +186,7 @@ const EmployeeDirectory = ({ onViewChange }) => {
 
   const filtered = employees.filter(e => {
     const name = `${e.firstName} ${e.lastName}`.toLowerCase();
-    const matchSearch = !search || name.includes(search.toLowerCase()) || (e.email || '').toLowerCase().includes(search.toLowerCase()) || (e.jobTitle || '').toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search || name.includes(search.toLowerCase()) || (e.email || '').toLowerCase().includes(search.toLowerCase()) || (e.position || '').toLowerCase().includes(search.toLowerCase()) || (e.staffId || '').toLowerCase().includes(search.toLowerCase());
     const matchDept = !deptFilter || e.department === deptFilter;
     const matchStatus = !statusFilter || e.status === statusFilter;
     return matchSearch && matchDept && matchStatus;
@@ -304,8 +303,9 @@ const EmployeeDirectory = ({ onViewChange }) => {
               </div>
               <FieldInput label="Email Address" name="email" type="email" value={formData.email} onChange={handleChange} required />
               <FieldInput label="Phone Number" name="phone" type="tel" value={formData.phone} onChange={handleChange} />
-              <FieldInput label="Employee ID" name="employeeId" value={formData.employeeId} onChange={handleChange} />
-              <FieldInput label="Job Title / Position" name="jobTitle" value={formData.jobTitle} onChange={handleChange} />
+              <FieldInput label="Staff ID (Device Enroll No.)" name="staffId" value={formData.staffId} onChange={handleChange} required />
+              <FieldInput label="Other Name" name="otherName" value={formData.otherName} onChange={handleChange} />
+              <FieldInput label="Job Title / Position" name="position" value={formData.position} onChange={handleChange} />
               <FieldInput
                 label="Department"
                 name="department"
@@ -313,29 +313,18 @@ const EmployeeDirectory = ({ onViewChange }) => {
                 onChange={handleChange}
                 options={deptOptions.length > 0 ? deptOptions : departments.map(d => d.name)}
               />
-              <div className="grid grid-cols-2 gap-3">
-                <FieldInput
-                  label="Gender"
-                  name="gender"
-                  value={formData.gender}
-                  onChange={handleChange}
-                  options={['Male', 'Female', 'Other', 'Prefer not to say']}
-                />
-                <FieldInput
-                  label="Status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  options={[
-                    { value: 'active', label: 'Active' },
-                    { value: 'on_leave', label: 'On Leave' },
-                    { value: 'inactive', label: 'Inactive' },
-                  ]}
-                />
-              </div>
-              <FieldInput label="Start Date" name="startDate" type="date" value={formData.startDate} onChange={handleChange} />
-              <FieldInput label="Basic Salary (₦)" name="salary" type="number" value={formData.salary} onChange={handleChange} />
-              <FieldInput label="Office / Address" name="address" value={formData.address} onChange={handleChange} />
+              <FieldInput
+                label="Status"
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                options={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'on_leave', label: 'On Leave' },
+                  { value: 'inactive', label: 'Inactive' },
+                ]}
+              />
+              <FieldInput label="Join Date" name="joinDate" type="date" value={formData.joinDate} onChange={handleChange} />
 
               <div className="pt-4 flex gap-3">
                 <button type="button" onClick={closeForm} className="flex-1 py-3 rounded-xl border border-border/50 text-[11px] font-black text-muted-foreground uppercase tracking-widest hover:bg-muted transition-all">
@@ -367,7 +356,7 @@ const EmployeeDirectory = ({ onViewChange }) => {
               <Avatar name={`${viewEmployee.firstName} ${viewEmployee.lastName}`} size="lg" />
               <div className="text-center">
                 <h2 className="text-xl font-black text-foreground">{viewEmployee.firstName} {viewEmployee.lastName}</h2>
-                <p className="text-[11px] text-muted-foreground font-medium">{viewEmployee.jobTitle || 'No title'}</p>
+                <p className="text-[11px] text-muted-foreground font-medium">{viewEmployee.position || 'No title'}</p>
                 <span className={`mt-1 inline-block px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border tracking-widest ${STATUS_COLORS[viewEmployee.status] || STATUS_COLORS.active}`}>
                   {(viewEmployee.status || 'active').replace('_', ' ')}
                 </span>
@@ -376,10 +365,10 @@ const EmployeeDirectory = ({ onViewChange }) => {
 
             <div className="space-y-3">
               {[
+                { icon: Briefcase, val: viewEmployee.staffId,    label: 'Staff ID' },
                 { icon: Briefcase, val: viewEmployee.department, label: 'Department' },
                 { icon: Mail,      val: viewEmployee.email,      label: 'Email' },
                 { icon: Phone,     val: viewEmployee.phone,      label: 'Phone' },
-                { icon: MapPin,    val: viewEmployee.address,    label: 'Address' },
               ].filter(r => r.val).map(row => (
                 <div key={row.label} className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-primary/5 border border-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -391,25 +380,14 @@ const EmployeeDirectory = ({ onViewChange }) => {
                   </div>
                 </div>
               ))}
-              {viewEmployee.salary && (
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0">
-                    <span className="text-[10px] font-black">₦</span>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-widest">Basic Salary</p>
-                    <p className="text-[12px] font-black text-foreground">₦{Number(viewEmployee.salary).toLocaleString()}</p>
-                  </div>
-                </div>
-              )}
-              {viewEmployee.startDate && (
+              {viewEmployee.joinDate && (
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center shrink-0">
                     <CheckCircle2 size={13} />
                   </div>
                   <div>
-                    <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-widest">Start Date</p>
-                    <p className="text-[12px] font-medium text-foreground">{new Date(viewEmployee.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                    <p className="text-[9px] font-black text-muted-foreground/50 uppercase tracking-widest">Join Date</p>
+                    <p className="text-[12px] font-medium text-foreground">{new Date(viewEmployee.joinDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
                   </div>
                 </div>
               )}
