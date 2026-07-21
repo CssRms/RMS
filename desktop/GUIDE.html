@@ -1,0 +1,787 @@
+<title>ZKTeco Attendance Monitor — Complete Setup Guide</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0b1120;
+  --surface:  #111827;
+  --card:     #152035;
+  --border:   #1e3050;
+  --text:     #dde6f0;
+  --muted:    #5a7296;
+  --dim:      #3d5575;
+  --green:    #22c55e;
+  --green-bg: rgba(34,197,94,.09);
+  --green-bd: #166534;
+  --amber:    #f59e0b;
+  --amber-bg: rgba(245,158,11,.09);
+  --amber-bd: rgba(245,158,11,.4);
+  --blue:     #60a5fa;
+  --blue-bg:  rgba(96,165,250,.09);
+  --blue-bd:  rgba(96,165,250,.4);
+  --red:      #f87171;
+  --red-bg:   rgba(248,113,113,.09);
+  --red-bd:   rgba(248,113,113,.4);
+  --code-bg:  #060e1c;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:       #f1f5f9;
+    --surface:  #ffffff;
+    --card:     #f8fafc;
+    --border:   #e2e8f0;
+    --text:     #1e293b;
+    --muted:    #64748b;
+    --dim:      #94a3b8;
+    --green:    #16a34a;
+    --green-bg: rgba(22,163,74,.07);
+    --green-bd: #15803d;
+    --amber:    #d97706;
+    --amber-bg: rgba(217,119,6,.07);
+    --amber-bd: rgba(217,119,6,.4);
+    --blue:     #2563eb;
+    --blue-bg:  rgba(37,99,235,.07);
+    --blue-bd:  rgba(37,99,235,.4);
+    --red:      #dc2626;
+    --red-bg:   rgba(220,38,38,.07);
+    --red-bd:   rgba(220,38,38,.4);
+    --code-bg:  #1e293b;
+  }
+}
+:root[data-theme="dark"]  { --bg:#0b1120;--surface:#111827;--card:#152035;--border:#1e3050;--text:#dde6f0;--muted:#5a7296;--dim:#3d5575;--green:#22c55e;--green-bg:rgba(34,197,94,.09);--green-bd:#166534;--amber:#f59e0b;--amber-bg:rgba(245,158,11,.09);--amber-bd:rgba(245,158,11,.4);--blue:#60a5fa;--blue-bg:rgba(96,165,250,.09);--blue-bd:rgba(96,165,250,.4);--red:#f87171;--red-bg:rgba(248,113,113,.09);--red-bd:rgba(248,113,113,.4);--code-bg:#060e1c; }
+:root[data-theme="light"] { --bg:#f1f5f9;--surface:#ffffff;--card:#f8fafc;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--dim:#94a3b8;--green:#16a34a;--green-bg:rgba(22,163,74,.07);--green-bd:#15803d;--amber:#d97706;--amber-bg:rgba(217,119,6,.07);--amber-bd:rgba(217,119,6,.4);--blue:#2563eb;--blue-bg:rgba(37,99,235,.07);--blue-bd:rgba(37,99,235,.4);--red:#dc2626;--red-bg:rgba(220,38,38,.07);--red-bd:rgba(220,38,38,.4);--code-bg:#1e293b; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.7; font-size: 15px;
+}
+
+/* ── Layout ── */
+.shell { display: flex; min-height: 100vh; }
+
+nav {
+  width: 260px; flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 24px 0 40px;
+}
+nav::-webkit-scrollbar { width: 3px; }
+nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.nav-brand {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.nav-logo {
+  width: 36px; height: 36px; background: var(--green); border-radius: 9px;
+  display: grid; place-items: center; font-size: 20px; margin-bottom: 8px;
+}
+.nav-title { font-size: 13px; font-weight: 700; line-height: 1.3; }
+.nav-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.nav-section { padding: 8px 20px 4px; font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--dim); }
+.nav-link {
+  display: block; padding: 5px 20px; font-size: 12.5px; color: var(--muted);
+  text-decoration: none; transition: color .12s, background .12s;
+  border-left: 2px solid transparent;
+}
+.nav-link:hover { color: var(--text); background: var(--card); }
+.nav-link.active { color: var(--green); border-left-color: var(--green); background: var(--green-bg); }
+
+.content {
+  flex: 1; max-width: 820px; padding: 48px 56px 80px;
+  min-width: 0;
+}
+
+/* ── Hero ── */
+.hero {
+  margin-bottom: 48px; padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--green-bg); border: 1px solid var(--green-bd);
+  color: var(--green); border-radius: 20px;
+  padding: 3px 12px; font-size: 11px; font-weight: 700;
+  letter-spacing: .5px; text-transform: uppercase; margin-bottom: 16px;
+}
+.hero h1 { font-size: 32px; font-weight: 800; line-height: 1.2; letter-spacing: -.5px; margin-bottom: 12px; }
+.hero p  { font-size: 16px; color: var(--muted); max-width: 580px; }
+.hero-meta { margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
+.hero-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 12px; font-size: 12px;
+}
+.hero-pill span:first-child { color: var(--muted); }
+
+/* ── Section headings ── */
+.step-section { margin-bottom: 52px; scroll-margin-top: 24px; }
+.step-eyebrow {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.step-num {
+  font-size: 11px; font-weight: 800; letter-spacing: .5px;
+  color: var(--green); background: var(--green-bg);
+  border: 1px solid var(--green-bd); border-radius: 5px;
+  padding: 2px 8px; font-variant-numeric: tabular-nums;
+}
+.step-label { font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+h2 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 12px; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; }
+p  { margin-bottom: 12px; }
+p:last-child { margin-bottom: 0; }
+
+/* ── Callouts ── */
+.callout {
+  border-left: 3px solid; border-radius: 0 8px 8px 0;
+  padding: 12px 16px; margin: 16px 0; font-size: 13.5px;
+}
+.callout-label { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 4px; }
+.callout.tip    { border-color: var(--blue);  background: var(--blue-bg);  }
+.callout.tip    .callout-label { color: var(--blue); }
+.callout.warn   { border-color: var(--amber); background: var(--amber-bg); }
+.callout.warn   .callout-label { color: var(--amber); }
+.callout.ok     { border-color: var(--green); background: var(--green-bg); }
+.callout.ok     .callout-label { color: var(--green); }
+.callout.danger { border-color: var(--red);   background: var(--red-bg);  }
+.callout.danger .callout-label { color: var(--red); }
+
+/* ── Code ── */
+pre, code {
+  font-family: 'Courier New', 'Consolas', monospace;
+  font-size: 13px;
+}
+code { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--blue); }
+pre {
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 20px; margin: 12px 0;
+  overflow-x: auto; line-height: 1.6;
+}
+pre code { background: none; border: none; padding: 0; color: #7dd3fc; }
+.cmd  { color: #86efac; }  /* green — things to type */
+.cmt  { color: #475569; }  /* grey  — comments       */
+.val  { color: #fcd34d; }  /* amber — values          */
+
+/* ── Table ── */
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+th { background: var(--card); padding: 9px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 2px solid var(--border); }
+td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+/* ── Numbered list ── */
+ol.steps { list-style: none; counter-reset: s; padding: 0; }
+ol.steps li {
+  counter-increment: s; padding: 10px 0 10px 44px; position: relative;
+  border-bottom: 1px solid var(--border);
+}
+ol.steps li:last-child { border-bottom: none; }
+ol.steps li::before {
+  content: counter(s);
+  position: absolute; left: 0; top: 12px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--card); border: 1px solid var(--border);
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; color: var(--green);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Trouble table ── */
+.trouble-q { font-weight: 600; font-size: 13.5px; }
+.trouble-a { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+/* ── Settings table ── */
+.setting-val { font-family: 'Courier New', monospace; font-size: 12.5px; color: var(--blue); }
+.required { color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: .4px; }
+
+/* ── Divider ── */
+hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+/* ── TOC active tracking ── */
+@media (max-width: 900px) {
+  nav { display: none; }
+  .content { padding: 32px 24px 60px; }
+}
+</style>
+
+<div class="shell">
+
+<!-- Sidebar TOC -->
+<nav id="toc">
+  <div class="nav-brand">
+    <div class="nav-logo">👁</div>
+    <div class="nav-title">Attendance Monitor</div>
+    <div class="nav-sub">Setup & User Guide</div>
+  </div>
+
+  <div class="nav-section">Getting Started</div>
+  <a class="nav-link" href="#overview">Overview</a>
+  <a class="nav-link" href="#prerequisites">What You Need</a>
+
+  <div class="nav-section">Installation</div>
+  <a class="nav-link" href="#s1">1 · Install Python</a>
+  <a class="nav-link" href="#s2">2 · Get the App Files</a>
+  <a class="nav-link" href="#s3">3 · Install Dependencies</a>
+
+  <div class="nav-section">Device Setup</div>
+  <a class="nav-link" href="#s4">4 · Configure ZKTeco Device</a>
+  <a class="nav-link" href="#s5">5 · Register Employees</a>
+  <a class="nav-link" href="#s6">6 · Enroll Fingerprints</a>
+
+  <div class="nav-section">Daily Use</div>
+  <a class="nav-link" href="#s7">7 · Start the App</a>
+  <a class="nav-link" href="#s8">8 · Run Diagnostics</a>
+  <a class="nav-link" href="#s9">9 · Taking Attendance</a>
+  <a class="nav-link" href="#s10">10 · Export to Excel</a>
+  <a class="nav-link" href="#s11">11 · Sync to Cloud</a>
+
+  <div class="nav-section">Advanced</div>
+  <a class="nav-link" href="#s12">12 · Build the .exe</a>
+  <a class="nav-link" href="#s13">13 · Auto-start Windows</a>
+  <a class="nav-link" href="#s14">14 · Update the App</a>
+
+  <div class="nav-section">Help</div>
+  <a class="nav-link" href="#trouble">Troubleshooting</a>
+  <a class="nav-link" href="#tray-menu">Tray Menu Reference</a>
+  <a class="nav-link" href="#faq">FAQ</a>
+</nav>
+
+<!-- Main content -->
+<main class="content">
+
+  <!-- Hero -->
+  <div class="hero" id="overview">
+    <div class="hero-badge">
+      <span>●</span> Complete Guide
+    </div>
+    <h1>ZKTeco Attendance Monitor</h1>
+    <p>A desktop application that captures fingerprint attendance from a ZKTeco biometric device over your local network, stores records locally, and syncs them to your cloud portal on Railway.</p>
+    <div class="hero-meta">
+      <div class="hero-pill"><span>Device</span><strong>ZKTeco MB160 (ADMS)</strong></div>
+      <div class="hero-pill"><span>Platform</span><strong>Windows 10 / 11</strong></div>
+      <div class="hero-pill"><span>Requires</span><strong>Python 3.10+</strong></div>
+      <div class="hero-pill"><span>Cloud</span><strong>cssgrouprms.com</strong></div>
+    </div>
+  </div>
+
+  <!-- How it works -->
+  <div class="step-section">
+    <h2>How it works</h2>
+    <p>The flow has three stages: the device captures the fingerprint → the app on your laptop receives it → you sync to the cloud when ready.</p>
+    <pre><code>ZKTeco Device          Your Laptop              Railway Cloud
+(fingerprint scan)     (this app)               (cssgrouprms.com)
+      │                     │                          │
+      │── scan detected ──► │                          │
+      │   sends Staff ID    │── saves to SQLite ──►    │
+      │   + timestamp       │   dashboard shows live   │
+      │                     │                          │
+      │                     │── "Upload to Railway" ──►│
+      │                     │   syncs all pending      │
+      │                     │   records at once        │
+</code></pre>
+    <p>The <strong>Staff ID</strong> is the key that links everything. The same ID must be set on the device (User ID when enrolling a fingerprint), in the desktop app's employee list, and in the Railway portal's Employee Directory.</p>
+  </div>
+
+  <hr>
+
+  <!-- Prerequisites -->
+  <div class="step-section" id="prerequisites">
+    <h2>What you need before starting</h2>
+    <table>
+      <tr><th>Item</th><th>Details</th></tr>
+      <tr><td><strong>Windows PC / Laptop</strong></td><td>Windows 10 or 11. Must be on the same Wi-Fi network as the ZKTeco device.</td></tr>
+      <tr><td><strong>ZKTeco MB160 device</strong></td><td>Wi-Fi enabled. Must support ADMS (Attendance Data Management System) protocol.</td></tr>
+      <tr><td><strong>Python 3.10 or newer</strong></td><td>Free download from python.org. Step 1 covers this.</td></tr>
+      <tr><td><strong>Internet connection</strong></td><td>Only needed once to install packages and to sync to Railway. Not needed for daily local recording.</td></tr>
+      <tr><td><strong>Admin access on your PC</strong></td><td>Needed to run on port 80 and to write the Windows startup registry entry.</td></tr>
+    </table>
+    <div class="callout tip">
+      <div class="callout-label">Tip</div>
+      You can capture attendance locally without internet. The "Sync to Railway" step only needs internet when you actually press the upload button.
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Step 1 -->
+  <div class="step-section" id="s1">
+    <div class="step-eyebrow"><span class="step-num">STEP 01</span><span class="step-label">Installation</span></div>
+    <h2>Install Python</h2>
+    <p>Python is the programming language the app runs on. You only do this once.</p>
+    <ol class="steps">
+      <li>Open your browser and go to <code>https://www.python.org/downloads/</code></li>
+      <li>Click the big yellow <strong>Download Python</strong> button — it picks the right version for you.</li>
+      <li>Run the installer. On the first screen, <strong>tick "Add Python to PATH"</strong> before clicking Install Now.<br><br>
+        <div class="callout danger"><div class="callout-label">Important</div>If you miss the "Add Python to PATH" checkbox, the app won't start. Run the installer again and tick it.</div>
+      </li>
+      <li>When it finishes, open <strong>Command Prompt</strong> (press <code>Win + R</code>, type <code>cmd</code>, press Enter) and type:
+        <pre><code><span class="cmd">python --version</span></code></pre>
+        You should see something like <code>Python 3.13.0</code>. If you see an error, Python wasn't added to PATH — reinstall and tick the box.
+      </li>
+    </ol>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step-section" id="s2">
+    <div class="step-eyebrow"><span class="step-num">STEP 02</span><span class="step-label">Installation</span></div>
+    <h2>Get the app files</h2>
+    <p>The desktop app lives in the <code>desktop/</code> folder inside the main RMS project on GitHub.</p>
+    <h3>Option A — Download the folder (easiest)</h3>
+    <ol class="steps">
+      <li>Go to <code>github.com/CssRms/RMS</code></li>
+      <li>Click the green <strong>Code</strong> button → <strong>Download ZIP</strong></li>
+      <li>Unzip it anywhere, e.g. <code>C:\RMS\</code></li>
+      <li>The app files are in the <code>desktop\</code> sub-folder inside the unzipped folder.</li>
+    </ol>
+    <h3>Option B — Git clone (recommended for updates)</h3>
+    <pre><code><span class="cmt"># Open Command Prompt, then:</span>
+<span class="cmd">git clone https://github.com/CssRms/RMS.git C:\RMS</span></code></pre>
+    <p>Your app folder will be at <code>C:\RMS\desktop\</code>.</p>
+    <div class="callout tip">
+      <div class="callout-label">Tip — Where to put it</div>
+      Put the folder somewhere permanent like <code>C:\RMS\desktop\</code>. If you later build the .exe (Step 12) you can put that exe anywhere, but the source files should stay in one place.
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step-section" id="s3">
+    <div class="step-eyebrow"><span class="step-num">STEP 03</span><span class="step-label">Installation</span></div>
+    <h2>Install dependencies</h2>
+    <p>The app uses several Python libraries. Install them all with one command.</p>
+    <ol class="steps">
+      <li>Open <strong>Command Prompt as Administrator</strong> (right-click Command Prompt → Run as administrator).</li>
+      <li>Navigate to the desktop folder:
+        <pre><code><span class="cmd">cd C:\RMS\desktop</span></code></pre>
+      </li>
+      <li>Install all required libraries:
+        <pre><code><span class="cmd">pip install -r requirements.txt</span></code></pre>
+        This downloads and installs Flask, SQLAlchemy, openpyxl, pystray, Pillow, and everything else. It may take 1–2 minutes.
+      </li>
+      <li>When it finishes without errors, you're ready.</li>
+    </ol>
+    <div class="callout warn">
+      <div class="callout-label">If pip is not found</div>
+      Try <code>python -m pip install -r requirements.txt</code> instead. If that also fails, Python wasn't added to PATH — go back to Step 1.
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Step 4 -->
+  <div class="step-section" id="s4">
+    <div class="step-eyebrow"><span class="step-num">STEP 04</span><span class="step-label">Device Setup</span></div>
+    <h2>Configure the ZKTeco device</h2>
+    <p>The device needs to know the address of your laptop so it can send attendance records to it.</p>
+
+    <div class="callout tip">
+      <div class="callout-label">Before you start — find your laptop's IP address</div>
+      Open Command Prompt and type <code>ipconfig</code>. Look for <strong>IPv4 Address</strong> under your Wi-Fi adapter. It will look like <code>192.168.1.50</code>. Write it down — you'll need it below.
+    </div>
+
+    <h3>On the ZKTeco device</h3>
+    <ol class="steps">
+      <li>Press <strong>Menu</strong> on the device (or use the touch screen menu button).</li>
+      <li>Go to <strong>Communication</strong> → <strong>Cloud Server Settings</strong> (or <strong>ADMS</strong> depending on firmware).</li>
+      <li>Set the following values:
+        <table>
+          <tr><th>Setting</th><th>Value to enter</th><th></th></tr>
+          <tr>
+            <td>Server Mode</td>
+            <td class="setting-val">ADMS</td>
+            <td><span class="required">REQUIRED</span></td>
+          </tr>
+          <tr>
+            <td>Enable Domain Name / VDomain</td>
+            <td class="setting-val">OFF (disabled)</td>
+            <td><span class="required">REQUIRED</span></td>
+          </tr>
+          <tr>
+            <td>Server Address</td>
+            <td class="setting-val">192.168.1.50<br><small style="color:var(--muted)">(your laptop's IP from ipconfig)</small></td>
+            <td><span class="required">REQUIRED</span></td>
+          </tr>
+          <tr>
+            <td>Server Port</td>
+            <td class="setting-val">80</td>
+            <td><span class="required">REQUIRED</span></td>
+          </tr>
+          <tr>
+            <td>Enable Proxy Server</td>
+            <td class="setting-val">OFF (disabled)</td>
+            <td><span class="required">REQUIRED</span></td>
+          </tr>
+        </table>
+      </li>
+      <li>Save and exit the settings.</li>
+      <li>Reboot the device (Menu → System → Reboot, or unplug and plug back in).</li>
+    </ol>
+
+    <div class="callout warn">
+      <div class="callout-label">Important — Wi-Fi network</div>
+      Both your laptop AND the ZKTeco device must be connected to the <strong>same Wi-Fi network</strong>. If the device is on one router and the laptop on another, they cannot communicate.
+    </div>
+
+    <div class="callout tip">
+      <div class="callout-label">When to use cssgrouprms.com instead</div>
+      The settings above (laptop IP) are for <strong>local mode</strong> — capturing on your laptop first, then syncing to the cloud later. If you want the device to push directly to Railway cloud, set Server Address to <code>cssgrouprms.com</code>, enable Domain Name (VDomain ON), and leave Port hidden. See Step 11 for details.
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="step-section" id="s5">
+    <div class="step-eyebrow"><span class="step-num">STEP 05</span><span class="step-label">Device Setup</span></div>
+    <h2>Register employees in the app</h2>
+    <p>Every employee must be registered in the app with their <strong>Staff ID</strong> — the same ID they were given on the device.</p>
+
+    <h3>Using the dashboard (recommended)</h3>
+    <p>Once the app is running (Step 7), open the dashboard at <code>http://localhost</code> and use the <strong>Register Employee</strong> form in the left sidebar:</p>
+    <table>
+      <tr><th>Field</th><th>What to enter</th></tr>
+      <tr><td><strong>Staff ID</strong></td><td>The <strong>User ID</strong> you set on the device when enrolling (e.g. <code>11112222</code>). This must match exactly.</td></tr>
+      <tr><td><strong>Full Name</strong></td><td>The employee's full name (e.g. Ephraim Hosea).</td></tr>
+      <tr><td><strong>Department</strong></td><td>Optional — e.g. ICT, HR, Admin.</td></tr>
+      <tr><td><strong>Position</strong></td><td>Optional — e.g. Officer, Manager.</td></tr>
+    </table>
+    <p>Click <strong>Save</strong>. The employee appears in the left list immediately.</p>
+
+    <h3>Using the seed script (bulk load)</h3>
+    <p>If you have many employees, edit the list in <code>seed.py</code> and run it once:</p>
+    <pre><code><span class="cmt"># Edit desktop/seed.py first — add all your staff
+# Then run:</span>
+<span class="cmd">python seed.py</span></code></pre>
+
+    <div class="callout ok">
+      <div class="callout-label">The Golden Rule</div>
+      The <strong>Staff ID in the app</strong> must exactly match the <strong>User ID on the device</strong>. This is the only way the system knows whose fingerprint was scanned.
+    </div>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="step-section" id="s6">
+    <div class="step-eyebrow"><span class="step-num">STEP 06</span><span class="step-label">Device Setup</span></div>
+    <h2>Enroll fingerprints on the device</h2>
+    <p>Fingerprint enrollment is <strong>physical</strong> — it must be done directly on the ZKTeco device. No software can do this remotely.</p>
+    <ol class="steps">
+      <li>On the device, go to <strong>Menu → User Management → New User</strong> (or Add User).</li>
+      <li>Set the <strong>User ID</strong> to the Staff ID you registered in Step 5 (e.g. <code>11112222</code>).</li>
+      <li>Set the <strong>Name</strong> to the employee's name.</li>
+      <li>Select <strong>Fingerprint</strong> and follow the on-screen prompts — the employee presses their finger on the sensor 3 times.</li>
+      <li>Save. The device now knows that fingerprint belongs to User ID <code>11112222</code>.</li>
+    </ol>
+    <div class="callout tip">
+      <div class="callout-label">Can an employee use a PIN instead?</div>
+      Yes. Set a PIN on the device for that User ID. When they enter their PIN, the device sends the same User ID — the app handles it identically to a fingerprint scan.
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Step 7 -->
+  <div class="step-section" id="s7">
+    <div class="step-eyebrow"><span class="step-num">STEP 07</span><span class="step-label">Daily Use</span></div>
+    <h2>Start the app</h2>
+    <p>You only need to do this once per day (or set it to auto-start — see Step 13).</p>
+
+    <h3>While running as a Python script (before building .exe)</h3>
+    <ol class="steps">
+      <li>Open <strong>Command Prompt as Administrator</strong>.</li>
+      <li>Navigate to the desktop folder:
+        <pre><code><span class="cmd">cd C:\RMS\desktop</span></code></pre>
+      </li>
+      <li>Run the app:
+        <pre><code><span class="cmd">python app.py</span></code></pre>
+      </li>
+      <li>A green fingerprint icon <strong>👁</strong> appears in the system tray (bottom-right corner, near the clock).</li>
+      <li>Your browser opens automatically to the dashboard at <code>http://localhost</code>.</li>
+    </ol>
+
+    <h3>After building the .exe (Step 12)</h3>
+    <p>Simply double-click <code>ZKAttendance.exe</code>. The tray icon appears and the browser opens — no Command Prompt needed.</p>
+
+    <div class="callout warn">
+      <div class="callout-label">Port 80 needs Administrator</div>
+      The server runs on port 80 which is a privileged port on Windows. Always run Command Prompt as Administrator, or use "Run as Administrator" when double-clicking the .exe. If you get a "Permission denied" error, this is why.
+    </div>
+  </div>
+
+  <!-- Step 8 -->
+  <div class="step-section" id="s8">
+    <div class="step-eyebrow"><span class="step-num">STEP 08</span><span class="step-label">Daily Use</span></div>
+    <h2>Run diagnostics before attendance starts</h2>
+    <p>Always run diagnostics at the start of each day to confirm everything is working before staff begin clocking in.</p>
+    <ol class="steps">
+      <li>With the app running, open the dashboard in your browser (<code>http://localhost</code>).</li>
+      <li>Click the <strong>Diagnostics</strong> tab at the top.</li>
+      <li>Click <strong>▶ Run Diagnostics</strong>.</li>
+      <li>Wait a few seconds. You will see a result for each check:
+        <table>
+          <tr><th>Check</th><th>What it verifies</th></tr>
+          <tr><td>ZKTeco Device</td><td>Is the device sending heartbeats to this laptop? (means the IP/port is correct)</td></tr>
+          <tr><td>Laptop Network</td><td>Shows your LAN IP — confirm it matches what's set on the device in Step 4</td></tr>
+          <tr><td>Employee Database</td><td>How many employees are registered, scans today, records pending sync</td></tr>
+          <tr><td>Railway Cloud</td><td>Can this laptop reach cssgrouprms.com for syncing?</td></tr>
+          <tr><td>Excel Export</td><td>Is the Excel library installed for report downloads?</td></tr>
+        </table>
+      </li>
+      <li>If the overall result is <strong>✅ All Systems Ready</strong>, you can start attendance.</li>
+    </ol>
+    <div class="callout warn">
+      <div class="callout-label">If "ZKTeco Device" shows ❌ or ⚠️</div>
+      The device hasn't connected yet. Check: (1) device is powered on and connected to Wi-Fi, (2) the Server Address on the device matches your laptop's LAN IP from <code>ipconfig</code>, (3) port is set to 80, (4) proxy is OFF. Then reboot the device and wait 30 seconds, then run diagnostics again.
+    </div>
+  </div>
+
+  <!-- Step 9 -->
+  <div class="step-section" id="s9">
+    <div class="step-eyebrow"><span class="step-num">STEP 09</span><span class="step-label">Daily Use</span></div>
+    <h2>Taking attendance</h2>
+    <p>Once diagnostics pass, attendance runs automatically — staff just scan their fingerprints on the device.</p>
+    <h3>What you see</h3>
+    <p>On the <strong>Live Attendance</strong> tab, every scan triggers an instant update:</p>
+    <ul style="padding-left:20px; margin: 8px 0 16px; line-height:2">
+      <li>The <strong>Last Scan</strong> card flashes with the employee's name, department, time, and status (Check In / Check Out).</li>
+      <li>The employee's avatar in the <strong>left sidebar</strong> turns green with the scan time.</li>
+      <li>A new row is added to <strong>Today's Log</strong> at the bottom.</li>
+      <li>The <strong>Scans Today</strong> counter on the right increments.</li>
+    </ul>
+    <h3>Unknown fingerprint scanned</h3>
+    <p>If a fingerprint is registered on the device but not in the app's employee list, you'll see an <strong>⚠ Unknown Fingerprint</strong> card with the device User ID. Go to the Register Employee form and add that employee — future scans by that person will be recognised.</p>
+    <div class="callout tip">
+      <div class="callout-label">Keep the dashboard open on a screen</div>
+      Many offices keep the dashboard open on a monitor or TV near the entrance so they can see attendance happening live.
+    </div>
+  </div>
+
+  <!-- Step 10 -->
+  <div class="step-section" id="s10">
+    <div class="step-eyebrow"><span class="step-num">STEP 10</span><span class="step-label">Daily Use</span></div>
+    <h2>Export attendance to Excel</h2>
+    <p>Download a formatted Excel spreadsheet of any day's attendance.</p>
+    <ol class="steps">
+      <li>In the dashboard's right sidebar, find the <strong>Export to Excel</strong> section.</li>
+      <li>The date field defaults to today. Change it if you want a different day.</li>
+      <li>Click <strong>⬇ XLS</strong>. The file downloads automatically.</li>
+      <li>Open it in Microsoft Excel or Google Sheets.</li>
+    </ol>
+    <p>The file contains: Staff ID, Name, Department, Position, Time, Status (Check In/Out), and whether the record has been synced to Railway Cloud.</p>
+    <div class="callout tip">
+      <div class="callout-label">No openpyxl installed?</div>
+      The export falls back to a .csv file which also opens in Excel. To get proper .xlsx formatting, run <code>pip install openpyxl</code> in Command Prompt.
+    </div>
+  </div>
+
+  <!-- Step 11 -->
+  <div class="step-section" id="s11">
+    <div class="step-eyebrow"><span class="step-num">STEP 11</span><span class="step-label">Daily Use</span></div>
+    <h2>Sync attendance to Railway Cloud</h2>
+    <p>When you're ready to send today's (or any pending) records to the cloud portal, press the sync button.</p>
+    <ol class="steps">
+      <li>Make sure you have an internet connection.</li>
+      <li>In the dashboard's right sidebar, click <strong>↑ Upload to Railway</strong>.</li>
+      <li>A status message appears: <em>"X record(s) uploaded to Railway successfully"</em>.</li>
+      <li>The Pending Sync counter resets to 0 and records are marked as synced.</li>
+      <li>Open the Railway portal (<code>cssgrouprms.com</code>) → HR → Attendance — the records will now be there, linked to employees by their Staff ID.</li>
+    </ol>
+    <div class="callout ok">
+      <div class="callout-label">Safe to sync multiple times</div>
+      Railway uses the (Staff ID + timestamp) pair as a unique key, so uploading the same record twice doesn't create a duplicate — it's safely ignored.
+    </div>
+    <div class="callout tip">
+      <div class="callout-label">Direct to cloud (skip local)</div>
+      If you prefer the device to push directly to Railway without local capture, set the device's Server Address to <code>cssgrouprms.com</code>, enable Domain Name (VDomain ON), and leave the Port field hidden (it uses HTTPS 443 automatically). The local app is not needed in this mode.
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Step 12 -->
+  <div class="step-section" id="s12">
+    <div class="step-eyebrow"><span class="step-num">STEP 12</span><span class="step-label">Advanced</span></div>
+    <h2>Build the .exe (permanent install, no Python needed)</h2>
+    <p>Package the app into a single <code>ZKAttendance.exe</code> that anyone can run without installing Python.</p>
+    <ol class="steps">
+      <li>Open <strong>Command Prompt as Administrator</strong>.</li>
+      <li>Navigate to the desktop folder:
+        <pre><code><span class="cmd">cd C:\RMS\desktop</span></code></pre>
+      </li>
+      <li>Run the build script:
+        <pre><code><span class="cmd">build.bat</span></code></pre>
+        This installs PyInstaller, generates an icon, and packages everything. Takes 2–3 minutes.
+      </li>
+      <li>When it finishes, the file is at:
+        <pre><code><span class="val">C:\RMS\desktop\dist\ZKAttendance.exe</span></code></pre>
+      </li>
+      <li>Copy <code>ZKAttendance.exe</code> to wherever you want to keep it (e.g. Desktop, <code>C:\Program Files\</code>).</li>
+      <li>Double-click it (as Administrator) to run.</li>
+    </ol>
+    <div class="callout tip">
+      <div class="callout-label">Where is the data stored?</div>
+      When running as an .exe, your attendance database and settings are saved in:<br>
+      <code>C:\Users\YourName\AppData\Roaming\ZKTecoAttendance\</code><br><br>
+      This folder is never overwritten when you update the app — your data is safe.
+    </div>
+  </div>
+
+  <!-- Step 13 -->
+  <div class="step-section" id="s13">
+    <div class="step-eyebrow"><span class="step-num">STEP 13</span><span class="step-label">Advanced</span></div>
+    <h2>Auto-start with Windows</h2>
+    <p>Make the app start automatically when you turn on the PC, so you never forget to run it on attendance days.</p>
+    <ol class="steps">
+      <li>Start the app and look for the tray icon in the bottom-right corner.</li>
+      <li><strong>Right-click</strong> the tray icon.</li>
+      <li>Click <strong>Start with Windows</strong> — a tick appears next to it.</li>
+      <li>From now on, the app starts automatically every time Windows boots.</li>
+    </ol>
+    <p>To turn it off, right-click the tray icon and click <strong>Start with Windows</strong> again to untick it.</p>
+  </div>
+
+  <!-- Step 14 -->
+  <div class="step-section" id="s14">
+    <div class="step-eyebrow"><span class="step-num">STEP 14</span><span class="step-label">Advanced</span></div>
+    <h2>Update the app</h2>
+    <p>When a new version of the app is released (new features, bug fixes), updating takes 3 commands.</p>
+    <ol class="steps">
+      <li>Open Command Prompt in the RMS project folder:
+        <pre><code><span class="cmd">cd C:\RMS</span></code></pre>
+      </li>
+      <li>Pull the latest changes from GitHub:
+        <pre><code><span class="cmd">git pull origin main</span></code></pre>
+      </li>
+      <li>Install any new dependencies:
+        <pre><code><span class="cmd">cd desktop
+pip install -r requirements.txt -q</span></code></pre>
+      </li>
+      <li>If you use the .exe, rebuild it:
+        <pre><code><span class="cmd">build.bat</span></code></pre>
+        Then replace the old <code>ZKAttendance.exe</code> with the new one from <code>dist\</code>.
+      </li>
+    </ol>
+    <div class="callout ok">
+      <div class="callout-label">Your data is never lost during updates</div>
+      The attendance database (<code>attendance.db</code>) and settings (<code>settings.json</code>) are stored separately from the app code, so pulling updates and rebuilding never deletes your records.
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Troubleshooting -->
+  <div class="step-section" id="trouble">
+    <h2>Troubleshooting</h2>
+    <table>
+      <tr><th>Problem</th><th>Solution</th></tr>
+      <tr>
+        <td class="trouble-q">App won't start — "Permission denied" or "Port in use"</td>
+        <td class="trouble-a">Run Command Prompt as Administrator. Or another app is using port 80 — right-click the tray icon → Settings and change the port to 8080, then update the device's Server Port to match.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Tray icon doesn't appear</td>
+        <td class="trouble-a">Look in the hidden icons area (click the ∧ arrow in the bottom-right taskbar). The icon might be hidden. Drag it out to the visible area.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Dashboard doesn't open in browser</td>
+        <td class="trouble-a">Wait 5 seconds after starting, then manually open <code>http://localhost</code> or <code>http://127.0.0.1</code> in your browser.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Diagnostics shows "ZKTeco Device — No connection yet"</td>
+        <td class="trouble-a">(1) Confirm the device's Server Address matches your laptop's IP from <code>ipconfig</code>. (2) Confirm Server Port = 80. (3) Confirm Proxy = OFF. (4) Reboot the device and wait 30 seconds.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Scans happen on the device but nothing appears in the dashboard</td>
+        <td class="trouble-a">The device's User ID isn't registered in the app. Check the "Unknown Fingerprint" notification — note the Staff ID shown — and register that employee using the Register Employee form.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">"Sync failed" when uploading to Railway</td>
+        <td class="trouble-a">Check your internet connection. Also confirm the Railway URL in Settings is correct: <code>https://cssgrouprms.com</code>. Run Diagnostics to see if Railway is reachable.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Portal shows employee as Absent even after sync</td>
+        <td class="trouble-a">The Staff ID in the app doesn't match the Staff ID in Railway's Employee Directory. They must be exactly the same. Check both and correct whichever is wrong.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Device connects but no heartbeats in diagnostics</td>
+        <td class="trouble-a">The device's IP address may be correct but the app wasn't running when it first connected. Reboot the device while the app is running — the first connection request will register it.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">build.bat fails with "PyInstaller not found"</td>
+        <td class="trouble-a">Run <code>pip install pyinstaller</code> manually, then try <code>build.bat</code> again.</td>
+      </tr>
+      <tr>
+        <td class="trouble-q">Settings dialog doesn't appear</td>
+        <td class="trouble-a">It opens behind other windows. Press <code>Alt+Tab</code> to find it, or look in the taskbar.</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Tray menu reference -->
+  <div class="step-section" id="tray-menu">
+    <h2>Tray icon menu reference</h2>
+    <p>Right-click the green 👁 icon in the system tray to see the menu.</p>
+    <table>
+      <tr><th>Menu Item</th><th>What it does</th></tr>
+      <tr><td><strong>Open Dashboard</strong></td><td>Opens the live attendance dashboard in your browser at <code>http://localhost</code>. Also triggered by double-clicking the tray icon.</td></tr>
+      <tr><td><strong>Run Diagnostics</strong></td><td>Opens the dashboard directly on the Diagnostics tab so you can run a readiness check.</td></tr>
+      <tr><td><strong>⚙ Settings</strong></td><td>Opens a dialog to change the Railway Cloud URL and server port. Changes are saved immediately; restart the app to apply a port change.</td></tr>
+      <tr><td><strong>Start with Windows</strong></td><td>Toggles the app's Windows startup entry. When ticked, the app starts automatically every time Windows boots.</td></tr>
+      <tr><td><strong>Quit</strong></td><td>Stops the server and closes the app completely. The browser dashboard will stop working until you start the app again.</td></tr>
+    </table>
+  </div>
+
+  <!-- FAQ -->
+  <div class="step-section" id="faq">
+    <h2>Frequently Asked Questions</h2>
+
+    <h3>Can I run this without internet?</h3>
+    <p>Yes. The local server captures attendance to SQLite without any internet. Internet is only needed when you press "Upload to Railway" to sync to the cloud, or during initial package installation.</p>
+
+    <h3>What happens if the laptop restarts mid-day?</h3>
+    <p>All records that were already captured are safely stored in the SQLite database. Restart the app and the device will reconnect automatically (it retries every 30 seconds). No records are lost — the device also buffers any punches that happened while disconnected and sends them when it reconnects.</p>
+
+    <h3>Can multiple devices send to the same laptop?</h3>
+    <p>Yes. Set the same Server Address on each ZKTeco device. The app tracks devices by their Serial Number (SN) and processes attendance from all of them together.</p>
+
+    <h3>Can I run this on multiple laptops simultaneously?</h3>
+    <p>A ZKTeco device can only send to one server address at a time. If you need redundancy, configure the device's Server Address to the Railway cloud URL directly instead.</p>
+
+    <h3>How do I change the server port from 80?</h3>
+    <p>Right-click the tray icon → Settings → enter the new port (e.g. <code>8080</code>). Also update the device's Server Port to match. Restart the app for the change to take effect.</p>
+
+    <h3>Where is the attendance database?</h3>
+    <ul style="padding-left: 20px; margin-top:6px; line-height:2">
+      <li><strong>Python script mode:</strong> <code>C:\RMS\desktop\attendance.db</code></li>
+      <li><strong>.exe mode:</strong> <code>C:\Users\YourName\AppData\Roaming\ZKTecoAttendance\attendance.db</code></li>
+    </ul>
+    <p>You can open it with any SQLite viewer (e.g. DB Browser for SQLite) to inspect records directly.</p>
+
+    <h3>How do I back up the attendance data?</h3>
+    <p>Copy the <code>attendance.db</code> file to a safe location (USB drive, cloud storage). The Excel export is also a good daily backup — download one at the end of each day.</p>
+  </div>
+
+</main>
+</div>
+
+<script>
+// TOC active link tracking
+const links = document.querySelectorAll('.nav-link');
+const sections = [];
+links.forEach(l => {
+  const id = l.getAttribute('href').slice(1);
+  const el = document.getElementById(id);
+  if (el) sections.push({ el, link: l });
+});
+
+function updateActive() {
+  const scrollY = window.scrollY + 80;
+  let active = sections[0];
+  for (const s of sections) {
+    if (s.el.offsetTop <= scrollY) active = s;
+  }
+  links.forEach(l => l.classList.remove('active'));
+  if (active) active.link.classList.add('active');
+}
+window.addEventListener('scroll', updateActive, { passive: true });
+updateActive();
+</script>
