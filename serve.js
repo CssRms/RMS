@@ -447,7 +447,25 @@ app.use(cors((req, cb) => {
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
-app.use(pinoHttp({ logger }));
+app.use(pinoHttp({
+  logger,
+  // Silence 2xx/3xx — only surface warnings and errors
+  customLogLevel: (_req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'silent';
+  },
+  // One-line format: METHOD /path → status (Xms)
+  customSuccessMessage: (req, res) =>
+    `${req.method} ${req.url} → ${res.statusCode}`,
+  customErrorMessage: (req, res, err) =>
+    `${req.method} ${req.url} → ${res.statusCode}${err ? ` | ${err.message}` : ''}`,
+  // Strip headers — only keep method, url, status, response time
+  serializers: {
+    req: (req) => ({ method: req.method, url: req.url }),
+    res: (res) => ({ statusCode: res.statusCode }),
+  },
+}));
 
 // ── BOOTING PROTECTOR MIDDLEWARE ───────────────────────────────────────────
 app.use((req, res, next) => {
