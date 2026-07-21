@@ -445,7 +445,9 @@ app.use(cors((req, cb) => {
   return cb(null, { origin: false, credentials: false });
 }));
 app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: false, limit: '2mb' })); // needed for ZKTeco ADMS POST bodies
+app.use(express.urlencoded({ extended: false, limit: '2mb' }));
+// ZKTeco MB160 sends attendance as raw text/plain — capture as string for ADMS handler
+app.use(express.text({ type: ['text/plain', 'application/octet-stream'], limit: '2mb' }));
 app.use(cookieParser());
 
 app.use(pinoHttp({
@@ -9639,32 +9641,60 @@ PushOptionsFlag=1
 app.post('/iclock/cdata', async (req, res) => {
   try {
     const sn    = req.query.SN || req.body?.SN || 'UNKNOWN';
-    const table = req.query.table || req.body?.table || '';
-    const stamp = req.query.Stamp || req.body?.Stamp;
+    const table = (req.query.table || req.body?.table || '').toUpperCase();
 
-    if (table !== 'ATTLOG') { res.set('Content-Type','text/plain').send('OK'); return; }
+    // Bug fix: only skip if table is explicitly set to something OTHER than ATTLOG.
+    // MB160 raw push sends no table param at all — previously this blocked everything.
+    if (table && table !== 'ATTLOG') { res.set('Content-Type','text/plain').send('OK'); return; }
 
-    // Body is URL-encoded: data=ATTLOG\tSTAFFID\tYYYY-MM-DD HH:MM:SS\tTYPE\tVERIFY\t0\t0\n...
-    let rawData = req.body?.data || '';
-    if (!rawData && typeof req.body === 'string') rawData = req.body;
+    // Extract raw body — three sources in priority order:
+    // 1. URL-encoded form field: data=ATTLOG\t...  (some ZKTeco firmware)
+    // 2. express.text() parsed string: raw text/plain body  (MB160, confirmed from device capture)
+    // 3. Fallback empty string
+    let rawData = (req.body && typeof req.body === 'object' && req.body.data)
+      ? req.body.data
+      : (typeof req.body === 'string' ? req.body : '');
 
-    const lines = rawData.split(/\r?\n/).filter(l => l.startsWith('ATTLOG'));
+    if (!rawData) {
+      logger.warn({ sn, contentType: req.headers['content-type'] }, 'ADMS POST body empty — nothing to parse');
+      res.set('Content-Type','text/plain').send('OK');
+      return;
+    }
+
     let saved = 0, duplicates = 0;
-    for (const line of lines) {
-      const parts = line.split(/\t/);
-      // ATTLOG \t enrollNum \t dateTime \t status \t verify \t workCode \t reserved
-      if (parts.length < 3) continue;
-      const staffId   = String(parts[1]).trim().toUpperCase();
-      const punchTime = new Date(parts[2].trim());
-      const punchType = parseInt(parts[3] || '0', 10);
-      const verifyType= parseInt(parts[4] || '1', 10);
+    for (const rawLine of rawData.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('OPLOG')) continue;
+
+      let staffId, punchTime, punchType, verifyType;
+
+      if (line.startsWith('ATTLOG')) {
+        // Format A (URL-encoded / old firmware): ATTLOG\tPIN\tYYYY-MM-DD HH:MM:SS\tSTATUS\tVERIFY\t...
+        const parts = line.split(/\t/);
+        if (parts.length < 3) continue;
+        staffId    = String(parts[1]).trim().toUpperCase();
+        punchTime  = new Date(parts[2].trim());
+        punchType  = parseInt(parts[3] || '0', 10);
+        verifyType = parseInt(parts[4] || '1', 10);
+      } else {
+        // Format B (raw text/plain, MB160 confirmed): PIN  DATE  TIME  VERIFY  STATUS  0  0  ...
+        // Captured example: 11112222  2026-07-21  11:02:20  255  1  0  0  0  00  0
+        const parts = line.split(/\s+/);
+        if (parts.length < 3) continue;
+        staffId    = String(parts[0]).trim().toUpperCase();
+        punchTime  = new Date(`${parts[1]} ${parts[2]}`);
+        // parts[3] = verify mode (255 = fingerprint auto), parts[4] = in/out status
+        verifyType = parseInt(parts[3] || '1', 10);
+        punchType  = parseInt(parts[4] || '0', 10);
+      }
+
       if (!staffId || isNaN(punchTime.getTime())) continue;
 
       const { isDuplicate, isFlagged, flagReason } = await zkCheckPunch(staffId, punchTime);
       if (isDuplicate) { duplicates++; continue; }
       try {
         await prisma.zKAttendancePunch.upsert({
-          where: { staffId_punchTime: { staffId, punchTime } },
+          where:  { staffId_punchTime: { staffId, punchTime } },
           update: {},
           create: { staffId, punchTime, punchType, verifyType, deviceSerial: sn, source: 'adms', isFlagged, flagReason },
         });
@@ -9672,11 +9702,11 @@ app.post('/iclock/cdata', async (req, res) => {
         saved++;
       } catch {}
     }
-    logger.info({ sn, lines: lines.length, saved, duplicates }, 'ADMS punch batch');
+    logger.info({ sn, saved, duplicates }, 'ADMS punch batch');
     res.set('Content-Type','text/plain').send('OK');
   } catch (e) {
     logger.error(e, 'ADMS cdata error');
-    res.set('Content-Type','text/plain').send('OK'); // Always ACK so device doesn't retry infinitely
+    res.set('Content-Type','text/plain').send('OK'); // Always ACK — device must not retry forever
   }
 });
 
