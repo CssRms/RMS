@@ -445,6 +445,7 @@ app.use(cors((req, cb) => {
   return cb(null, { origin: false, credentials: false });
 }));
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false, limit: '2mb' })); // needed for ZKTeco ADMS POST bodies
 app.use(cookieParser());
 
 app.use(pinoHttp({
@@ -9618,9 +9619,9 @@ app.get('/iclock/cdata', async (req, res) => {
   // Tell device to push attendance in real-time with no encryption
   res.set('Content-Type', 'text/plain').send(
 `GET OPTION FROM: ${sn}
-ATTLOGStamp=None
-OPERLOGStamp=None
-ATTPHOTOStamp=None
+ATTLOGStamp=9999
+OPERLOGStamp=9999
+ATTPHOTOStamp=9999
 ErrorDelay=30
 Delay=10
 TransTimes=00:00;23:59
