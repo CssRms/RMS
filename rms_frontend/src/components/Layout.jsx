@@ -1229,7 +1229,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               )}
               <SidebarItem icon={deptStatus.isReady ? Building2 : ShieldAlert} label="Profile" active={currentView === 'dept_profile'} onClick={() => onViewChange('dept_profile')} mobile />
             </>
-          ) : showHRPortal ? (
+          ) : showHRPortal && user?.role !== 'global_admin' ? (
             <>
               <SidebarItem icon={HeartHandshake} label="HR Home" active={currentView === 'hr_dashboard'} onClick={() => onViewChange('hr_dashboard')} mobile />
               <SidebarItem icon={Users} label="People" active={currentView === 'hr_employees'} onClick={() => onViewChange('hr_employees')} mobile />
@@ -1245,6 +1245,9 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               <SidebarItem icon={GitBranch} label="Sub-Units" active={currentView === 'sub_accounts'} onClick={() => onViewChange('sub_accounts')} mobile />
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
               <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
+              {showHRPortal && (
+                <SidebarItem icon={HeartHandshake} label="HR" active={currentView?.startsWith('hr_')} onClick={() => onViewChange('hr_dashboard')} mobile />
+              )}
               {studioEnabled && (
                 <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} mobile />
               )}
