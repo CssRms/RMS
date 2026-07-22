@@ -1003,6 +1003,7 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
   }, [_isAccountDept, user?.deptId]);
 
   const [hrPortalOpen, setHrPortalOpen] = useState(false);
+  const [mobileHrOpen, setMobileHrOpen] = useState(false);
   const [hrPortalEnabled, setHrPortalEnabled] = useState(null);
   const [hrPortalAdminEnabled, setHrPortalAdminEnabled] = useState(null);
   const [studioEnabled, setStudioEnabled] = useState(null);
@@ -1246,7 +1247,46 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
               <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
               {showHRPortal && (
-                <SidebarItem icon={HeartHandshake} label="HR" active={currentView?.startsWith('hr_')} onClick={() => onViewChange('hr_dashboard')} mobile />
+                <div className="relative flex-shrink-0">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setMobileHrOpen(v => !v)}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setMobileHrOpen(v => !v)}
+                    className={`relative flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none ${mobileHrOpen || currentView?.startsWith('hr_') ? 'text-[#f97316]' : 'text-white'}`}
+                  >
+                    <HeartHandshake size={20} />
+                    <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter ${mobileHrOpen || currentView?.startsWith('hr_') ? 'text-[#f97316]' : 'text-white'}`}>HR</span>
+                  </div>
+                  {mobileHrOpen && (
+                    <>
+                      <div className="fixed inset-0 z-[110]" onClick={() => setMobileHrOpen(false)} />
+                      <div className={`absolute bottom-[calc(100%+12px)] left-1/2 -translate-x-1/2 z-[120] ${sidebarBg} border border-white/10 rounded-2xl shadow-2xl shadow-black/40 p-2 min-w-[140px] animate-in slide-in-from-bottom-2 duration-200`}>
+                        <div className="text-[8px] font-black text-white/40 uppercase tracking-widest px-2 pb-1.5">HR Portal</div>
+                        {[
+                          { icon: HeartHandshake, label: 'HR Overview',  view: 'hr_dashboard' },
+                          { icon: Users,          label: 'Employees',    view: 'hr_employees' },
+                          { icon: CalendarDays,   label: 'Leave',        view: 'hr_leaves' },
+                          { icon: Clock,          label: 'Attendance',   view: 'hr_attendance' },
+                          { icon: DollarSign,     label: 'Payroll',      view: 'hr_payroll' },
+                          { icon: UserPlus,       label: 'Recruitment',  view: 'hr_recruitment' },
+                        ].map(({ icon: Icon, label, view }) => (
+                          <div
+                            key={view}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => { onViewChange(view); setMobileHrOpen(false); }}
+                            onKeyDown={e => (e.key === 'Enter') && (onViewChange(view), setMobileHrOpen(false))}
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer transition-all active:scale-95 ${currentView === view ? 'bg-white/15 text-[#f97316]' : 'text-white hover:bg-white/10'}`}
+                          >
+                            <Icon size={15} />
+                            <span className="text-[11px] font-bold whitespace-nowrap">{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
               {studioEnabled && (
                 <SidebarItem icon={PenTool} label="Studio" active={currentView === 'document_studio'} onClick={() => onViewChange('document_studio')} mobile />
