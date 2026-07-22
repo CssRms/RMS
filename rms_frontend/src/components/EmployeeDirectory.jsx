@@ -311,7 +311,7 @@ const EmployeeDirectory = ({ onViewChange }) => {
                 name="department"
                 value={formData.department}
                 onChange={handleChange}
-                options={deptOptions.length > 0 ? deptOptions : departments.map(d => d.name)}
+                options={departments.length > 0 ? departments.map(d => d.name) : deptOptions}
               />
               <FieldInput
                 label="Status"
