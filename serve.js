@@ -9389,6 +9389,7 @@ app.get('/api/hr/employees', hrAuth, async (req, res) => {
     const { status, department, search, page = 1, limit = 200 } = req.query;
     const where = {};
     if (status) where.status = status;
+    else where.status = { not: 'terminated' };
     if (department) where.department = department;
     if (search) {
       where.OR = [
@@ -9451,7 +9452,7 @@ app.put('/api/hr/employees/:id', hrAuth, async (req, res) => {
 
 app.delete('/api/hr/employees/:id', hrAuth, async (req, res) => {
   try {
-    await prisma.hREmployee.update({ where: { id: Number(req.params.id) }, data: { status: 'terminated' } });
+    await prisma.hREmployee.delete({ where: { id: Number(req.params.id) } });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
