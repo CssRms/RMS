@@ -721,3 +721,309 @@ The ADMS device push endpoint (`/iclock/cdata`) does NOT require a secret — ZK
 | Daily tab shows 0 employees | No active employees in the Employee Directory | Add employees under HR Portal → Employee Directory |
 | Flagged punches every morning | All staff arrive and punch within 60 seconds | Normal for small teams — ignore the flags, or they can stagger arrival by 1–2 minutes |
 | "Last Punch Received: Never" in sync tab | No punches have been received yet | Confirm device ADMS config or run the sync agent |
+
+---
+
+# Admin User Manual: ZKTeco Desktop Attendance Monitor (Local Capture App)
+
+## What is the Desktop Monitor?
+
+The ZKTeco Desktop Attendance Monitor is a Windows desktop application that turns any office PC into a local attendance server. Instead of the ZKTeco device pushing punches directly to Railway over the internet, it pushes to the PC on your office LAN — the PC captures every punch locally and lets you review, export, and sync to Railway at any time.
+
+**Use this approach when:**
+- The ZKTeco device cannot reach the internet directly (no SIM card, no direct WAN access)
+- You want a full offline buffer — attendance is safe on the PC even if Railway is down
+- You want a live dashboard on an office screen showing who is present right now
+- You want to export Excel reports without logging into the web portal
+
+The app runs silently in the Windows system tray and starts automatically with Windows once configured. No terminal or Python knowledge is needed after first setup.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Windows PC (Windows 10 or 11) | The PC that will act as the local attendance server. Must stay on during attendance hours. |
+| Python 3.10 or newer | Download free from [python.org](https://python.org). During install, check **"Add Python to PATH"**. |
+| Office network access | The PC and the ZKTeco device must be on the same office LAN (connected to the same router/switch). |
+| Administrator rights | Port 80 requires running the app as Administrator. |
+| Railway URL | Your live RMS portal URL (e.g. `https://cssgrouprms.com`) — needed only for the Railway sync step. |
+
+---
+
+## Step 1 — Get the App Files
+
+The Desktop Monitor lives inside the main RMS project repository at `desktop/`. You do not need the entire repo if you only want to run the app — copy just this folder.
+
+**Option A — From the repo (if you have the project files):**
+1. Navigate to `C:\Users\USER\Downloads\Pro-RMS\desktop\`
+2. Copy the entire `desktop\` folder to a permanent location, e.g. `C:\CSS-Attendance\`
+
+**Option B — Fresh install on a new PC:**
+1. Download or clone the `CssRms/RMS` GitHub repository
+2. Copy the `desktop\` folder to `C:\CSS-Attendance\` (or any permanent folder)
+
+The folder contains:
+```
+desktop\
+  app.py              ← tray application entry point
+  server.py           ← Flask attendance server
+  database.py         ← SQLite database models
+  config_util.py      ← settings/path helpers
+  seed.py             ← one-time employee loader (optional)
+  requirements.txt    ← Python dependencies list
+  build.bat           ← builds a standalone .exe (optional)
+  templates\
+    dashboard.html    ← live web dashboard
+```
+
+---
+
+## Step 2 — Install Python Dependencies
+
+Open **PowerShell as Administrator** (right-click Start → Windows PowerShell (Admin)) and run:
+
+```powershell
+cd C:\CSS-Attendance
+python -m pip install -r requirements.txt
+```
+
+> **Important:** Always use `python -m pip` (not bare `pip`) to avoid issues if multiple Python versions are installed.
+
+This installs Flask, SQLite tools, openpyxl (for Excel export), pystray (tray icon), and all other required packages. Takes about 1–2 minutes the first time.
+
+---
+
+## Step 3 — Register Your Employees
+
+Before attendance can be recorded, the app needs to know which Staff IDs belong to which employees. The Staff ID here **must exactly match the Enroll Number stored on the ZKTeco device** for that person.
+
+**Option A — Use the dashboard (easiest):**
+1. Start the app (Step 4 below), open the dashboard
+2. Go to the **Employees** section
+3. Click **Add Employee** and fill in Staff ID, Name, Department, and Position
+4. Repeat for each staff member
+
+**Option B — Bulk load via seed file (faster for many staff):**
+1. Open `C:\CSS-Attendance\seed.py` in Notepad or any text editor
+2. Edit the `STAFF` list with your real employees:
+   ```python
+   STAFF = [
+       {"staff_id": "CSS001", "name": "John Doe",   "department": "Finance",   "position": "Accountant"},
+       {"staff_id": "CSS002", "name": "Jane Smith", "department": "HR",        "position": "HR Manager"},
+       # Add as many lines as needed
+   ]
+   ```
+3. Save and run in PowerShell:
+   ```powershell
+   cd C:\CSS-Attendance
+   python seed.py
+   ```
+   The script skips any Staff IDs already in the database, so it is safe to re-run.
+
+**The golden rule:** the Staff ID in this list must be identical to what is enrolled on the ZKTeco device. If a staff member's device enroll number is `11112222`, their Staff ID here must be `11112222` — not `CSS001` or anything else. Check the device's user list under **Menu → User Management** to confirm the exact enroll numbers.
+
+---
+
+## Step 4 — Configure the ZKTeco Device
+
+The device needs to be told to send attendance to the PC's local IP address instead of (or in addition to) Railway.
+
+**Find your PC's LAN IP address:**
+```powershell
+ipconfig
+```
+Look for `IPv4 Address` under your active network adapter. It will look like `192.168.1.45` or `192.168.10.178`. This is the address you will enter on the device.
+
+**On the ZKTeco device:**
+1. Go to **Comm → Cloud Server** (may be labelled "ADMS", "Web Server", or "HTTP Server" depending on model)
+2. Set **Enable Domain Name** to **OFF** (when off, the separate Port field becomes visible)
+3. Set **Server Address** to your PC's LAN IP (e.g. `192.168.1.45`)
+4. Set **Server Port** to `80`
+5. Set **Proxy Server** to **Disabled**
+6. Save and restart the device if prompted
+
+The device will now send a heartbeat `GET` request every 30 seconds, and a punch record immediately after each fingerprint or face scan.
+
+> **Note:** If you later want to switch back to direct Railway cloud push, go back to the device settings, turn **Enable Domain Name ON**, set Server Address to `cssgrouprms.com`, and Port to `443`.
+
+---
+
+## Step 5 — Start the App
+
+Open **PowerShell as Administrator** (right-click Start → Windows PowerShell (Admin)) and run:
+
+```powershell
+cd C:\CSS-Attendance
+python app.py
+```
+
+A green fingerprint icon will appear in the **Windows system tray** (bottom-right corner, near the clock). The dashboard will open automatically in your browser.
+
+If the dashboard does not open automatically, right-click the tray icon and select **Open Dashboard**, or visit `http://localhost` in any browser on the same PC.
+
+---
+
+## Step 6 — Run Diagnostics Before First Use
+
+Before taking attendance, always confirm everything is working. Right-click the tray icon and select **Run Diagnostics**, or click the **Diagnostics** tab in the dashboard.
+
+The diagnostics panel checks:
+
+| Check | What it confirms |
+|---|---|
+| **Device heartbeat** | Whether the ZKTeco device has contacted the server in the last 2 minutes — confirms the device is alive and pointed at the right IP |
+| **Laptop IP** | Shows the current LAN IP so you can confirm it matches what is entered on the device |
+| **Employees registered** | Confirms at least one employee exists in the local database |
+| **Railway reachability** | Tests whether the PC can reach the Railway URL (needed for later sync) |
+| **Excel export library** | Confirms openpyxl is installed so Excel export will work |
+
+All five should show green ticks before you start capturing attendance. If the device heartbeat shows red, double-check the IP address on the device and confirm the PC's firewall allows inbound connections on port 80.
+
+---
+
+## Daily Attendance Workflow
+
+Once the app is running and the device is configured:
+
+1. **The app runs in the background.** No action needed — punches appear in the dashboard automatically as staff scan their fingerprints.
+2. **The live dashboard** shows:
+   - A **hero tile** with the most recent punch (name, time, photo if available)
+   - An **employee status list** — green dot = present today, grey dot = not yet punched
+   - A full **attendance log** with timestamps for every punch
+3. **To view a specific day**, use the date picker at the top of the attendance log.
+4. **No PC restart needed** — the app auto-starts with Windows once you enable it (Step 8).
+
+---
+
+## Exporting to Excel
+
+From the dashboard, click the **Export Excel** button. A date-range picker lets you choose a start and end date. Click **Download** to get a `.xlsx` file with:
+
+- One row per punch record
+- Columns: Staff ID, Name, Department, Date, Time, Status, Verified
+- A summary sheet showing total Present / Absent per day
+
+This file can be opened directly in Microsoft Excel or uploaded to any HR system that accepts `.xlsx`.
+
+---
+
+## Syncing to Railway
+
+After capturing local attendance, upload it to Railway so the main portal reflects the data.
+
+**Manual sync:**
+1. Open the dashboard and click the **Sync to Railway** button
+2. The app formats all unsynced records and sends them to Railway's attendance endpoint
+3. A progress bar and result summary appear — it shows how many records were uploaded and whether any failed
+
+**What syncs:** only records not yet uploaded (the app tracks a `synced` flag internally). Re-running sync is safe — Railway stores each record by `(staffId, punchTime)` and will not create duplicates.
+
+**After sync**, the punches appear in the RMS portal under HR Portal → Attendance Tracker → Daily Biometric, linked to employees by Staff ID.
+
+**Sync status:** the tray icon tooltip shows the timestamp of the last successful sync. You can also check the Sync tab in the dashboard for a detailed history.
+
+---
+
+## Step 8 — Enable Auto-Start with Windows (Recommended)
+
+So the app runs every time the PC is turned on without any manual steps:
+
+1. Right-click the green tray icon
+2. Select **Start with Windows**
+3. A tick appears next to the menu item — the setting is saved
+
+This writes a registry entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. To remove it, right-click and select **Start with Windows** again (the tick disappears).
+
+> The app must always be run as Administrator for port 80. If you use the auto-start registry entry, ensure the shortcut it creates has **"Run as administrator"** enabled, or create the registry entry manually pointing to a shortcut with elevated permissions.
+
+---
+
+## Settings
+
+Right-click the tray icon and select **Settings** to open the settings dialog:
+
+| Setting | Default | Description |
+|---|---|---|
+| **Port** | `80` | The port the local server listens on. Port 80 requires Administrator rights. Use `8080` if you cannot run as Administrator, then set the device's Server Port to `8080` too. |
+| **Railway URL** | `https://cssgrouprms.com` | The Railway deployment to sync punches to. Must be the full URL with no trailing slash. |
+| **Auto-open dashboard** | On | Whether the browser opens automatically when the app starts. Turn off for headless/background operation. |
+
+Settings are saved immediately to `%APPDATA%\ZKTecoAttendance\settings.json`.
+
+---
+
+## Building a Standalone .exe (Optional)
+
+If you want to distribute the app to other PCs without requiring Python to be installed, you can build a single-file Windows executable:
+
+1. Make sure `requirements.txt` is installed (Step 2)
+2. Double-click `build.bat` inside the `desktop\` folder (or run it from PowerShell)
+3. Wait about 2–3 minutes — PyInstaller packages everything
+4. The output file appears at `desktop\dist\ZKAttendance.exe`
+
+Copy `ZKAttendance.exe` to any Windows PC. Double-click to run — no Python, no pip, no dependencies needed on the target machine.
+
+> The first run on a new PC may be slower (Windows Defender scanning the new executable). Subsequent runs are instant.
+
+---
+
+## Where Data is Stored
+
+| Location | What's there |
+|---|---|
+| `%APPDATA%\ZKTecoAttendance\attendance.db` | SQLite database — all employees and punch records |
+| `%APPDATA%\ZKTecoAttendance\settings.json` | Port, Railway URL, and other settings |
+
+`%APPDATA%` expands to `C:\Users\<YourName>\AppData\Roaming\` on most Windows installs.
+
+**Backup:** copy `attendance.db` to a safe location regularly. The file is a standard SQLite database and can be opened with any SQLite viewer (e.g. DB Browser for SQLite, free download).
+
+---
+
+## Updating the App
+
+When a new version is released:
+
+1. Pull the latest changes from GitHub (`git pull` in the project folder, or re-download the `desktop\` folder)
+2. Re-run `python -m pip install -r requirements.txt` in case any Python package versions changed
+3. Restart the app (`python app.py`)
+
+If you built a `.exe`, run `build.bat` again to rebuild it with the updated code.
+
+---
+
+## Troubleshooting
+
+| Problem | Likely cause | Fix |
+|---|---|---|
+| `python app.py` fails: "Access is denied" / port 80 blocked | Not running as Administrator | Right-click PowerShell → Run as administrator, then re-run |
+| Tray icon appears but dashboard shows "connection refused" | App is still starting (takes ~2 seconds) | Wait 3 seconds and refresh the browser |
+| Device heartbeat shows red in diagnostics | Device not reaching the PC | Confirm the IP on the device matches `ipconfig` output; check Windows Firewall allows port 80 inbound |
+| `ModuleNotFoundError: No module named 'pystray'` | Dependencies not installed, or installed in the wrong Python | Run `python -m pip install -r requirements.txt` (note: `python -m pip`, not bare `pip`) |
+| Punches arrive but no employee name shows | Staff ID on device does not match local database | Check device enroll number in device's User Management; update the employee's Staff ID in the dashboard to match |
+| Sync fails with 401 error | Railway URL incorrect, or Railway service is down | Confirm Railway URL in Settings; check `cssgrouprms.com` is reachable in a browser |
+| Excel export button does nothing / error | openpyxl not installed | Run `python -m pip install openpyxl` |
+| `pip install` fails with "Fatal error in launcher" | Multiple Python installations conflict | Always use `python -m pip install` instead of bare `pip install` |
+
+---
+
+## FAQ
+
+**Q: Does the PC need to stay on all day?**
+Yes — the app must be running to receive punches from the device in real time. If the PC is shut down while staff are still clocking in, those punches will be buffered on the device and will only appear in the local database after the PC comes back on and the device reconnects. (ZKTeco devices buffer unsent records internally and re-send them automatically.)
+
+**Q: Can two PCs run the app at the same time?**
+No — the ZKTeco device can only push to one ADMS server address at a time. Designate one PC as the attendance server.
+
+**Q: What happens if Railway is down during a sync?**
+The sync will fail and show an error. Punches stay in the local database with `synced = 0`. Run sync again when Railway is back — it will upload exactly the records that were not sent before.
+
+**Q: How do I add a new employee after the device is already running?**
+Add them in the dashboard (or run `seed.py` again with the new entry). On the ZKTeco device, enroll their fingerprint under **Menu → User Management → New User**, and enter the exact same Staff ID as their device Enroll Number. No restart of the local app is needed.
+
+**Q: The device shows the correct IP but still doesn't connect. What else can I check?**
+1. On the PC, open Windows Defender Firewall → Advanced Settings → Inbound Rules → confirm there is a rule allowing TCP on port 80 (or create one: New Rule → Port → TCP → 80 → Allow)
+2. Confirm the PC and device are on the same subnet (first three numbers of their IPs should match, e.g. both `192.168.1.x`)
+3. Try pinging the device from the PC: `ping 192.168.1.100` (replace with the device IP) — if it times out, there is a network-layer issue between the two devices

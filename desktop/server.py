@@ -187,19 +187,24 @@ def api_diagnose():
     except Exception as e:
         checks.append({"name": "Employee Database", "status": "error", "message": f"DB error: {e}"})
 
-    # 4. Railway cloud
-    try:
-        req = urllib.request.Request(f"{RAILWAY_URL}/iclock/getrequest?SN=DIAGNOSE", method="GET")
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            if resp.status == 200:
-                checks.append({"name": "Railway Cloud", "status": "ok",
-                                "message": f"Reachable: {RAILWAY_URL}"})
-            else:
-                checks.append({"name": "Railway Cloud", "status": "warn",
-                                "message": f"Responded with HTTP {resp.status}"})
-    except Exception as e:
-        checks.append({"name": "Railway Cloud", "status": "warn",
-                        "message": f"Not reachable ({type(e).__name__}). You can still capture locally and sync later."})
+    # 4. Railway cloud — run in a thread so a slow/dead network can't freeze the page
+    import threading as _threading
+    _rail = [None]
+    def _chk_rail():
+        try:
+            req = urllib.request.Request(f"{RAILWAY_URL}/iclock/getrequest?SN=DIAGNOSE", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                _rail[0] = {"name": "Railway Cloud", "status": "ok",
+                             "message": f"Reachable: {RAILWAY_URL}"}
+        except Exception as e:
+            _rail[0] = {"name": "Railway Cloud", "status": "warn",
+                         "message": f"Not reachable ({type(e).__name__}). You can still capture locally and sync later."}
+    _t = _threading.Thread(target=_chk_rail, daemon=True)
+    _t.start(); _t.join(timeout=4)
+    if _rail[0] is None:
+        _rail[0] = {"name": "Railway Cloud", "status": "warn",
+                     "message": "Check timed out — network may be offline. Local capture still works; sync later when online."}
+    checks.append(_rail[0])
 
     # 5. Excel library
     try:

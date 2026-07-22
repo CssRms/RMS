@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZKTeco Attendance Monitor</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"
+  onerror="window.io=function(){return{on:function(){},emit:function(){},disconnect:function(){}}}"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -553,26 +554,48 @@ function showUnknown(d) {
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────
 async function runDiag() {
-  document.getElementById('diag-body').innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Running checks…</div>';
-  const r = await fetchJson('/api/diagnose');
-  const ICON = { ok: '✅', warn: '⚠️', error: '❌' };
-  const CLS  = { ok: 'ok', warn: 'warn', error: 'err' };
-  let html = `<div class="diag-overall ${CLS[r.overall]}">
-    ${r.overall === 'ok' ? '✅ All Systems Ready — Attendance can start' :
-      r.overall === 'warn' ? '⚠️ Ready with warnings — review items below' :
-      '❌ Not Ready — fix errors before starting'}
-  </div>`;
-  r.checks.forEach(c => {
-    html += `<div class="diag-card ${CLS[c.status]}">
-      <div class="diag-icon">${ICON[c.status]}</div>
+  const body = document.getElementById('diag-body');
+  body.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Running checks…</div>';
+  try {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 12000);
+    let resp;
+    try {
+      resp = await fetch('/api/diagnose', { signal: ctrl.signal });
+    } finally {
+      clearTimeout(tid);
+    }
+    const r = await resp.json();
+    const ICON = { ok: '✅', warn: '⚠️', error: '❌' };
+    const CLS  = { ok: 'ok', warn: 'warn', error: 'err' };
+    let html = `<div class="diag-overall ${CLS[r.overall]}">
+      ${r.overall === 'ok' ? '✅ All Systems Ready — Attendance can start' :
+        r.overall === 'warn' ? '⚠️ Ready with warnings — review items below' :
+        '❌ Not Ready — fix errors before starting'}
+    </div>`;
+    r.checks.forEach(c => {
+      html += `<div class="diag-card ${CLS[c.status]}">
+        <div class="diag-icon">${ICON[c.status]}</div>
+        <div>
+          <div class="diag-label">${c.name}</div>
+          <div class="diag-msg">${c.message}</div>
+        </div>
+      </div>`;
+    });
+    html += `<div class="diag-ts">Checked at ${new Date(r.timestamp).toLocaleTimeString()}</div>`;
+    body.innerHTML = html;
+  } catch(e) {
+    const msg = e.name === 'AbortError'
+      ? 'Server is taking too long — it may still be starting. Wait 5 seconds and click <strong>Run Checks</strong> again.'
+      : 'Could not reach server: ' + e.message + '<br>Wait a moment and click <strong>Run Checks</strong> again.';
+    body.innerHTML = `<div class="diag-card err">
+      <div class="diag-icon">❌</div>
       <div>
-        <div class="diag-label">${c.name}</div>
-        <div class="diag-msg">${c.message}</div>
+        <div class="diag-label">Diagnostics Failed</div>
+        <div class="diag-msg">${msg}</div>
       </div>
     </div>`;
-  });
-  html += `<div class="diag-ts">Checked at ${new Date(r.timestamp).toLocaleTimeString()}</div>`;
-  document.getElementById('diag-body').innerHTML = html;
+  }
 }
 
 // ── Socket events ─────────────────────────────────────────────────────────────
