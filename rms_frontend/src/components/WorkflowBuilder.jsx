@@ -135,6 +135,45 @@ const WorkflowBuilder = ({ onViewChange }) => {
   const [refPattern, setRefPattern] = useState({ orgPrefix: 'CSSG', typeCash: 'FR', typeMaterial: 'MR', typeMemo: 'MO' });
   const [savingRef, setSavingRef]   = useState(false);
 
+  // ── Desktop client sync — a separate desktop attendance app (no RMS
+  // login of its own) polls GET /api/sync/heartbeat and reads these same
+  // SystemSetting keys to decide whether it stays active. Own load/save,
+  // same pattern as refPattern above, since it's an unrelated concern
+  // from the on/off Feature Controls grid below.
+  const [syncSettings, setSyncSettings] = useState({ enabled: true, expiresAt: '', message: '' });
+  const [syncLoaded, setSyncLoaded] = useState(false);
+  const [savingSync, setSavingSync] = useState(false);
+
+  const loadSyncSettings = async () => {
+    try {
+      const [e, exp, msg] = await Promise.all([
+        settingsAPI.get('desktop_sync_enabled').catch(() => ({ value: 'true' })),
+        settingsAPI.get('desktop_sync_expires_at').catch(() => ({ value: '' })),
+        settingsAPI.get('desktop_sync_message').catch(() => ({ value: '' })),
+      ]);
+      setSyncSettings({
+        enabled: (e?.value ?? 'true') !== 'false',
+        expiresAt: exp?.value || '',
+        message: msg?.value || '',
+      });
+    } catch {}
+    setSyncLoaded(true);
+  };
+
+  const saveSyncSettings = async () => {
+    setSavingSync(true);
+    try {
+      await Promise.all([
+        settingsAPI.set('desktop_sync_enabled', syncSettings.enabled ? 'true' : 'false'),
+        settingsAPI.set('desktop_sync_expires_at', syncSettings.expiresAt || ''),
+        settingsAPI.set('desktop_sync_message', syncSettings.message || ''),
+      ]);
+      toast.success('Desktop client sync settings saved.');
+    } catch {
+      toast.error('Could not save.');
+    } finally { setSavingSync(false); }
+  };
+
   // ── Feature flags ──────────────────────────────────────────────────────────
   const [studioEnabled, setStudioEnabled]               = useState(true);
   const [hrPortalEnabled, setHrPortalEnabled]           = useState(true);
@@ -595,6 +634,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
         loadIctPhone(),
         loadEmailStatus(),
         loadDeletedRecords(),
+        loadSyncSettings(),
       ]);
       setSettingsReady(true);
     })();
@@ -816,6 +856,65 @@ const WorkflowBuilder = ({ onViewChange }) => {
                   )}
                 </div>
               ))}
+
+              {/* Desktop Client Sync — spans both columns. Controls the separate
+                  desktop attendance app (no RMS login of its own), which polls
+                  GET /api/sync/heartbeat to decide whether it stays active. */}
+              {syncLoaded && (
+                <div className="lg:col-span-2 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="text-sm font-black text-foreground">Desktop Client Sync</p>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        Controls whether the desktop attendance client stays active. Changes take
+                        effect the next time it checks in (usually within 30 minutes).
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSyncSettings(s => ({ ...s, enabled: !s.enabled }))}
+                      className={`relative shrink-0 w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${syncSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${syncSettings.enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="border-t border-border/30 pt-4 space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        Auto-Expire (optional)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={syncSettings.expiresAt ? syncSettings.expiresAt.slice(0, 16) : ''}
+                        onChange={(e) => setSyncSettings(s => ({
+                          ...s,
+                          expiresAt: e.target.value ? new Date(e.target.value).toISOString() : '',
+                        }))}
+                        className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        Message Shown When Inactive
+                      </label>
+                      <textarea
+                        value={syncSettings.message}
+                        onChange={(e) => setSyncSettings(s => ({ ...s, message: e.target.value }))}
+                        placeholder="e.g. This software is currently inactive. Contact your administrator."
+                        rows={2}
+                        className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                    <button
+                      onClick={saveSyncSettings}
+                      disabled={savingSync}
+                      className="px-5 py-2 text-xs font-black uppercase tracking-widest rounded-xl bg-primary text-primary-foreground disabled:opacity-50 transition-all"
+                    >
+                      {savingSync ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Login Screen Style — spans both columns */}
               <div className="lg:col-span-2 p-5 rounded-2xl border-2 border-border/50 bg-white/80 hover:border-primary/30 transition-all space-y-4">
