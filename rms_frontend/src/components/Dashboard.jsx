@@ -193,6 +193,45 @@ const Dashboard = ({ onViewChange }) => {
     } finally { setSwitchingProvider(false); }
   };
 
+  // ── Desktop client sync control (Super Admin only) — a plain on/off +
+  // optional auto-expiry + admin-editable message for the separate desktop
+  // attendance app, which polls GET /api/sync/heartbeat (no RMS login of its
+  // own) and reads these same SystemSetting keys. Kept as its own small
+  // panel rather than a StatCard since it needs a toggle + datetime +
+  // free-text field, not a single number.
+  const [syncSettings, setSyncSettings] = useState({ enabled: true, expiresAt: '', message: '' });
+  const [syncLoaded, setSyncLoaded] = useState(false);
+  const [savingSync, setSavingSync] = useState(false);
+  useEffect(() => {
+    if (normalizeRole(user?.role) !== 'global_admin') return;
+    Promise.all([
+      settingsAPI.get('desktop_sync_enabled').catch(() => ({ value: 'true' })),
+      settingsAPI.get('desktop_sync_expires_at').catch(() => ({ value: '' })),
+      settingsAPI.get('desktop_sync_message').catch(() => ({ value: '' })),
+    ]).then(([e, exp, msg]) => {
+      setSyncSettings({
+        enabled: (e?.value ?? 'true') !== 'false',
+        expiresAt: exp?.value || '',
+        message: msg?.value || '',
+      });
+      setSyncLoaded(true);
+    });
+  }, [user]);
+
+  const saveSyncSettings = async () => {
+    setSavingSync(true);
+    try {
+      await Promise.all([
+        settingsAPI.set('desktop_sync_enabled', syncSettings.enabled ? 'true' : 'false'),
+        settingsAPI.set('desktop_sync_expires_at', syncSettings.expiresAt || ''),
+        settingsAPI.set('desktop_sync_message', syncSettings.message || ''),
+      ]);
+      toast.success('Saved.');
+    } catch {
+      toast.error('Could not save.');
+    } finally { setSavingSync(false); }
+  };
+
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -383,6 +422,52 @@ const Dashboard = ({ onViewChange }) => {
             </div>
           )}
         </div>
+
+        {normalizeRole(user?.role) === 'global_admin' && syncLoaded && (
+          <div className="glass bg-white/70 backdrop-blur-3xl rounded-[2rem] border border-border/40 p-5 shadow-2xl shadow-primary/5">
+            <h3 className="text-sm font-black text-foreground/70 uppercase tracking-wide mb-3">Desktop Client Sync</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Controls whether the desktop attendance client stays active. Changes take effect the next
+              time it checks in (usually within 30 minutes).
+            </p>
+            <div className="flex flex-wrap items-center gap-4 mb-3">
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input
+                  type="checkbox"
+                  checked={syncSettings.enabled}
+                  onChange={(e) => setSyncSettings(s => ({ ...s, enabled: e.target.checked }))}
+                />
+                Active
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                Auto-expire:
+                <input
+                  type="datetime-local"
+                  value={syncSettings.expiresAt ? syncSettings.expiresAt.slice(0, 16) : ''}
+                  onChange={(e) => setSyncSettings(s => ({
+                    ...s,
+                    expiresAt: e.target.value ? new Date(e.target.value).toISOString() : '',
+                  }))}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              </label>
+            </div>
+            <textarea
+              value={syncSettings.message}
+              onChange={(e) => setSyncSettings(s => ({ ...s, message: e.target.value }))}
+              placeholder="Message shown to the desktop app's users when inactive (e.g. 'This software is currently inactive. Contact your administrator.')"
+              className="w-full border rounded px-2 py-1.5 text-sm mb-3"
+              rows={2}
+            />
+            <button
+              onClick={saveSyncSettings}
+              disabled={savingSync}
+              className="px-4 py-1.5 text-sm font-semibold rounded-lg bg-primary text-white disabled:opacity-50"
+            >
+              {savingSync ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        )}
 
         {/* Unified Content Card */}
         <div className="glass bg-white/70 backdrop-blur-3xl rounded-[2rem] border border-border/40 p-1 shadow-2xl shadow-primary/5 overflow-hidden">
