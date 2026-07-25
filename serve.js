@@ -4876,6 +4876,39 @@ app.put('/api/system-settings/:key', authenticateToken, async (req, res) => {
   } catch (error) { sendError(res, 500, error.message); }
 });
 
+// GET /api/sync/heartbeat — desktop-client activation check. Deliberately NOT
+// gated by authenticateToken: the desktop app has no RMS login of its own,
+// it's a separate product entirely. Gated instead by a fixed shared secret
+// (DESKTOP_SYNC_KEY) sent as a header — a wrong/missing key gets a plain 404,
+// not 401/403, so the route's existence isn't advertised to anyone probing it.
+// Reuses the same SystemSetting table/keys the Super Admin already edits via
+// the existing PUT /api/system-settings/:key (no separate write endpoint
+// needed) — desktop_sync_enabled ("true"/"false"), desktop_sync_expires_at
+// (ISO datetime or empty = no auto-expiry), desktop_sync_message (free text
+// the admin controls, shown verbatim to the desktop app's users when
+// disabled — never hardcoded here, and never attributed to any third party).
+app.get('/api/sync/heartbeat', publicVerifyLimiter, async (req, res) => {
+  if (!process.env.DESKTOP_SYNC_KEY || req.headers['x-sync-key'] !== process.env.DESKTOP_SYNC_KEY) {
+    return res.status(404).end();
+  }
+  try {
+    await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "SystemSetting" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL DEFAULT '')`;
+    const rows = await prisma.$queryRaw`
+      SELECT "key", "value" FROM "SystemSetting"
+      WHERE "key" IN ('desktop_sync_enabled', 'desktop_sync_expires_at', 'desktop_sync_message')
+    `;
+    const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    const expiresAt = map.desktop_sync_expires_at || null;
+    const notExpired = !expiresAt || new Date(expiresAt) > new Date();
+    const enabled = map.desktop_sync_enabled !== 'false' && notExpired;
+    res.json({
+      enabled,
+      expiresAt,
+      message: map.desktop_sync_message || 'This software is currently inactive. Contact your administrator.',
+    });
+  } catch (error) { sendError(res, 500, error.message); }
+});
+
 // ── Reference Code Pattern Settings ──────────────────────────────────────────
 app.get('/api/settings/ref-pattern', authenticateToken, async (req, res) => {
   if (normalizeRole(req.user?.role) !== 'global_admin') return res.status(403).json({ error: 'Super Admin only' });
