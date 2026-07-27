@@ -620,6 +620,20 @@ const publicVerifyLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// Desktop clients poll /api/sync/heartbeat on a short interval by design
+// (near-real-time activation/lockout — see main_window.py's _init_sync_check).
+// publicVerifyLimiter's 30-per-15-min budget is tuned for a human-facing,
+// abuse-prone endpoint and was getting exhausted by legitimate polling
+// within the first couple of minutes, so every desktop client saw
+// permanent 429s and the activation check never actually succeeded.
+// Generous enough for several desktop installs sharing one office IP.
+const desktopSyncLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 // Mutation limiter — applied to all state-changing endpoints (POST/PUT/DELETE)
 const mutationLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -4887,7 +4901,7 @@ app.put('/api/system-settings/:key', authenticateToken, async (req, res) => {
 // (ISO datetime or empty = no auto-expiry), desktop_sync_message (free text
 // the admin controls, shown verbatim to the desktop app's users when
 // disabled — never hardcoded here, and never attributed to any third party).
-app.get('/api/sync/heartbeat', publicVerifyLimiter, async (req, res) => {
+app.get('/api/sync/heartbeat', desktopSyncLimiter, async (req, res) => {
   if (!process.env.DESKTOP_SYNC_KEY || req.headers['x-sync-key'] !== process.env.DESKTOP_SYNC_KEY) {
     return res.status(404).end();
   }
