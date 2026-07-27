@@ -31,7 +31,7 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick, mobile = fals
       tabIndex={0}
       title={isCollapsed ? label : ''}
       className={mobile
-        ? `relative overflow-hidden flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none focus-electric-halo hover-orange-pulse ${active ? 'text-[#f97316] animate-electric-pulse' : 'text-white'}`
+        ? `relative overflow-hidden flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none focus-electric-halo hover-orange-pulse ${active ? 'text-[#f97316] animate-electric-pulse' : 'text-white'}`
         : `relative flex items-center group px-3 py-2.5 rounded-2xl cursor-pointer transition-all duration-300 hover-shine-effect outline-none focus-electric-halo hover-orange-pulse ${isCollapsed ? 'justify-center mx-1' : 'space-x-4 mx-1'} ${active ? 'bg-white/15 text-[#f97316] shadow-lg shadow-black/20 scale-[0.98] animate-electric-pulse animate-active-hum' : 'text-white'}`
       }
     >
@@ -1204,12 +1204,34 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
         </main>
       </div>
 
-      {/* Floating Mobile Nav — horizontally scrollable, all items always visible */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-lg lg:hidden z-[100] animate-in slide-in-from-bottom-5 duration-500">
-        <nav
-          className={`${sidebarBg} border border-white/10 rounded-[2rem] flex items-center px-3 py-1.5 gap-1 shadow-2xl shadow-black/30 overflow-x-auto`}
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
+      {/* Mobile Bottom Nav — full-width bar anchored to device bottom */}
+      <div className="fixed bottom-0 left-0 right-0 lg:hidden z-[100] animate-in slide-in-from-bottom-5 duration-500">
+
+        {/* ── HR sub-nav row: slides up above main nav when HR is toggled ── */}
+        {showHRPortal && mobileHrOpen && (
+          <div className={`${sidebarBg} border-t border-white/20 flex items-center px-1 py-1 animate-in slide-in-from-bottom-2 duration-200`}>
+            {[
+              { icon: HeartHandshake, label: 'Overview',   view: 'hr_dashboard' },
+              { icon: Users,          label: 'Employees',  view: 'hr_employees' },
+              { icon: CalendarDays,   label: 'Leave',      view: 'hr_leaves' },
+              { icon: Clock,          label: 'Attendance', view: 'hr_attendance' },
+              { icon: DollarSign,     label: 'Payroll',    view: 'hr_payroll' },
+              { icon: UserPlus,       label: 'Recruit',    view: 'hr_recruitment' },
+            ].map(({ icon: Icon, label, view }) => (
+              <button
+                key={view}
+                onClick={() => { onViewChange(view); setMobileHrOpen(false); }}
+                className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all active:scale-95 outline-none ${currentView === view ? 'text-[#f97316]' : 'text-white/70 hover:text-white'}`}
+              >
+                <Icon size={18} />
+                <span className={`text-[8px] font-black mt-1 uppercase tracking-tighter ${currentView === view ? 'text-[#f97316]' : ''}`}>{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Main nav bar ── */}
+        <nav className={`${sidebarBg} border-t border-white/10 flex items-center px-1 py-1 shadow-2xl shadow-black/40`}>
           {user?.role === 'department' ? (
             <>
               <SidebarItem icon={LayoutDashboard} label="Home" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
@@ -1231,15 +1253,17 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               <SidebarItem icon={deptStatus.isReady ? Building2 : ShieldAlert} label="Profile" active={currentView === 'dept_profile'} onClick={() => onViewChange('dept_profile')} mobile />
             </>
           ) : showHRPortal && user?.role !== 'global_admin' ? (
+            // Pure HR role — main nav IS the HR sections
             <>
-              <SidebarItem icon={HeartHandshake} label="HR Home" active={currentView === 'hr_dashboard'} onClick={() => onViewChange('hr_dashboard')} mobile />
-              <SidebarItem icon={Users} label="People" active={currentView === 'hr_employees'} onClick={() => onViewChange('hr_employees')} mobile />
+              <SidebarItem icon={HeartHandshake} label="Overview" active={currentView === 'hr_dashboard'} onClick={() => onViewChange('hr_dashboard')} mobile />
+              <SidebarItem icon={Users} label="Employees" active={currentView === 'hr_employees'} onClick={() => onViewChange('hr_employees')} mobile />
               <SidebarItem icon={CalendarDays} label="Leave" active={currentView === 'hr_leaves'} onClick={() => onViewChange('hr_leaves')} mobile />
               <SidebarItem icon={Clock} label="Attendance" active={currentView === 'hr_attendance'} onClick={() => onViewChange('hr_attendance')} mobile />
               <SidebarItem icon={DollarSign} label="Payroll" active={currentView === 'hr_payroll'} onClick={() => onViewChange('hr_payroll')} mobile />
               <SidebarItem icon={UserPlus} label="Recruit" active={currentView === 'hr_recruitment'} onClick={() => onViewChange('hr_recruitment')} mobile />
             </>
           ) : (
+            // Global admin — full admin nav; HR button toggles the sub-nav row above
             <>
               <SidebarItem icon={LayoutDashboard} label="Home" active={currentView === 'dashboard'} onClick={() => onViewChange('dashboard')} mobile />
               <SidebarItem icon={ClipboardCheck} label="Requests" active={currentView === 'requisitions'} onClick={() => onViewChange('requisitions')} mobile />
@@ -1247,45 +1271,18 @@ const Layout = ({ children, user, currentView, onViewChange }) => {
               <SidebarItem icon={FileText} label="MEMO" active={currentView === 'memos'} onClick={() => onViewChange('memos')} mobile />
               <SidebarItem icon={History} label="Activity" active={currentView === 'activity'} onClick={() => onViewChange('activity')} mobile />
               {showHRPortal && (
-                <div className="relative flex-shrink-0">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setMobileHrOpen(v => !v)}
-                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setMobileHrOpen(v => !v)}
-                    className={`relative flex flex-col items-center justify-center p-2.5 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none ${mobileHrOpen || currentView?.startsWith('hr_') ? 'text-[#f97316]' : 'text-white'}`}
-                  >
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setMobileHrOpen(v => !v)}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setMobileHrOpen(v => !v)}
+                  className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-2xl cursor-pointer transition-all active:scale-95 outline-none ${mobileHrOpen || currentView?.startsWith('hr_') ? 'text-[#f97316]' : 'text-white'}`}
+                >
+                  <div className="relative">
                     <HeartHandshake size={20} />
-                    <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter ${mobileHrOpen || currentView?.startsWith('hr_') ? 'text-[#f97316]' : 'text-white'}`}>HR</span>
+                    <ChevronDown size={10} className={`absolute -bottom-1 -right-1 transition-transform duration-200 ${mobileHrOpen ? 'rotate-180' : ''}`} />
                   </div>
-                  {mobileHrOpen && (
-                    <>
-                      <div className="fixed inset-0 z-[110]" onClick={() => setMobileHrOpen(false)} />
-                      <div className={`absolute bottom-[calc(100%+12px)] left-1/2 -translate-x-1/2 z-[120] ${sidebarBg} border border-white/10 rounded-2xl shadow-2xl shadow-black/40 p-2 min-w-[140px] animate-in slide-in-from-bottom-2 duration-200`}>
-                        <div className="text-[8px] font-black text-white/40 uppercase tracking-widest px-2 pb-1.5">HR Portal</div>
-                        {[
-                          { icon: HeartHandshake, label: 'HR Overview',  view: 'hr_dashboard' },
-                          { icon: Users,          label: 'Employees',    view: 'hr_employees' },
-                          { icon: CalendarDays,   label: 'Leave',        view: 'hr_leaves' },
-                          { icon: Clock,          label: 'Attendance',   view: 'hr_attendance' },
-                          { icon: DollarSign,     label: 'Payroll',      view: 'hr_payroll' },
-                          { icon: UserPlus,       label: 'Recruitment',  view: 'hr_recruitment' },
-                        ].map(({ icon: Icon, label, view }) => (
-                          <div
-                            key={view}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => { onViewChange(view); setMobileHrOpen(false); }}
-                            onKeyDown={e => (e.key === 'Enter') && (onViewChange(view), setMobileHrOpen(false))}
-                            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer transition-all active:scale-95 ${currentView === view ? 'bg-white/15 text-[#f97316]' : 'text-white hover:bg-white/10'}`}
-                          >
-                            <Icon size={15} />
-                            <span className="text-[11px] font-bold whitespace-nowrap">{label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                  <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter ${mobileHrOpen || currentView?.startsWith('hr_') ? 'text-[#f97316]' : 'text-white'}`}>HR</span>
                 </div>
               )}
               {studioEnabled && (
