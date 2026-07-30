@@ -4909,7 +4909,10 @@ app.get('/api/sync/heartbeat', desktopSyncLimiter, async (req, res) => {
     await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "SystemSetting" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL DEFAULT '')`;
     const rows = await prisma.$queryRaw`
       SELECT "key", "value" FROM "SystemSetting"
-      WHERE "key" IN ('desktop_sync_enabled', 'desktop_sync_expires_at', 'desktop_sync_message')
+      WHERE "key" IN (
+        'desktop_sync_enabled', 'desktop_sync_expires_at', 'desktop_sync_message',
+        'desktop_app_latest_version', 'desktop_app_download_url', 'desktop_app_release_notes'
+      )
     `;
     const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
     const expiresAt = map.desktop_sync_expires_at || null;
@@ -4919,6 +4922,13 @@ app.get('/api/sync/heartbeat', desktopSyncLimiter, async (req, res) => {
       enabled,
       expiresAt,
       message: map.desktop_sync_message || 'This software is currently inactive. Contact your administrator.',
+      // Piggybacked on this same already-proven, already rate-limited
+      // heartbeat call rather than adding a second endpoint/polling loop
+      // just for update checks — see main_window.py's Update Available
+      // banner. Blank/unset on the server = no update-check UI shown.
+      latestVersion: map.desktop_app_latest_version || null,
+      downloadUrl: map.desktop_app_download_url || null,
+      releaseNotes: map.desktop_app_release_notes || null,
     });
   } catch (error) { sendError(res, 500, error.message); }
 });
