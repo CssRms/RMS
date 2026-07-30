@@ -879,7 +879,7 @@ const WorkflowBuilder = ({ onViewChange }) => {
                       <p className="text-sm font-black text-foreground">Desktop Client Sync</p>
                       <p className="text-[11px] text-muted-foreground leading-relaxed">
                         Controls whether the desktop attendance client stays active. Changes take
-                        effect the next time it checks in (usually within 30 minutes).
+                        effect the next time it checks in (usually within 20-30 seconds).
                       </p>
                     </div>
                     <button
