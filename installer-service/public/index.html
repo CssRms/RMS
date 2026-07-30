@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CSS Quick Time — Download</title>
 <meta name="description" content="CSS Quick Time: attendance and staff ID software for CSS Group of Companies. Download the latest Windows installer.">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+<link rel="apple-touch-icon" href="/favicon-192.png">
 <style>
   :root {
     --band: #16281f;
@@ -39,12 +42,8 @@
     box-shadow: 0 2px 10px rgba(0,0,0,0.15);
   }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.02em; }
-  .brand-mark {
-    width: 28px; height: 28px; border-radius: 8px;
-    background: var(--accent); color: #0d150e;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; font-size: 14px;
-  }
+  .brand-mark { width: 28px; height: 28px; border-radius: 8px; display: block; }
+  .hero-logo { width: 88px; height: 88px; border-radius: 22px; margin-bottom: 22px; box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
   .navlinks { display: flex; gap: 22px; font-size: 13.5px; font-weight: 600; flex-wrap: wrap; }
   .navlinks a { text-decoration: none; color: var(--band-text-muted); transition: color .15s; }
   .navlinks a:hover { color: var(--band-text); }
@@ -130,7 +129,7 @@
 <body>
 
 <nav>
-  <div class="brand"><span class="brand-mark">C</span> CSS Quick Time</div>
+  <div class="brand"><img class="brand-mark" src="/logo.png" alt="CSS Quick Time"> CSS Quick Time</div>
   <div class="navlinks">
     <a href="#overview">Overview</a>
     <a href="#download">Download</a>
@@ -141,6 +140,7 @@
 </nav>
 
 <header class="hero" id="download">
+  <img class="hero-logo" src="/logo.png" alt="CSS Quick Time logo">
   <div class="eyebrow">CSS Group of Companies &middot; Internal Attendance Software</div>
   <h1>CSS Quick Time</h1>
   <p class="tagline">Fast device sync, attendance analysis, and staff ID management for CSS Group of Companies — built to talk directly to your ZKTeco time clock.</p>

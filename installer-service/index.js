@@ -130,6 +130,13 @@ app.get('/', async (_req, res) => {
   res.type('html').send(html);
 });
 
+// Registered AFTER the dynamic "/" route above, so a request for "/"
+// still matches that handler (the rendered page) rather than this
+// middleware's own default index.html auto-serve behavior - index:false
+// is a defensive second guard against that same mistake. Only serves
+// the favicon/logo assets copied in from the desktop app's real icon.
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true, storageConfigured: useR2 });
 });
