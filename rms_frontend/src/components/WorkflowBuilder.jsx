@@ -140,21 +140,30 @@ const WorkflowBuilder = ({ onViewChange }) => {
   // SystemSetting keys to decide whether it stays active. Own load/save,
   // same pattern as refPattern above, since it's an unrelated concern
   // from the on/off Feature Controls grid below.
-  const [syncSettings, setSyncSettings] = useState({ enabled: true, expiresAt: '', message: '' });
+  const [syncSettings, setSyncSettings] = useState({
+    enabled: true, expiresAt: '', message: '',
+    latestVersion: '', downloadUrl: '', releaseNotes: '',
+  });
   const [syncLoaded, setSyncLoaded] = useState(false);
   const [savingSync, setSavingSync] = useState(false);
 
   const loadSyncSettings = async () => {
     try {
-      const [e, exp, msg] = await Promise.all([
+      const [e, exp, msg, ver, url, notes] = await Promise.all([
         settingsAPI.get('desktop_sync_enabled').catch(() => ({ value: 'true' })),
         settingsAPI.get('desktop_sync_expires_at').catch(() => ({ value: '' })),
         settingsAPI.get('desktop_sync_message').catch(() => ({ value: '' })),
+        settingsAPI.get('desktop_app_latest_version').catch(() => ({ value: '' })),
+        settingsAPI.get('desktop_app_download_url').catch(() => ({ value: '' })),
+        settingsAPI.get('desktop_app_release_notes').catch(() => ({ value: '' })),
       ]);
       setSyncSettings({
         enabled: (e?.value ?? 'true') !== 'false',
         expiresAt: exp?.value || '',
         message: msg?.value || '',
+        latestVersion: ver?.value || '',
+        downloadUrl: url?.value || '',
+        releaseNotes: notes?.value || '',
       });
     } catch {}
     setSyncLoaded(true);
@@ -167,6 +176,9 @@ const WorkflowBuilder = ({ onViewChange }) => {
         settingsAPI.set('desktop_sync_enabled', syncSettings.enabled ? 'true' : 'false'),
         settingsAPI.set('desktop_sync_expires_at', syncSettings.expiresAt || ''),
         settingsAPI.set('desktop_sync_message', syncSettings.message || ''),
+        settingsAPI.set('desktop_app_latest_version', syncSettings.latestVersion || ''),
+        settingsAPI.set('desktop_app_download_url', syncSettings.downloadUrl || ''),
+        settingsAPI.set('desktop_app_release_notes', syncSettings.releaseNotes || ''),
       ]);
       toast.success('Desktop client sync settings saved.');
     } catch {
@@ -901,6 +913,55 @@ const WorkflowBuilder = ({ onViewChange }) => {
                         value={syncSettings.message}
                         onChange={(e) => setSyncSettings(s => ({ ...s, message: e.target.value }))}
                         placeholder="e.g. This software is currently inactive. Contact your administrator."
+                        rows={2}
+                        className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/30 pt-4 space-y-3">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                      Update Notice (optional)
+                    </p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed -mt-2">
+                      When set, installs newer than this show a dismissible "Update available" banner
+                      with a Download link — never a forced or silent update. Leave Latest Version blank
+                      to turn this off.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                          Latest Version
+                        </label>
+                        <input
+                          type="text"
+                          value={syncSettings.latestVersion}
+                          onChange={(e) => setSyncSettings(s => ({ ...s, latestVersion: e.target.value }))}
+                          placeholder="e.g. 1.1.0"
+                          className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                          Download URL
+                        </label>
+                        <input
+                          type="text"
+                          value={syncSettings.downloadUrl}
+                          onChange={(e) => setSyncSettings(s => ({ ...s, downloadUrl: e.target.value }))}
+                          placeholder="https://.../CSSQuickTimeSetup.exe"
+                          className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        Release Notes
+                      </label>
+                      <textarea
+                        value={syncSettings.releaseNotes}
+                        onChange={(e) => setSyncSettings(s => ({ ...s, releaseNotes: e.target.value }))}
+                        placeholder="What changed in this version"
                         rows={2}
                         className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       />
