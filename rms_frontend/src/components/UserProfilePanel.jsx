@@ -5,8 +5,9 @@ import { toast } from 'react-hot-toast';
 import {
   X, User, Mail, Shield, Calendar, Clock, Lock,
   Eye, EyeOff, Save, KeyRound, Building2, CheckCircle2,
-  AlertTriangle, ExternalLink, Loader2, RefreshCcw
+  AlertTriangle, ExternalLink, Loader2, RefreshCcw, Fingerprint
 } from 'lucide-react';
+import { isNative, bioAvailable, hasBioDept, enrollBiometric, removeBiometric } from '../lib/biometric';
 
 // Deterministic colour from user name/dept string
 const avatarColor = (str = '') => {
@@ -103,6 +104,56 @@ const UserProfilePanel = ({ isOpen, onClose, onViewChange }) => {
   const [changingPw, setChangingPw] = useState(false);
 
   const isDept = user?.role === 'department';
+
+  // Biometric state
+  const [bioSupported, setBioSupported] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(false);
+  const [bioToggling, setBioToggling] = useState(false);
+  const [bioPasswordPrompt, setBioPasswordPrompt] = useState(false);
+  const [bioPassword, setBioPassword] = useState('');
+  const [showBioPwd, setShowBioPwd] = useState(false);
+
+  const deptKey = user?.department || '';
+
+  useEffect(() => {
+    if (!isNative() || !isOpen) return;
+    bioAvailable().then(ok => {
+      setBioSupported(ok);
+      if (ok) setBioEnabled(hasBioDept(deptKey));
+    });
+  }, [isOpen, deptKey]);
+
+  const handleBioToggle = async () => {
+    if (!bioSupported) return;
+    if (bioEnabled) {
+      // Disable — remove stored credentials
+      setBioToggling(true);
+      try {
+        await removeBiometric(deptKey);
+        setBioEnabled(false);
+        toast.success('Fingerprint login disabled.');
+      } catch {
+        toast.error('Could not disable fingerprint login.');
+      } finally { setBioToggling(false); }
+    } else {
+      // Enable — need password to store
+      setBioPasswordPrompt(true);
+    }
+  };
+
+  const handleBioEnroll = async () => {
+    if (!bioPassword) { toast.error('Enter your current password to enable fingerprint login.'); return; }
+    setBioToggling(true);
+    try {
+      await enrollBiometric(deptKey, bioPassword);
+      setBioEnabled(true);
+      setBioPasswordPrompt(false);
+      setBioPassword('');
+      toast.success('Fingerprint login enabled!', { icon: '🔒' });
+    } catch (err) {
+      toast.error(err?.message || 'Fingerprint setup failed. Check your password and try again.');
+    } finally { setBioToggling(false); }
+  };
 
   useEffect(() => {
     if (!isOpen || !user) return;
@@ -287,6 +338,63 @@ const UserProfilePanel = ({ isOpen, onClose, onViewChange }) => {
                 {deptProfile?.headName ? 'Manage Department Profile' : 'Complete Department Setup'}
               </button>
 
+              {/* Biometric section — native only */}
+              {bioSupported && (
+                <Section title="Mobile Security">
+                  <div className="flex items-center justify-between px-3 py-3 bg-white rounded-xl border border-border/40">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${bioEnabled ? 'bg-primary/10 border border-primary/20' : 'bg-muted/40 border border-border/30'}`}>
+                        <Fingerprint size={17} className={bioEnabled ? 'text-primary' : 'text-muted-foreground'} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-black text-foreground">Fingerprint Login</p>
+                        <p className="text-[9px] text-muted-foreground mt-0.5">{bioEnabled ? 'Enabled for this device' : 'Tap to set up'}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleBioToggle}
+                      disabled={bioToggling}
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${bioEnabled ? 'bg-primary' : 'bg-muted/60 border border-border/50'} disabled:opacity-50`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200 ${bioEnabled ? 'left-[calc(100%-1.375rem)]' : 'left-0.5'}`}/>
+                    </button>
+                  </div>
+
+                  {/* Password prompt to enroll */}
+                  {bioPasswordPrompt && (
+                    <div className="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-3 animate-in slide-in-from-top-2 duration-200">
+                      <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">
+                        Enter your <strong>current password</strong> to enable fingerprint login. It will be stored securely on this device.
+                      </p>
+                      <div className="relative">
+                        <KeyRound size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50"/>
+                        <input
+                          type={showBioPwd ? 'text' : 'password'}
+                          value={bioPassword}
+                          onChange={e => setBioPassword(e.target.value)}
+                          placeholder="Your current password"
+                          className="w-full pl-8 pr-9 py-2.5 text-xs bg-white border border-border/50 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-mono tracking-widest"
+                        />
+                        <button type="button" onClick={() => setShowBioPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary transition-colors">
+                          {showBioPwd ? <EyeOff size={13}/> : <Eye size={13}/>}
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={handleBioEnroll} disabled={bioToggling || !bioPassword}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-all">
+                          {bioToggling ? <Loader2 size={11} className="animate-spin"/> : <Fingerprint size={11}/>}
+                          Enable
+                        </button>
+                        <button onClick={() => { setBioPasswordPrompt(false); setBioPassword(''); }}
+                          className="px-4 py-2.5 rounded-xl border border-border/50 text-muted-foreground text-[10px] font-black uppercase tracking-widest hover:bg-muted/40 transition-all">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Section>
+              )}
+
               <div className="p-3 bg-muted/30 rounded-xl border border-border/30">
                 <p className="text-[10px] text-muted-foreground font-medium text-center leading-relaxed">
                   Department credentials are managed by the System Administrator through System Settings.
@@ -352,6 +460,61 @@ const UserProfilePanel = ({ isOpen, onClose, onViewChange }) => {
                   After changing your password you will be automatically signed out and need to log in again with your new credentials.
                 </p>
               </div>
+
+              {/* Biometric for admin on native */}
+              {bioSupported && (
+                <Section title="Mobile Security">
+                  <div className="flex items-center justify-between px-3 py-3 bg-white rounded-xl border border-border/40">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${bioEnabled ? 'bg-primary/10 border border-primary/20' : 'bg-muted/40 border border-border/30'}`}>
+                        <Fingerprint size={17} className={bioEnabled ? 'text-primary' : 'text-muted-foreground'} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-black text-foreground">Fingerprint Login</p>
+                        <p className="text-[9px] text-muted-foreground mt-0.5">{bioEnabled ? 'Enabled for this device' : 'Tap to set up'}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleBioToggle}
+                      disabled={bioToggling}
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${bioEnabled ? 'bg-primary' : 'bg-muted/60 border border-border/50'} disabled:opacity-50`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200 ${bioEnabled ? 'left-[calc(100%-1.375rem)]' : 'left-0.5'}`}/>
+                    </button>
+                  </div>
+                  {bioPasswordPrompt && (
+                    <div className="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-3 animate-in slide-in-from-top-2 duration-200">
+                      <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">
+                        Enter your <strong>current password</strong> to enable fingerprint login.
+                      </p>
+                      <div className="relative">
+                        <KeyRound size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50"/>
+                        <input
+                          type={showBioPwd ? 'text' : 'password'}
+                          value={bioPassword}
+                          onChange={e => setBioPassword(e.target.value)}
+                          placeholder="Your current password"
+                          className="w-full pl-8 pr-9 py-2.5 text-xs bg-white border border-border/50 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-mono tracking-widest"
+                        />
+                        <button type="button" onClick={() => setShowBioPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary transition-colors">
+                          {showBioPwd ? <EyeOff size={13}/> : <Eye size={13}/>}
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={handleBioEnroll} disabled={bioToggling || !bioPassword}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-all">
+                          {bioToggling ? <Loader2 size={11} className="animate-spin"/> : <Fingerprint size={11}/>}
+                          Enable
+                        </button>
+                        <button onClick={() => { setBioPasswordPrompt(false); setBioPassword(''); }}
+                          className="px-4 py-2.5 rounded-xl border border-border/50 text-muted-foreground text-[10px] font-black uppercase tracking-widest hover:bg-muted/40 transition-all">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Section>
+              )}
             </>
           )}
         </div>

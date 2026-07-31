@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, HelpCircle, X, PhoneCall, ChevronDown, GitBranch, AlertTriangle } from 'lucide-react';
+import { Lock, ArrowRight, CheckCircle2, Building2, Eye, EyeOff, Smartphone, HelpCircle, X, PhoneCall, ChevronDown, GitBranch, AlertTriangle, Fingerprint } from 'lucide-react';
 import { getDepartments } from '../lib/store';
 import { toast } from 'react-hot-toast';
+import { isNative, bioAvailable, hasBioDept, getSavedBioDepts, enrollBiometric, loginWithBiometric } from '../lib/biometric';
 
 // ── Detailed SVG flora, fauna & farm icons ──────────────────────────────────
 const SunflowerIcon = ({ color = '#fbbf24', size = 40 }) => {
@@ -548,6 +549,12 @@ const Login = () => {
   const [deptSearch, setDeptSearch] = useState('');
   const deptSearchRef = useRef(null);
   const [deptActivated, setDeptActivated] = useState(null); // null=unknown, true=activated(PASSWORD), false=first-time(ACCESS CODE)
+  // Biometric state
+  const [bioReady, setBioReady] = useState(false);   // device supports biometric
+  const [bioDepts, setBioDepts] = useState([]);       // depts with saved biometric
+  const [bioLoading, setBioLoading] = useState(false);
+  const [showBioEnroll, setShowBioEnroll] = useState(null); // dept name to enroll
+  const [pendingBioCode, setPendingBioCode] = useState(''); // code to store after login
   // First-time activation flow
   const [activation, setActivation] = useState(null); // { token, deptName } when requiresActivation
   const [actName, setActName] = useState('');
@@ -570,6 +577,17 @@ const Login = () => {
       setDeptSearch('');
     }
   }, [deptDropOpen]);
+
+  // Check biometric availability on mount (native only)
+  useEffect(() => {
+    if (!isNative()) return;
+    bioAvailable().then(ok => {
+      if (ok) {
+        setBioReady(true);
+        setBioDepts(getSavedBioDepts());
+      }
+    });
+  }, []);
 
   useEffect(() => {
     getDepartments().then(setDepartments);
@@ -657,6 +675,11 @@ const Login = () => {
     try {
       if (!selectedDept) throw new Error("Please select a department");
       await deptLogin(selectedDept, accessCode, mfaCode, turnstileToken);
+      // Offer biometric enrollment on native devices if not already set up
+      if (bioReady && !hasBioDept(selectedDept)) {
+        setPendingBioCode(accessCode);
+        setShowBioEnroll(selectedDept);
+      }
     } catch (err) {
       if (err.message === 'REQUIRES_ACTIVATION') {
         setActivation({ token: err.activationToken, deptName: err.activationDeptName, isSubAccount: err.isSubAccount, headName: err.headName || '', headTitle: err.headTitle || '', headEmail: err.headEmail || '' });
@@ -673,6 +696,37 @@ const Login = () => {
         (err.response?.data?.error || err.message || 'Authentication failed.')
       );
       setIsSubmitting(false);
+    }
+  };
+
+  const handleBioLogin = async () => {
+    if (!selectedDept) { setError('Please select your department first.'); return; }
+    setBioLoading(true);
+    setError('');
+    try {
+      const code = await loginWithBiometric(selectedDept);
+      await deptLogin(selectedDept, code, '', '');
+    } catch (err) {
+      if (err?.message?.includes('cancel') || err?.message?.includes('Cancel') || err?.code === 'BIOMETRIC_DISMISSED') {
+        // user cancelled — do nothing
+      } else {
+        setError('Biometric login failed. Please use your password.');
+      }
+    } finally {
+      setBioLoading(false);
+    }
+  };
+
+  const handleBioEnrollYes = async () => {
+    try {
+      await enrollBiometric(showBioEnroll, pendingBioCode);
+      setBioDepts(getSavedBioDepts());
+      toast.success('Fingerprint login enabled!', { icon: '🔒' });
+    } catch {
+      toast.error('Could not enable fingerprint login.');
+    } finally {
+      setShowBioEnroll(null);
+      setPendingBioCode('');
     }
   };
 
@@ -951,13 +1005,34 @@ const Login = () => {
                   </div>
                 )}
 
-                <div className="pt-1">
+                <div className="pt-1 space-y-3">
                   <button type="submit" disabled={isSubmitting || (turnstileNeeded && !turnstileToken)}
                     className="w-full bg-primary hover:bg-primary/90 active:bg-primary/95 text-primary-foreground font-bold py-4 px-5 rounded-2xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 active:scale-[0.985] disabled:opacity-50 text-base">
                     {isSubmitting
                       ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/><span>Authenticating…</span></>
                       : <><span>Enter RMS Portal</span><ArrowRight size={18}/></>}
                   </button>
+
+                  {/* Biometric login button — only on native device with saved credentials */}
+                  {bioReady && selectedDept && bioDepts.includes(selectedDept) && (
+                    <button
+                      type="button"
+                      onClick={handleBioLogin}
+                      disabled={bioLoading || isSubmitting}
+                      className="w-full border-2 border-primary/30 hover:border-primary/60 bg-primary/5 hover:bg-primary/10 text-primary font-bold py-3.5 px-5 rounded-2xl transition-all flex items-center justify-center gap-3 active:scale-[0.985] disabled:opacity-50 text-sm">
+                      {bioLoading
+                        ? <><div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"/><span>Verifying…</span></>
+                        : <><Fingerprint size={20}/><span>Login with Fingerprint</span></>}
+                    </button>
+                  )}
+
+                  {/* Show fingerprint hint when dept selected but not enrolled */}
+                  {bioReady && selectedDept && !bioDepts.includes(selectedDept) && (
+                    <p className="text-center text-[10px] text-muted-foreground/50 flex items-center justify-center gap-1.5">
+                      <Fingerprint size={11}/>
+                      Log in with password once to enable fingerprint
+                    </p>
+                  )}
                 </div>
 
                 <div className="text-center">
@@ -1175,6 +1250,38 @@ const Login = () => {
                 className="w-full py-3 rounded-xl border border-border/50 text-muted-foreground text-sm font-semibold hover:bg-muted/40 transition-all">
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Biometric Enrolment Prompt ── */}
+      {showBioEnroll && (
+        <div className="fixed inset-0 z-[400] flex items-end justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl p-8 animate-in slide-in-from-bottom-4 duration-300">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Fingerprint size={30} className="text-primary"/>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Enable Fingerprint Login?</h3>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-[260px]">
+                  Next time you open the app, just tap <strong>Login with Fingerprint</strong> for <span className="text-primary font-semibold">{showBioEnroll}</span> — no password needed.
+                </p>
+              </div>
+              <div className="w-full flex flex-col gap-2.5 pt-1">
+                <button
+                  onClick={handleBioEnrollYes}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 rounded-2xl transition-all flex items-center justify-center gap-2.5 text-sm shadow-lg shadow-primary/20">
+                  <Fingerprint size={17}/>
+                  Yes, Enable Fingerprint
+                </button>
+                <button
+                  onClick={() => { setShowBioEnroll(null); setPendingBioCode(''); }}
+                  className="w-full border border-border/50 text-muted-foreground font-semibold py-3 rounded-2xl text-xs hover:bg-muted/40 transition-all">
+                  Skip for Now
+                </button>
+              </div>
             </div>
           </div>
         </div>
