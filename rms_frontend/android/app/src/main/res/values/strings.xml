@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CSS RMS</string>
+    <string name="title_activity_main">CSS RMS</string>
+    <string name="package_name">com.cssgroup.rms</string>
+    <string name="custom_url_scheme">com.cssgroup.rms</string>
+</resources>
